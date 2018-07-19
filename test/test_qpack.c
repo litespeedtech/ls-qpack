@@ -1,0 +1,110 @@
+/*
+ * Test QPACK.
+ */
+
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "lsqpack.h"
+
+#define ENC_BUF_SZ 200
+#define HEADER_BUF_SZ 200
+#define PREFIX_BUF_SZ 10
+
+static const struct qpack_header_block_test
+{
+    /* Identification: */
+    int             qhbt_lineno;
+
+    /* Input: */
+    unsigned        qhbt_n_headers;
+    struct {
+        const char *name, *value;
+    }               qhbt_headers[10];
+
+    /* Output: */
+    size_t          qhbt_enc_sz;
+    unsigned char   qhbt_enc_buf[ENC_BUF_SZ];
+
+    size_t          qhbt_prefix_sz;
+    unsigned char   qhbt_prefix_buf[PREFIX_BUF_SZ];
+
+    size_t          qhbt_header_sz;
+    unsigned char   qhbt_header_buf[HEADER_BUF_SZ];
+} header_block_tests[] =
+{
+    {
+        .qhbt_lineno        = __LINE__,
+        .qhbt_n_headers     = 1,
+        .qhbt_headers       = {
+            { ":method", "GET", },
+        },
+        .qhbt_enc_sz        = 0,
+        .qhbt_prefix_sz     = 2,
+        .qhbt_prefix_buf    = "\x00\x00",
+        .qhbt_header_sz     = 1,
+        .qhbt_header_buf    = {
+            0x80 | 0x40 | 2,
+        },
+    },
+};
+
+
+static void
+run_header_test (const struct qpack_header_block_test *test)
+{
+    unsigned char header_buf[HEADER_BUF_SZ], enc_buf[ENC_BUF_SZ],
+        prefix_buf[PREFIX_BUF_SZ];
+    off_t header_off, enc_off;
+    size_t header_sz, enc_sz;
+    struct lsqpack_enc enc;
+    unsigned i;
+    size_t nw;
+    int s;
+    enum lsqpack_enc_status enc_st;
+
+    s = lsqpack_enc_init(&enc);
+    assert(s == 0);
+
+    s = lsqpack_enc_start_header(&enc, 0, 0);
+    assert(s == 0);
+
+    header_off = 0, enc_off = 0;
+    for (i = 0; i < test->qhbt_n_headers; ++i)
+    {
+        enc_sz = sizeof(enc_buf) - enc_off;
+        header_sz = sizeof(header_buf) - header_off;
+        enc_st = lsqpack_enc_encode(&enc,
+                enc_buf + enc_off, &enc_sz,
+                header_buf + header_off, &header_sz,
+                test->qhbt_headers[i].name,
+                strlen(test->qhbt_headers[i].name),
+                test->qhbt_headers[i].value,
+                strlen(test->qhbt_headers[i].value));
+        assert(enc_st == LQES_OK);
+        enc_off += enc_sz;
+        header_off += header_sz;
+    }
+
+    nw = lsqpack_enc_end_header(&enc, prefix_buf, sizeof(prefix_buf));
+    assert(nw == test->qhbt_prefix_sz);
+    assert(0 == memcmp(test->qhbt_prefix_buf, prefix_buf, nw));
+
+    lsqpack_enc_cleanup(&enc);
+}
+
+
+int
+main (void)
+{
+    unsigned i;
+
+    for (i = 0; i < sizeof(header_block_tests)
+                                / sizeof(header_block_tests[0]); ++i)
+        run_header_test(&header_block_tests[i]);
+
+    return 0;
+}
