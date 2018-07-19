@@ -6158,23 +6158,27 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     unsigned char *dst;
     struct enc_found ef;
 
+    /* Encoding always outputs at least a byte to the header block.  If
+     * no bytes are available, encoding cannot proceed.
+     */
+    if (header_buf >= header_end)
+        return LQES_NOBUF_HEAD;
+
     ef = qenc_find_table_id(enc, name, name_len, value, value_len);
     switch (ef.ei_type)
     {
     case EI_STATIC_WITH_VAL:
-        if (header_buf < header_end)
+        dst = header_buf;
+        *dst = 0x80 | 0x40;
+        dst = qenc_enc_int(dst, header_end, ef.ei_id, 6);
+        if (dst > header_buf)
         {
-            dst = header_buf;
-            *dst = 0x80 | 0x40;
-            dst = qenc_enc_int(dst, header_end, ef.ei_id, 6);
-            if (dst > header_buf)
-            {
-                *header_sz = dst - header_buf;
-                *enc_sz = 0;
-                return LQES_OK;
-            }
+            *header_sz = dst - header_buf;
+            *enc_sz = 0;
+            return LQES_OK;
         }
-        return LQES_NOBUF_HEAD;
+        else
+            return LQES_NOBUF_HEAD;
     case EI_STATIC_NO_VAL:
         break;
     case EI_DYNAMIC_WITH_VAL:
