@@ -65,13 +65,16 @@ enum lsqpack_enc_status
 };
 
 /**
- * Encode name/value pair in current header block and output it using the
- * header callback and optionally the encoder callback.
+ * Encode name/value pair in current header block.
+ *
+ * enc_sz and header_sz parameters are used for both input and output.  If
+ * the return value is LQES_OK, they contain number of bytes written to
+ * enc_buf and header_buf, respectively.
  */
 enum lsqpack_enc_status
 lsqpack_enc_encode (struct lsqpack_enc *,
-    unsigned char *enc, size_t *enc_sz,
-    unsigned char *header, size_t *header_sz,
+    unsigned char *enc_buf, size_t *enc_sz,
+    unsigned char *header_buf, size_t *header_sz,
     const char *name, lsqpack_strlen_t name_sz,
     const char *value, lsqpack_strlen_t value_sz);
 
