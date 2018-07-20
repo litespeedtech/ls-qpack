@@ -43,6 +43,8 @@ typedef uint16_t lsqpack_strlen_t;
 /** Let's start with four billion for now */
 typedef unsigned lsqpack_abs_id_t;
 
+#define LSQPACK_MAX_ABS_ID (~((lsqpack_abs_id_t) 0))
+
 /** Maximum length is defined for convenience */
 #define LSQPACK_MAX_STRLEN UINT16_MAX
 
@@ -60,6 +62,7 @@ enum lsqpack_enc_status
 {
     LQES_OK,
     LQES_ERROR,     /* Bad.  Terminate. */
+    LQES_ABS_MAX,   /* Reached maximum number of absolute IDs.  Terminate. */
     LQES_NOBUF_ENC,
     LQES_NOBUF_HEAD,
 };
@@ -118,7 +121,7 @@ struct lsqpack_enc
     /* The number of all the entries in the dynamic table that have been
      * created so far.  This is used to calculate the Absolute Index.
      */
-    lsqpack_abs_id_t            qpe_all_count;
+    lsqpack_abs_id_t            qpe_ins_count;
 
     unsigned                    qpe_cur_capacity;
     unsigned                    qpe_max_capacity;

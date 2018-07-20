@@ -6080,7 +6080,7 @@ lsqpack_enc_push_entry (struct lsqpack_enc *enc, const char *name,
     entry->ete_nameval_hash = nameval_hash;
     entry->ete_name_len = name_len;
     entry->ete_val_len = value_len;
-    entry->ete_id = 1 + enc->qpe_all_count++;
+    entry->ete_id = 1 + enc->qpe_ins_count++;
     memcpy(ETE_NAME(entry), name, name_len);
     memcpy(ETE_VALUE(entry), value, value_len);
 
