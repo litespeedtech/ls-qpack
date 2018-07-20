@@ -6361,19 +6361,22 @@ EP_pus_noop (struct lsqpack_enc *enc, struct encode_ctx *ctx)
  */
 static const struct encode_program encode_programs[2][2][2][2][2] =
 {
+/* This makes table narrower */
+#define A 0 ... 1
  /*
   *  ,--------------- Found or not found (bool)
-  *  |       ,------------ Static or dynamic (0 or 1, respectively)
-  *  |       |       ,--------- Value matched or not (bool)
-  *  |       |       |       ,------ To index or not to index (bool)
-  *  |       |       |       |       ,--- To risk blocking or not to risk (bool)
-  *  |       |       |       |       |
-  *  |       |       |       |       |
-  *  V       V       V       V       V
+  *  |  ,------------ Static or dynamic (0 or 1, respectively)
+  *  |  |  ,--------- Value matched or not (bool)
+  *  |  |  |  ,------ To index or not to index (bool)
+  *  |  |  |  |  ,--- To risk blocking or not to risk (bool)
+  *  |  |  |  |  |
+  *  |  |  |  |  |
+  *  V  V  V  V  V
   */
-    [1     ][0     ][1     ][0 ...1][0 ...1] = {{ EP_enc_none, EP_dyn_none, EP_hea_static_match, EP_pus_noop, }},
-    [1     ][0     ][0     ][0     ][0 ...1] = {{ EP_enc_none, EP_dyn_none, EP_hea_lit_with_name, EP_pus_noop, }},
-    [1     ][0     ][0     ][1     ][0     ] = {{ EP_enc_ins_nameref, EP_dyn_none, EP_hea_lit_with_name, EP_pus_noop, }},
+    [1][0][1][A][A] = {{ EP_enc_none, EP_dyn_none, EP_hea_static_match, EP_pus_noop, }},
+    [1][0][0][0][A] = {{ EP_enc_none, EP_dyn_none, EP_hea_lit_with_name, EP_pus_noop, }},
+    [1][0][0][1][0] = {{ EP_enc_ins_nameref, EP_dyn_none, EP_hea_lit_with_name, EP_pus_noop, }},
+#undef A
 };
 
 enum lsqpack_enc_status
