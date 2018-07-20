@@ -119,7 +119,8 @@ struct lsqpack_header_info
 {
     uint64_t    qhi_stream_id;
     unsigned    qhi_seqno;
-    int         qhi_valid;
+    signed char qhi_valid;
+    signed char qhi_at_risk;
 };
 
 struct lsqpack_enc
@@ -131,6 +132,12 @@ struct lsqpack_enc
 
     unsigned                    qpe_cur_capacity;
     unsigned                    qpe_max_capacity;
+
+    /* The maximum risked streams is the SETTINGS_QPACK_BLOCKED_STREAMS
+     * setting.  Note that streams must be differentiated from headers.
+     */
+    unsigned                    qpe_max_risked_streams;
+    unsigned                    qpe_cur_streams_at_risk;
 
     /* Max hinfos cannot be larger than LSQPACK_MAX_HEADERS */
     unsigned                    qpe_max_headers;
@@ -163,6 +170,13 @@ struct lsqpack_enc
     struct {
         /* Negative value means the index is not set. */
         int                 hinfo_idx;
+        /* Number of at-risk references in this header block */
+        unsigned            n_risked;
+        /* True if there are other header blocks with the same stream ID
+         * that are at risk.  (This means we can risk this header block
+         * as well.)
+         */
+        int                 others_at_risk;
         /* Maximum absolute dynamic table index used by the current header. */
         lsqpack_abs_id_t    max_ref;
         /* Base index */

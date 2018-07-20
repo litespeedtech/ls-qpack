@@ -36,6 +36,7 @@ SOFTWARE.
 
 #define QPACK_STATIC_TABLE_SIZE   61
 #define INITIAL_DYNAMIC_TABLE_SIZE  4096
+#define INITIAL_MAX_RISKED_STREAMS 100
 
 /* RFC 7541, Section 4.1:
  *
@@ -5374,7 +5375,7 @@ lsqpack_enc_init (struct lsqpack_enc *enc)
     if (!buckets)
         return -1;
 
-    hinfos = malloc(sizeof(hinfos[0]) * max_headers);
+    hinfos = calloc(max_headers + 1, sizeof(hinfos[0]));
     if (!hinfos)
     {
         free(buckets);
@@ -5390,6 +5391,7 @@ lsqpack_enc_init (struct lsqpack_enc *enc)
     memset(enc, 0, sizeof(*enc));
     STAILQ_INIT(&enc->qpe_all_entries);
     enc->qpe_max_capacity = INITIAL_DYNAMIC_TABLE_SIZE;
+    enc->qpe_max_risked_streams = INITIAL_MAX_RISKED_STREAMS;
     enc->qpe_buckets      = buckets;
     enc->qpe_nbits        = nbits;
     enc->qpe_max_headers  = max_headers;
@@ -6103,6 +6105,7 @@ lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
                             unsigned seqno)
 {
     struct lsqpack_header_info *hinfo, *sentinel;
+    unsigned at_risk;
 
     /* Must call lsqpack_enc_end_header() before starting a new header */
     if (enc->qpe_cur_header.hinfo_idx >= 0)
@@ -6111,29 +6114,52 @@ lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
     if (enc->qpe_n_hinfos >= enc->qpe_max_headers)
         return -1;
 
-    sentinel = &enc->qpe_hinfos[enc->qpe_n_hinfos];
+    sentinel = &enc->qpe_hinfos[enc->qpe_max_headers];
     sentinel->qhi_stream_id = stream_id;
     sentinel->qhi_seqno     = seqno;
-    sentinel->qhi_valid     = 0;
+    sentinel->qhi_valid     = 1;
 
     /* Sanity check: look for a duplicate entry */
     for (hinfo = enc->qpe_hinfos; ; ++hinfo)
-        if (hinfo->qhi_stream_id == stream_id && hinfo->qhi_seqno == seqno)
+        if (hinfo->qhi_stream_id == stream_id && hinfo->qhi_seqno == seqno
+                                                        && hinfo->qhi_valid)
             break;
     if (hinfo < sentinel)
         return -1;
 
     /* Find first unused entry */
+    sentinel->qhi_valid = 0;
     for (hinfo = enc->qpe_hinfos; ; ++hinfo)
-        if (hinfo->qhi_valid == 0)
+        if (!hinfo->qhi_valid)
             break;
+    assert(hinfo < sentinel);
 
     hinfo->qhi_stream_id = stream_id;
     hinfo->qhi_seqno     = seqno;
-    hinfo->qhi_valid++;
+    hinfo->qhi_valid     = 1;
+    hinfo->qhi_at_risk   = 0;
+
     enc->qpe_cur_header.hinfo_idx = hinfo - enc->qpe_hinfos;
     enc->qpe_cur_header.max_ref = 0;
+    enc->qpe_cur_header.base_idx = 0;
+    enc->qpe_cur_header.n_risked = 0;
     enc->qpe_n_hinfos++;
+
+    /* Check if there are other header blocks with the same stream ID that
+     * are at risk.
+     */
+    if (seqno)
+        for (hinfo = enc->qpe_hinfos; hinfo < sentinel; ++hinfo)
+            at_risk += hinfo->qhi_stream_id == stream_id
+            /* No need to check that seqno does not match: the 'at risk' value
+             * won't match already.
+             */
+                    && hinfo->qhi_valid
+                    && hinfo->qhi_at_risk;
+    else
+        at_risk = 0;
+
+    enc->qpe_cur_header.others_at_risk = at_risk > 0;
 
     return 0;
 }
@@ -6328,7 +6354,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     struct enc_found ef;
     enum lsqpack_enc_status st;
     int index;
-    int risk = 0;   /* TODO: add logic behind this as well */
+    int risk;
     unsigned i;
 
     /* Encoding always outputs at least a byte to the header block.  If
@@ -6342,6 +6368,10 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     else
         index = DYNAMIC_ENTRY_OVERHEAD + name_len + value_len
                                                 <= enc->qpe_cur_capacity;
+
+    risk = enc->qpe_cur_header.n_risked > 0
+        || enc->qpe_cur_header.others_at_risk
+        || enc->qpe_cur_streams_at_risk < enc->qpe_max_risked_streams;
 
     ef = qenc_find_table_id(enc, name, name_len, value, value_len);
 
