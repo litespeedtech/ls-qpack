@@ -20,6 +20,8 @@ static const struct qpack_header_block_test
     int             qhbt_lineno;
 
     /* Input: */
+    unsigned        qhbt_table_size;
+    unsigned        qhbt_max_risked_streams;
     unsigned        qhbt_n_headers;
     struct {
         const char *name, *value;
@@ -40,6 +42,8 @@ static const struct qpack_header_block_test
 
     {
         .qhbt_lineno        = __LINE__,
+        .qhbt_table_size    = LSQPACK_DEF_DYN_TABLE_SIZE,
+        .qhbt_max_risked_streams = LSQPACK_DEF_MAX_RISKED_STREAMS,
         .qhbt_n_headers     = 1,
         .qhbt_headers       = {
             { ":method", "GET", 0, },
@@ -55,11 +59,37 @@ static const struct qpack_header_block_test
 
     {
         .qhbt_lineno        = __LINE__,
+        .qhbt_table_size    = LSQPACK_DEF_DYN_TABLE_SIZE,
+        .qhbt_max_risked_streams = LSQPACK_DEF_MAX_RISKED_STREAMS,
         .qhbt_n_headers     = 1,
         .qhbt_headers       = {
             { ":method", "method", LQEF_NO_INDEX, },
         },
         .qhbt_enc_sz        = 0,
+        .qhbt_prefix_sz     = 2,
+        .qhbt_prefix_buf    = "\x00\x00",
+        .qhbt_header_sz     = 8,
+        .qhbt_header_buf    = {
+            0x40 | 2,
+            0x80 /* Huffman */ | 5 /* length */,
+            0xa4, 0xa9, 0x9c, 0xf2, 0x7f
+        },
+    },
+
+    {
+        .qhbt_lineno        = __LINE__,
+        .qhbt_table_size    = LSQPACK_DEF_DYN_TABLE_SIZE,
+        .qhbt_max_risked_streams = 0,
+        .qhbt_n_headers     = 1,
+        .qhbt_headers       = {
+            { ":method", "method", 0, },
+        },
+        .qhbt_enc_sz        = 8,
+        .qhbt_enc_buf       = {
+            0x80 | 0x40 /* static */ | 2 /* name index */,
+            0x80 /* Huffman */ | 5 /* length */,
+            0xa4, 0xa9, 0x9c, 0xf2, 0x7f
+        },
         .qhbt_prefix_sz     = 2,
         .qhbt_prefix_buf    = "\x00\x00",
         .qhbt_header_sz     = 8,
@@ -86,7 +116,8 @@ run_header_test (const struct qpack_header_block_test *test)
     int s;
     enum lsqpack_enc_status enc_st;
 
-    s = lsqpack_enc_init(&enc);
+    s = lsqpack_enc_init(&enc, test->qhbt_table_size,
+                                            test->qhbt_max_risked_streams);
     assert(s == 0);
 
     s = lsqpack_enc_start_header(&enc, 0, 0);
@@ -103,7 +134,8 @@ run_header_test (const struct qpack_header_block_test *test)
                 test->qhbt_headers[i].name,
                 strlen(test->qhbt_headers[i].name),
                 test->qhbt_headers[i].value,
-                strlen(test->qhbt_headers[i].value), 0);
+                strlen(test->qhbt_headers[i].value),
+                test->qhbt_headers[i].flags);
         assert(enc_st == LQES_OK);
         enc_off += enc_sz;
         header_off += header_sz;

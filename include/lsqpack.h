@@ -48,10 +48,17 @@ typedef unsigned lsqpack_abs_id_t;
 /** Maximum length is defined for convenience */
 #define LSQPACK_MAX_STRLEN UINT16_MAX
 
+#define LSQPACK_DEF_DYN_TABLE_SIZE  4096
+#define LSQPACK_DEF_MAX_RISKED_STREAMS 100
+
+#define LSQPACK_MAX_DYN_TABLE_SIZE ((1 << 30) - 1)
+#define LSQPACK_MAX_MAX_RISKED_STREAMS ((1 << 16) - 1)
+
 struct lsqpack_enc;
 
 int
-lsqpack_enc_init (struct lsqpack_enc *);
+lsqpack_enc_init (struct lsqpack_enc *, unsigned dyn_table_size,
+                    unsigned max_risked_streams);
 
 /** Start a new header block */
 int

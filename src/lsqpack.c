@@ -23,6 +23,7 @@ SOFTWARE.
 */
 
 #include <assert.h>
+#include <errno.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,8 +36,6 @@ SOFTWARE.
 #include XXH_HEADER_NAME
 
 #define QPACK_STATIC_TABLE_SIZE   61
-#define INITIAL_DYNAMIC_TABLE_SIZE  4096
-#define INITIAL_MAX_RISKED_STREAMS 100
 
 /* RFC 7541, Section 4.1:
  *
@@ -5363,13 +5362,21 @@ struct lsqpack_enc_table_entry
 #define BUCKNO(n_bits, hash) ((hash) & (N_BUCKETS(n_bits) - 1))
 
 int
-lsqpack_enc_init (struct lsqpack_enc *enc)
+lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
+                    unsigned max_risked_streams)
 {
     struct lsqpack_double_enc_head *buckets;
     struct lsqpack_header_info *hinfos;
     unsigned max_headers = LSQPACK_MAX_HEADERS;    /* TODO: make configurable */
     unsigned nbits = 2;
     unsigned i;
+
+    if (dyn_table_size > LSQPACK_MAX_DYN_TABLE_SIZE ||
+        max_risked_streams > LSQPACK_MAX_MAX_RISKED_STREAMS)
+    {
+        errno = EINVAL;
+        return -1;
+    }
 
     buckets = malloc(sizeof(buckets[0]) * N_BUCKETS(nbits));
     if (!buckets)
@@ -5390,8 +5397,8 @@ lsqpack_enc_init (struct lsqpack_enc *enc)
 
     memset(enc, 0, sizeof(*enc));
     STAILQ_INIT(&enc->qpe_all_entries);
-    enc->qpe_max_capacity = INITIAL_DYNAMIC_TABLE_SIZE;
-    enc->qpe_max_risked_streams = INITIAL_MAX_RISKED_STREAMS;
+    enc->qpe_max_capacity = dyn_table_size;
+    enc->qpe_max_risked_streams = max_risked_streams;
     enc->qpe_buckets      = buckets;
     enc->qpe_nbits        = nbits;
     enc->qpe_max_headers  = max_headers;
@@ -6305,6 +6312,33 @@ EP_hea_lit_with_name (struct lsqpack_enc *enc, struct encode_ctx *ctx)
 }
 
 static enum lsqpack_enc_status
+EP_enc_ins_nameref (struct lsqpack_enc *enc, struct encode_ctx *ctx)
+{
+    unsigned char *e_dst;
+    int r;
+
+    e_dst = ctx->ec_input.eci_enc_buf;
+    *e_dst = 0x80
+           | ((TT_STATIC == ctx->ec_input.eci_found.ef_table_type) << 6)
+           ;
+    e_dst = qenc_enc_int(e_dst,
+                ctx->ec_input.eci_enc_buf + ctx->ec_input.eci_enc_sz,
+                ctx->ec_input.eci_found.ef_entry_id, 6);
+    if (e_dst <= ctx->ec_input.eci_enc_buf)
+        return LQES_NOBUF_ENC;
+
+    r = lsqpack_enc_enc_str(e_dst,
+            ctx->ec_input.eci_enc_buf + ctx->ec_input.eci_enc_sz - e_dst,
+            ctx->ec_input.eci_value, ctx->ec_input.eci_valuelen);
+    if (r < 0)
+        return LQES_NOBUF_ENC;
+
+    e_dst += (unsigned) r;
+    ctx->ec_output.eco_enc_sz = e_dst - ctx->ec_input.eci_header_buf;
+    return LQES_OK;
+}
+
+static enum lsqpack_enc_status
 EP_pus_noop (struct lsqpack_enc *enc, struct encode_ctx *ctx)
 {
     return LQES_OK;
@@ -6339,6 +6373,7 @@ static const struct encode_program encode_programs[2][2][2][2][2] =
   */
     [1     ][0     ][1     ][0 ...1][0 ...1] = {{ EP_enc_none, EP_dyn_none, EP_hea_static_match, EP_pus_noop, }},
     [1     ][0     ][0     ][0     ][0 ...1] = {{ EP_enc_none, EP_dyn_none, EP_hea_lit_with_name, EP_pus_noop, }},
+    [1     ][0     ][0     ][1     ][0     ] = {{ EP_enc_ins_nameref, EP_dyn_none, EP_hea_lit_with_name, EP_pus_noop, }},
 };
 
 enum lsqpack_enc_status
@@ -6367,7 +6402,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         index = 0;
     else
         index = DYNAMIC_ENTRY_OVERHEAD + name_len + value_len
-                                                <= enc->qpe_cur_capacity;
+                                                <= enc->qpe_max_capacity;
 
     risk = enc->qpe_cur_header.n_risked > 0
         || enc->qpe_cur_header.others_at_risk
@@ -6481,8 +6516,8 @@ void
 lsqpack_dec_init (struct lsqpack_dec *dec)
 {
     memset(dec, 0, sizeof(*dec));
-    dec->hpd_max_capacity = INITIAL_DYNAMIC_TABLE_SIZE;
-    dec->hpd_cur_max_capacity = INITIAL_DYNAMIC_TABLE_SIZE;
+    dec->hpd_max_capacity = LSQPACK_DEF_DYN_TABLE_SIZE;
+    dec->hpd_cur_max_capacity = LSQPACK_DEF_DYN_TABLE_SIZE;
     lsqpack_arr_init(&dec->hpd_dyn_table);
 }
 
