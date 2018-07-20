@@ -165,6 +165,8 @@ struct lsqpack_enc
         int                 hinfo_idx;
         /* Maximum absolute dynamic table index used by the current header. */
         lsqpack_abs_id_t    max_ref;
+        /* Base index */
+        lsqpack_abs_id_t    base_idx;
     }                           qpe_cur_header;
 };
 

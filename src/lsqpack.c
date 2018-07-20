@@ -6104,6 +6104,10 @@ lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
 {
     struct lsqpack_header_info *hinfo, *sentinel;
 
+    /* Must call lsqpack_enc_end_header() before starting a new header */
+    if (enc->qpe_cur_header.hinfo_idx >= 0)
+        return -1;
+
     if (enc->qpe_n_hinfos >= enc->qpe_max_headers)
         return -1;
 
@@ -6138,10 +6142,20 @@ lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
 size_t
 lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
 {
-    if (sz < 2)
+    enc->qpe_cur_header.hinfo_idx = -1;
+    if (enc->qpe_cur_header.max_ref)
+    {
+        assert(0);
+        /* TODO */
         return 0;
-    memset(buf, 0, 2);
-    return 2;
+    }
+    else if (sz >= 2)
+    {
+        memset(buf, 0, 2);
+        return 2;
+    }
+    else
+        return 0;
 }
 
 struct encode_ctx
