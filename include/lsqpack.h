@@ -69,6 +69,7 @@ enum lsqpack_enc_status
 {
     LQES_OK,
     LQES_ERROR,     /* Bad.  Terminate. */
+    LQES_NOMEM,     /* Could not allocate memory to insert entry. */
     LQES_ABS_MAX,   /* Reached maximum number of absolute IDs.  Terminate. */
     LQES_NOBUF_ENC,
     LQES_NOBUF_HEAD,

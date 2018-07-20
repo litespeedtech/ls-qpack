@@ -6089,6 +6089,7 @@ lsqpack_enc_push_entry (struct lsqpack_enc *enc, const char *name,
     entry->ete_name_len = name_len;
     entry->ete_val_len = value_len;
     entry->ete_id = 1 + enc->qpe_ins_count++;
+    memset(entry->ete_refs, 0, sizeof(entry->ete_refs));
     memcpy(ETE_NAME(entry), name, name_len);
     memcpy(ETE_VALUE(entry), value, value_len);
 
@@ -6212,13 +6213,12 @@ struct encode_ctx
         /* Step 1: write to encoder stream */
         size_t                           eco_enc_sz;
 
-        /* Step 2: create table entry and assign a provisional absolute index */
-        struct lsqpack_enc_table_entry  *eco_entry;
+        /* Step 2: assign next dynamic entry ID */
 
         /* Step 3: write to header stream */
         size_t                           eco_header_sz;
 
-        /* Step 4: push table entry */
+        /* Step 4: create and push table entry */
     }               ec_output;
 };
 
@@ -6260,7 +6260,6 @@ EP_enc_none (struct lsqpack_enc *enc, struct encode_ctx *ctx)
 static enum lsqpack_enc_status
 EP_dyn_none (struct lsqpack_enc *enc, struct encode_ctx *ctx)
 {
-    ctx->ec_output.eco_entry = NULL;
     return LQES_OK;
 }
 
@@ -6312,6 +6311,16 @@ EP_hea_lit_with_name (struct lsqpack_enc *enc, struct encode_ctx *ctx)
 }
 
 static enum lsqpack_enc_status
+EP_dyn_new (struct lsqpack_enc *enc, struct encode_ctx *ctx)
+{
+    if (enc->qpe_ins_count < LSQPACK_MAX_ABS_ID)
+        return LQES_OK;
+    else
+        return LQES_ABS_MAX;
+}
+
+
+static enum lsqpack_enc_status
 EP_enc_ins_nameref (struct lsqpack_enc *enc, struct encode_ctx *ctx)
 {
     unsigned char *e_dst;
@@ -6342,6 +6351,22 @@ static enum lsqpack_enc_status
 EP_pus_noop (struct lsqpack_enc *enc, struct encode_ctx *ctx)
 {
     return LQES_OK;
+}
+
+static enum lsqpack_enc_status
+EP_pus_new (struct lsqpack_enc *enc, struct encode_ctx *ctx)
+{
+    int s;
+
+    s = lsqpack_enc_push_entry(enc,
+            (const char *) ctx->ec_input.eci_name, ctx->ec_input.eci_namelen,
+            (const char *) ctx->ec_input.eci_value, ctx->ec_input.eci_valuelen);
+    if (s == 0)
+        return LQES_OK;
+    else if (errno == ENOMEM)
+        return LQES_NOMEM;
+    else
+        return LQES_ERROR;
 }
 
 /* Factors at play:
@@ -6375,7 +6400,7 @@ static const struct encode_program encode_programs[2][2][2][2][2] =
   */
     [1][0][1][A][A] = {{ EP_enc_none, EP_dyn_none, EP_hea_static_match, EP_pus_noop, }},
     [1][0][0][0][A] = {{ EP_enc_none, EP_dyn_none, EP_hea_lit_with_name, EP_pus_noop, }},
-    [1][0][0][1][0] = {{ EP_enc_ins_nameref, EP_dyn_none, EP_hea_lit_with_name, EP_pus_noop, }},
+    [1][0][0][1][0] = {{ EP_enc_ins_nameref, EP_dyn_new, EP_hea_lit_with_name, EP_pus_new, }},
 #undef A
 };
 
@@ -6430,24 +6455,18 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     enc_ctx.ec_input.eci_enc_sz     = *enc_sz;
     enc_ctx.ec_input.eci_found      = ef;
     enc_ctx.ec_input.eci_no_index   = !!(flags & LQEF_NO_INDEX);
-    enc_ctx.ec_output.eco_entry     = NULL;
 
     for (i = 0; i < sizeof(prog.ep_steps) / sizeof(prog.ep_steps[0]); ++i)
     {
         st = prog.ep_steps[i](enc, &enc_ctx);
         if (st != LQES_OK)
-            goto err;
+            return st;
     }
 
     assert(st == LQES_OK);
     *enc_sz    = enc_ctx.ec_output.eco_enc_sz;
     *header_sz = enc_ctx.ec_output.eco_header_sz;
     return LQES_OK;
-
-  err:
-    if (enc_ctx.ec_output.eco_entry)
-        free(enc_ctx.ec_output.eco_entry);
-    return st;
 }
 
 
