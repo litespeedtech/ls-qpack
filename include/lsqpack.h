@@ -67,6 +67,12 @@ enum lsqpack_enc_status
     LQES_NOBUF_HEAD,
 };
 
+enum lsqpack_enc_flags
+{
+    LQEF_NOFLAGS    = 0 << 0,
+    LQEF_NO_INDEX   = 1 << 0,
+};
+
 /**
  * Encode name/value pair in current header block.
  *
@@ -79,7 +85,8 @@ lsqpack_enc_encode (struct lsqpack_enc *,
     unsigned char *enc_buf, size_t *enc_sz,
     unsigned char *header_buf, size_t *header_sz,
     const char *name, lsqpack_strlen_t name_sz,
-    const char *value, lsqpack_strlen_t value_sz);
+    const char *value, lsqpack_strlen_t value_sz,
+    enum lsqpack_enc_flags);
 
 /**
  * End current header block.  The Header Data Prefix is written to `buf'.

@@ -83,7 +83,7 @@ run_header_test (const struct qpack_header_block_test *test)
                 test->qhbt_headers[i].name,
                 strlen(test->qhbt_headers[i].name),
                 test->qhbt_headers[i].value,
-                strlen(test->qhbt_headers[i].value));
+                strlen(test->qhbt_headers[i].value), 0);
         assert(enc_st == LQES_OK);
         enc_off += enc_sz;
         header_off += header_sz;

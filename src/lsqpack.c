@@ -6153,6 +6153,7 @@ struct encode_ctx
         lsqpack_strlen_t    eci_namelen,
                             eci_valuelen;
         struct enc_found    eci_found;
+        unsigned            eci_no_index;
         unsigned char      *eci_enc_buf,
                            *eci_header_buf;
         size_t              eci_enc_sz,
@@ -6239,12 +6240,11 @@ static enum lsqpack_enc_status
 EP_hea_lit_with_name (struct lsqpack_enc *enc, struct encode_ctx *ctx)
 {
     unsigned char *h_dst;
-    unsigned never = 0;         /* TODO: parameterize */
     int r;
 
     h_dst = ctx->ec_input.eci_header_buf;
     *h_dst = 0x40
-           | (never << 5)
+           | (ctx->ec_input.eci_no_index << 5)
            | ((TT_STATIC == ctx->ec_input.eci_found.ef_table_type) << 4)
            ;
     h_dst = qenc_enc_int(h_dst,
@@ -6306,13 +6306,14 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         unsigned char *enc_buf, size_t *enc_sz,
         unsigned char *header_buf, size_t *header_sz,
         const char *name, lsqpack_strlen_t name_len,
-        const char *value, lsqpack_strlen_t value_len)
+        const char *value, lsqpack_strlen_t value_len,
+        enum lsqpack_enc_flags flags)
 {
     struct encode_program prog;
     struct encode_ctx enc_ctx;
     struct enc_found ef;
     enum lsqpack_enc_status st;
-    int index = 1;  /* TODO: make a parameter out of it */
+    int index;
     int risk = 0;   /* TODO: add logic behind this as well */
     unsigned i;
 
@@ -6322,8 +6323,11 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     if (*header_sz == 0)
         return LQES_NOBUF_HEAD;
 
-    if (DYNAMIC_ENTRY_OVERHEAD + name_len + value_len > enc->qpe_cur_capacity)
+    if (flags & LQEF_NO_INDEX)
         index = 0;
+    else
+        index = DYNAMIC_ENTRY_OVERHEAD + name_len + value_len
+                                                <= enc->qpe_cur_capacity;
 
     ef = qenc_find_table_id(enc, name, name_len, value, value_len);
 
@@ -6343,6 +6347,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     enc_ctx.ec_input.eci_enc_buf    = enc_buf;
     enc_ctx.ec_input.eci_enc_sz     = *enc_sz;
     enc_ctx.ec_input.eci_found      = ef;
+    enc_ctx.ec_input.eci_no_index   = !!(flags & LQEF_NO_INDEX);
     enc_ctx.ec_output.eco_entry     = NULL;
 
     for (i = 0; i < sizeof(prog.ep_steps) / sizeof(prog.ep_steps[0]); ++i)
