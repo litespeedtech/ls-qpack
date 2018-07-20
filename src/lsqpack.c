@@ -6148,6 +6148,10 @@ struct encode_ctx
 {
     /* Input */
     struct {
+        const unsigned char*eci_name,
+                           *eci_value;
+        lsqpack_strlen_t    eci_namelen,
+                            eci_valuelen;
         struct enc_found    eci_found;
         unsigned char      *eci_enc_buf,
                            *eci_header_buf;
@@ -6232,6 +6236,35 @@ EP_hea_static_match (struct lsqpack_enc *enc, struct encode_ctx *ctx)
 }
 
 static enum lsqpack_enc_status
+EP_hea_lit_with_name (struct lsqpack_enc *enc, struct encode_ctx *ctx)
+{
+    unsigned char *h_dst;
+    unsigned never = 0;         /* TODO: parameterize */
+    int r;
+
+    h_dst = ctx->ec_input.eci_header_buf;
+    *h_dst = 0x40
+           | (never << 5)
+           | ((TT_STATIC == ctx->ec_input.eci_found.ef_table_type) << 4)
+           ;
+    h_dst = qenc_enc_int(h_dst,
+                ctx->ec_input.eci_header_buf + ctx->ec_input.eci_header_sz,
+                ctx->ec_input.eci_found.ef_entry_id, 4);
+    if (h_dst <= ctx->ec_input.eci_header_buf)
+        return LQES_NOBUF_HEAD;
+
+    r = lsqpack_enc_enc_str(h_dst,
+                ctx->ec_input.eci_header_buf - h_dst,
+                ctx->ec_input.eci_value, ctx->ec_input.eci_valuelen);
+    if (r < 0)
+        return LQES_NOBUF_HEAD;
+
+    h_dst += (unsigned) r;
+    ctx->ec_output.eco_header_sz = h_dst - ctx->ec_input.eci_header_buf;
+    return LQES_OK;
+}
+
+static enum lsqpack_enc_status
 EP_pus_noop (struct lsqpack_enc *enc, struct encode_ctx *ctx)
 {
     return LQES_OK;
@@ -6265,6 +6298,7 @@ static const struct encode_program encode_programs[2][2][2][2][2] =
   *  V       V       V       V       V
   */
     [1     ][0     ][1     ][0 ...1][0 ...1] = {{ EP_enc_none, EP_dyn_none, EP_hea_static_match, EP_pus_noop, }},
+    [1     ][0     ][0     ][0     ][0 ...1] = {{ EP_enc_none, EP_dyn_none, EP_hea_lit_with_name, EP_pus_noop, }},
 };
 
 enum lsqpack_enc_status
@@ -6300,6 +6334,10 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                 [index]
                 [risk];
 
+    enc_ctx.ec_input.eci_name       = (const unsigned char *) name;
+    enc_ctx.ec_input.eci_value      = (const unsigned char *) value;
+    enc_ctx.ec_input.eci_namelen    = name_len;
+    enc_ctx.ec_input.eci_valuelen   = value_len;
     enc_ctx.ec_input.eci_header_buf = header_buf;
     enc_ctx.ec_input.eci_header_sz  = *header_sz;
     enc_ctx.ec_input.eci_enc_buf    = enc_buf;
