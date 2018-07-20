@@ -23,6 +23,7 @@ static const struct qpack_header_block_test
     unsigned        qhbt_n_headers;
     struct {
         const char *name, *value;
+        enum lsqpack_enc_flags flags;
     }               qhbt_headers[10];
 
     /* Output: */
@@ -36,11 +37,12 @@ static const struct qpack_header_block_test
     unsigned char   qhbt_header_buf[HEADER_BUF_SZ];
 } header_block_tests[] =
 {
+
     {
         .qhbt_lineno        = __LINE__,
         .qhbt_n_headers     = 1,
         .qhbt_headers       = {
-            { ":method", "GET", },
+            { ":method", "GET", 0, },
         },
         .qhbt_enc_sz        = 0,
         .qhbt_prefix_sz     = 2,
@@ -50,6 +52,24 @@ static const struct qpack_header_block_test
             0x80 | 0x40 | 2,
         },
     },
+
+    {
+        .qhbt_lineno        = __LINE__,
+        .qhbt_n_headers     = 1,
+        .qhbt_headers       = {
+            { ":method", "method", LQEF_NO_INDEX, },
+        },
+        .qhbt_enc_sz        = 0,
+        .qhbt_prefix_sz     = 2,
+        .qhbt_prefix_buf    = "\x00\x00",
+        .qhbt_header_sz     = 8,
+        .qhbt_header_buf    = {
+            0x40 | 2,
+            0x80 /* Huffman */ | 5 /* length */,
+            0xa4, 0xa9, 0x9c, 0xf2, 0x7f
+        },
+    },
+
 };
 
 

@@ -6254,8 +6254,8 @@ EP_hea_lit_with_name (struct lsqpack_enc *enc, struct encode_ctx *ctx)
         return LQES_NOBUF_HEAD;
 
     r = lsqpack_enc_enc_str(h_dst,
-                ctx->ec_input.eci_header_buf - h_dst,
-                ctx->ec_input.eci_value, ctx->ec_input.eci_valuelen);
+            ctx->ec_input.eci_header_buf + ctx->ec_input.eci_header_sz - h_dst,
+            ctx->ec_input.eci_value, ctx->ec_input.eci_valuelen);
     if (r < 0)
         return LQES_NOBUF_HEAD;
 

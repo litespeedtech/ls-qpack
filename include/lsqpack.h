@@ -69,7 +69,6 @@ enum lsqpack_enc_status
 
 enum lsqpack_enc_flags
 {
-    LQEF_NOFLAGS    = 0 << 0,
     LQEF_NO_INDEX   = 1 << 0,
 };
 
