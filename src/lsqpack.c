@@ -44,7 +44,7 @@ SOFTWARE.
  * " The size of an entry is the sum of its name's length in octets (as
  * " defined in Section 5.2), its value's length in octets, and 32.
  */
-#define DYNAMIC_ENTRY_OVERHEAD 32
+#define DYNAMIC_ENTRY_OVERHEAD 32u
 
 #define NAME_VAL(a, b) sizeof(a) - 1, sizeof(b) - 1, (a), (b)
 
@@ -5740,19 +5740,18 @@ lsqpack_enc_get_stx_tab_id (const char *name, lsqpack_strlen_t name_len,
 }
 
 
-enum found {
-    EI_NOT_FOUND,
-    EI_STATIC_NO_VAL,
-    EI_STATIC_WITH_VAL,
-    EI_DYNAMIC_NO_VAL,
-    EI_DYNAMIC_WITH_VAL,
+enum table_type {
+    TT_STATIC = 0,
+    TT_DYNAMIC = 1,
 };
 
 
 struct enc_found
 {
-    enum found                          ei_type;
-    lsqpack_abs_id_t                    ei_id;
+    int                 ef_found;
+    enum table_type     ef_table_type;
+    lsqpack_abs_id_t    ef_entry_id;
+    int                 ef_value_match;
 };
 
 
@@ -5770,7 +5769,7 @@ qenc_find_table_id (struct lsqpack_enc *enc, const char *name,
     static_table_id = lsqpack_enc_get_stx_tab_id(name, name_len, value,
                                                     value_len, &val_matched);
     if (static_table_id > 0 && val_matched)
-        return (struct enc_found) { EI_STATIC_WITH_VAL, static_table_id, };
+        return (struct enc_found) { 1, TT_STATIC, static_table_id, 1, };
 
     /* Search by name and value: */
     XXH32_reset(&hash_state, (uintptr_t) enc);
@@ -5793,14 +5792,14 @@ qenc_find_table_id (struct lsqpack_enc *enc, const char *name,
             0 == memcmp(name, ETE_NAME(entry), name_len) &&
             0 == memcmp(value, ETE_VALUE(entry), value_len))
         {
-            return (struct enc_found) { EI_DYNAMIC_WITH_VAL, entry->ete_id, };
+            return (struct enc_found) { 1, TT_DYNAMIC, entry->ete_id, 1, };
         }
 
     /* Name/value match is not found, but if the caller found a matching
      * static table entry, no need to continue to search:
      */
     if (static_table_id > 0)
-        return (struct enc_found) { EI_STATIC_NO_VAL, static_table_id, };
+        return (struct enc_found) { 1, TT_STATIC, static_table_id, 0, };
 
     /* Search by name only: */
     buckno = BUCKNO(enc->qpe_nbits, name_hash);
@@ -5809,10 +5808,10 @@ qenc_find_table_id (struct lsqpack_enc *enc, const char *name,
             name_len == entry->ete_name_len &&
             0 == memcmp(name, ETE_NAME(entry), name_len))
         {
-            return (struct enc_found) { EI_DYNAMIC_NO_VAL, entry->ete_id, };
+            return (struct enc_found) { 1, TT_DYNAMIC, entry->ete_id, 0, };
         }
 
-    return (struct enc_found) { EI_NOT_FOUND };
+    return (struct enc_found) { 0, 0, 0, 0, };
 }
 
 
@@ -5850,7 +5849,7 @@ qenc_enc_int (unsigned char *dst, unsigned char *const end, uint32_t value,
 
 
 #if !LS_HPACK_EMIT_TEST_CODE
-static 
+static
 #endif
        int
 qenc_huffman_enc (const unsigned char *src, const unsigned char *const src_end,
@@ -6145,6 +6144,128 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
     return 2;
 }
 
+struct encode_ctx
+{
+    /* Input */
+    struct {
+        struct enc_found    eci_found;
+        unsigned char      *eci_enc_buf,
+                           *eci_header_buf;
+        size_t              eci_enc_sz,
+                            eci_header_sz;
+    }               ec_input;
+
+    /* Output */
+    struct {
+        /* Step 1: write to encoder stream */
+        size_t                           eco_enc_sz;
+
+        /* Step 2: create table entry and assign a provisional absolute index */
+        struct lsqpack_enc_table_entry  *eco_entry;
+
+        /* Step 3: write to header stream */
+        size_t                           eco_header_sz;
+
+        /* Step 4: push table entry */
+    }               ec_output;
+};
+
+
+typedef enum lsqpack_enc_status (*encode_step_f)(struct lsqpack_enc *,
+                                                    struct encode_ctx *);
+
+struct encode_program
+{
+    encode_step_f       ep_steps[4];
+};
+
+/* Functions that follow implement encoder program steps.  They are named
+ * using a two-part prefix:
+ *
+ *  EP  - this just means "Encoder Program".  This makes these functions easy
+ *        to locate.
+ *
+ *  enc, dyn, hea, pus  - The three-character second prefix signifies which
+ *                          step this is.  The meanings are:
+ *      enc - Write to encoder stream
+ *      dyn - Create dynamic table entry
+ *      hea - Write to header stream
+ *      pus - Push dynamic table entry
+ *
+ * In the rest of function names, the following bits have meanings:
+ *
+ *      none    - Assign NULL or 0 to value
+ *      noop    - Do nothing at all
+ */
+
+static enum lsqpack_enc_status
+EP_enc_none (struct lsqpack_enc *enc, struct encode_ctx *ctx)
+{
+    ctx->ec_output.eco_enc_sz = 0;
+    return LQES_OK;
+}
+
+static enum lsqpack_enc_status
+EP_dyn_none (struct lsqpack_enc *enc, struct encode_ctx *ctx)
+{
+    ctx->ec_output.eco_entry = NULL;
+    return LQES_OK;
+}
+
+static enum lsqpack_enc_status
+EP_hea_static_match (struct lsqpack_enc *enc, struct encode_ctx *ctx)
+{
+    unsigned char *h_dst;
+
+    h_dst = ctx->ec_input.eci_header_buf;
+    *h_dst = 0x80 | 0x40;
+    h_dst = qenc_enc_int(h_dst,
+                ctx->ec_input.eci_header_buf + ctx->ec_input.eci_header_sz,
+                ctx->ec_input.eci_found.ef_entry_id, 6);
+    if (h_dst > ctx->ec_input.eci_header_buf)
+    {
+        ctx->ec_output.eco_header_sz = h_dst - ctx->ec_input.eci_header_buf;
+        return LQES_OK;
+    }
+    else
+        return LQES_NOBUF_HEAD;
+}
+
+static enum lsqpack_enc_status
+EP_pus_noop (struct lsqpack_enc *enc, struct encode_ctx *ctx)
+{
+    return LQES_OK;
+}
+
+/* Factors at play:
+ *
+ *      - Found or not found
+ *      - Table: static or dynamic
+ *      - Value matched or not
+ *      - Index: yes/no
+ *      - Risk blocking: yes/no
+ *
+ * Effects:
+ *
+ *      - Output to encoder stream (if index=yes)
+ *      - Insert new dynamic entry into the table (if index=yes)
+ *      - Output to header stream.  This always happens, but the output
+ *        depends on the value of "risk blocking".
+ */
+static const struct encode_program encode_programs[2][2][2][2][2] =
+{
+ /*
+  *  ,--------------- Found or not found (bool)
+  *  |       ,------------ Static or dynamic (0 or 1, respectively)
+  *  |       |       ,--------- Value matched or not (bool)
+  *  |       |       |       ,------ To index or not to index (bool)
+  *  |       |       |       |       ,--- To risk blocking or not to risk (bool)
+  *  |       |       |       |       |
+  *  |       |       |       |       |
+  *  V       V       V       V       V
+  */
+    [1     ][0     ][1     ][0 ...1][0 ...1] = {{ EP_enc_none, EP_dyn_none, EP_hea_static_match, EP_pus_noop, }},
+};
 
 enum lsqpack_enc_status
 lsqpack_enc_encode (struct lsqpack_enc *enc,
@@ -6153,44 +6274,55 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         const char *name, lsqpack_strlen_t name_len,
         const char *value, lsqpack_strlen_t value_len)
 {
-    unsigned char *const header_end = header_buf + *header_sz;
-    unsigned char *const enc_end = enc_buf + *enc_sz;
-    unsigned char *dst;
+    struct encode_program prog;
+    struct encode_ctx enc_ctx;
     struct enc_found ef;
+    enum lsqpack_enc_status st;
+    int index = 1;  /* TODO: make a parameter out of it */
+    int risk = 0;   /* TODO: add logic behind this as well */
+    unsigned i;
 
     /* Encoding always outputs at least a byte to the header block.  If
      * no bytes are available, encoding cannot proceed.
      */
-    if (header_buf >= header_end)
+    if (*header_sz == 0)
         return LQES_NOBUF_HEAD;
 
+    if (DYNAMIC_ENTRY_OVERHEAD + name_len + value_len > enc->qpe_cur_capacity)
+        index = 0;
+
     ef = qenc_find_table_id(enc, name, name_len, value, value_len);
-    switch (ef.ei_type)
+
+    prog = encode_programs
+                [ef.ef_found]
+                [ef.ef_table_type]
+                [ef.ef_value_match]
+                [index]
+                [risk];
+
+    enc_ctx.ec_input.eci_header_buf = header_buf;
+    enc_ctx.ec_input.eci_header_sz  = *header_sz;
+    enc_ctx.ec_input.eci_enc_buf    = enc_buf;
+    enc_ctx.ec_input.eci_enc_sz     = *enc_sz;
+    enc_ctx.ec_input.eci_found      = ef;
+    enc_ctx.ec_output.eco_entry     = NULL;
+
+    for (i = 0; i < sizeof(prog.ep_steps) / sizeof(prog.ep_steps[0]); ++i)
     {
-    case EI_STATIC_WITH_VAL:
-        dst = header_buf;
-        *dst = 0x80 | 0x40;
-        dst = qenc_enc_int(dst, header_end, ef.ei_id, 6);
-        if (dst > header_buf)
-        {
-            *header_sz = dst - header_buf;
-            *enc_sz = 0;
-            return LQES_OK;
-        }
-        else
-            return LQES_NOBUF_HEAD;
-    case EI_STATIC_NO_VAL:
-        break;
-    case EI_DYNAMIC_WITH_VAL:
-        break;
-    case EI_DYNAMIC_NO_VAL:
-        break;
-    default:
-        assert(ef.ei_type == EI_NOT_FOUND);
-        break;
+        st = prog.ep_steps[i](enc, &enc_ctx);
+        if (st != LQES_OK)
+            goto err;
     }
 
-    return 0;
+    assert(st == LQES_OK);
+    *enc_sz    = enc_ctx.ec_output.eco_enc_sz;
+    *header_sz = enc_ctx.ec_output.eco_header_sz;
+    return LQES_OK;
+
+  err:
+    if (enc_ctx.ec_output.eco_entry)
+        free(enc_ctx.ec_output.eco_entry);
+    return st;
 }
 
 
