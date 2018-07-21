@@ -6223,134 +6223,21 @@ struct encode_ctx
 };
 
 
-typedef enum lsqpack_enc_status (*encode_step_f)(struct lsqpack_enc *,
-                                                    struct encode_ctx *);
-
 struct encode_program
 {
-    encode_step_f       ep_steps[3];
+    enum {
+        EEA_NONE,
+        EEA_INS_NAMEREF,
+    }           ep_enc_action;
+    enum {
+        EHA_STATIC_MATCH,
+        EHA_LIT_WITH_NAME,
+    }           ep_hea_action;
+    enum {
+        ETA_NOOP,
+        ETA_NEW,
+    }           ep_tab_action;
 };
-
-/* Functions that follow implement encoder program steps.  They are named
- * using a two-part prefix:
- *
- *  EP  - this just means "Encoder Program".  This makes these functions easy
- *        to locate.
- *
- *  enc, hea, pus  - The three-character second prefix signifies which
- *                          step this is.  The meanings are:
- *      enc - Write to encoder stream
- *      hea - Write to header stream
- *      pus - Create and push dynamic table entry
- *
- * In the rest of function names, the following bits have meanings:
- *
- *      none    - Assign NULL or 0 to value
- *      noop    - Do nothing at all
- */
-
-static enum lsqpack_enc_status
-EP_enc_none (struct lsqpack_enc *enc, struct encode_ctx *ctx)
-{
-    ctx->ec_output.eco_enc_sz = 0;
-    return LQES_OK;
-}
-
-static enum lsqpack_enc_status
-EP_hea_static_match (struct lsqpack_enc *enc, struct encode_ctx *ctx)
-{
-    unsigned char *h_dst;
-
-    h_dst = ctx->ec_input.eci_header_buf;
-    *h_dst = 0x80 | 0x40;
-    h_dst = qenc_enc_int(h_dst,
-                ctx->ec_input.eci_header_buf + ctx->ec_input.eci_header_sz,
-                ctx->ec_input.eci_found.ef_entry_id, 6);
-    if (h_dst > ctx->ec_input.eci_header_buf)
-    {
-        ctx->ec_output.eco_header_sz = h_dst - ctx->ec_input.eci_header_buf;
-        return LQES_OK;
-    }
-    else
-        return LQES_NOBUF_HEAD;
-}
-
-static enum lsqpack_enc_status
-EP_hea_lit_with_name (struct lsqpack_enc *enc, struct encode_ctx *ctx)
-{
-    unsigned char *h_dst;
-    int r;
-
-    h_dst = ctx->ec_input.eci_header_buf;
-    *h_dst = 0x40
-           | (ctx->ec_input.eci_no_index << 5)
-           | ((TT_STATIC == ctx->ec_input.eci_found.ef_table_type) << 4)
-           ;
-    h_dst = qenc_enc_int(h_dst,
-                ctx->ec_input.eci_header_buf + ctx->ec_input.eci_header_sz,
-                ctx->ec_input.eci_found.ef_entry_id, 4);
-    if (h_dst <= ctx->ec_input.eci_header_buf)
-        return LQES_NOBUF_HEAD;
-
-    r = lsqpack_enc_enc_str(h_dst,
-            ctx->ec_input.eci_header_buf + ctx->ec_input.eci_header_sz - h_dst,
-            ctx->ec_input.eci_value, ctx->ec_input.eci_valuelen);
-    if (r < 0)
-        return LQES_NOBUF_HEAD;
-
-    h_dst += (unsigned) r;
-    ctx->ec_output.eco_header_sz = h_dst - ctx->ec_input.eci_header_buf;
-    return LQES_OK;
-}
-
-static enum lsqpack_enc_status
-EP_enc_ins_nameref (struct lsqpack_enc *enc, struct encode_ctx *ctx)
-{
-    unsigned char *e_dst;
-    int r;
-
-    e_dst = ctx->ec_input.eci_enc_buf;
-    *e_dst = 0x80
-           | ((TT_STATIC == ctx->ec_input.eci_found.ef_table_type) << 6)
-           ;
-    e_dst = qenc_enc_int(e_dst,
-                ctx->ec_input.eci_enc_buf + ctx->ec_input.eci_enc_sz,
-                ctx->ec_input.eci_found.ef_entry_id, 6);
-    if (e_dst <= ctx->ec_input.eci_enc_buf)
-        return LQES_NOBUF_ENC;
-
-    r = lsqpack_enc_enc_str(e_dst,
-            ctx->ec_input.eci_enc_buf + ctx->ec_input.eci_enc_sz - e_dst,
-            ctx->ec_input.eci_value, ctx->ec_input.eci_valuelen);
-    if (r < 0)
-        return LQES_NOBUF_ENC;
-
-    e_dst += (unsigned) r;
-    ctx->ec_output.eco_enc_sz = e_dst - ctx->ec_input.eci_header_buf;
-    return LQES_OK;
-}
-
-static enum lsqpack_enc_status
-EP_pus_noop (struct lsqpack_enc *enc, struct encode_ctx *ctx)
-{
-    return LQES_OK;
-}
-
-static enum lsqpack_enc_status
-EP_pus_new (struct lsqpack_enc *enc, struct encode_ctx *ctx)
-{
-    int s;
-
-    s = lsqpack_enc_push_entry(enc,
-            (const char *) ctx->ec_input.eci_name, ctx->ec_input.eci_namelen,
-            (const char *) ctx->ec_input.eci_value, ctx->ec_input.eci_valuelen);
-    if (s == 0)
-        return LQES_OK;
-    else if (errno == ENOMEM)
-        return LQES_NOMEM;
-    else
-        return LQES_ERROR;
-}
 
 /* Factors at play:
  *
@@ -6381,32 +6268,34 @@ static const struct encode_program encode_programs[2][2][2][2][2] =
   *  |  |  |  |  |
   *  V  V  V  V  V
   */
-    [1][0][1][A][A] = {{ EP_enc_none, EP_hea_static_match, EP_pus_noop, }},
-    [1][0][0][0][A] = {{ EP_enc_none, EP_hea_lit_with_name, EP_pus_noop, }},
-    [1][0][0][1][0] = {{ EP_enc_ins_nameref, EP_hea_lit_with_name, EP_pus_new, }},
+    [1][0][1][A][A] = { EEA_NONE,        EHA_STATIC_MATCH,  ETA_NOOP, },
+    [1][0][0][0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME, ETA_NOOP, },
+    [1][0][0][1][0] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME, ETA_NEW,  },
 #undef A
 };
 
 enum lsqpack_enc_status
 lsqpack_enc_encode (struct lsqpack_enc *enc,
-        unsigned char *enc_buf, size_t *enc_sz,
-        unsigned char *header_buf, size_t *header_sz,
+        unsigned char *enc_buf, size_t *enc_sz_p,
+        unsigned char *hea_buf, size_t *hea_sz_p,
         const char *name, lsqpack_strlen_t name_len,
         const char *value, lsqpack_strlen_t value_len,
         enum lsqpack_enc_flags flags)
 {
+    unsigned char *const enc_buf_end = enc_buf + *enc_sz_p;
+    unsigned char *const hea_buf_end = hea_buf + *hea_sz_p;
     struct encode_program prog;
-    struct encode_ctx enc_ctx;
     struct enc_found ef;
-    enum lsqpack_enc_status st;
-    int index;
-    int risk;
-    unsigned i;
+    int index, risk;
+
+    size_t enc_sz, hea_sz;
+    unsigned char *dst;
+    int r;
 
     /* Encoding always outputs at least a byte to the header block.  If
      * no bytes are available, encoding cannot proceed.
      */
-    if (*header_sz == 0)
+    if (hea_buf == hea_buf_end)
         return LQES_NOBUF_HEAD;
 
     index = !(flags & LQEF_NO_INDEX)
@@ -6427,27 +6316,77 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                 [index]
                 [risk];
 
-    enc_ctx.ec_input.eci_name       = (const unsigned char *) name;
-    enc_ctx.ec_input.eci_value      = (const unsigned char *) value;
-    enc_ctx.ec_input.eci_namelen    = name_len;
-    enc_ctx.ec_input.eci_valuelen   = value_len;
-    enc_ctx.ec_input.eci_header_buf = header_buf;
-    enc_ctx.ec_input.eci_header_sz  = *header_sz;
-    enc_ctx.ec_input.eci_enc_buf    = enc_buf;
-    enc_ctx.ec_input.eci_enc_sz     = *enc_sz;
-    enc_ctx.ec_input.eci_found      = ef;
-    enc_ctx.ec_input.eci_no_index   = !!(flags & LQEF_NO_INDEX);
-
-    for (i = 0; i < sizeof(prog.ep_steps) / sizeof(prog.ep_steps[0]); ++i)
+    switch (prog.ep_enc_action)
     {
-        st = prog.ep_steps[i](enc, &enc_ctx);
-        if (st != LQES_OK)
-            return st;
+    case EEA_INS_NAMEREF:
+        dst = enc_buf;
+        *dst = 0x80
+               | ((TT_STATIC == ef.ef_table_type) << 6)
+               ;
+        dst = qenc_enc_int(dst, enc_buf_end, ef.ef_entry_id, 6);
+        if (dst <= enc_buf)
+            return LQES_NOBUF_ENC;
+        r = lsqpack_enc_enc_str(dst, enc_buf_end - dst,
+                                    (const unsigned char *) value, value_len);
+        if (r < 0)
+            return LQES_NOBUF_ENC;
+        dst += (unsigned) r;
+        enc_sz = dst - enc_buf;
+        break;
+    default:
+        assert(EEA_NONE == prog.ep_enc_action);
+        enc_sz = 0;
+        break;
     }
 
-    assert(st == LQES_OK);
-    *enc_sz    = enc_ctx.ec_output.eco_enc_sz;
-    *header_sz = enc_ctx.ec_output.eco_header_sz;
+    switch (prog.ep_hea_action)
+    {
+    case EHA_STATIC_MATCH:
+        dst = hea_buf;
+        *dst = 0x80 | 0x40;
+        dst = qenc_enc_int(dst, hea_buf_end, ef.ef_entry_id, 6);
+        if (dst <= hea_buf)
+            return LQES_NOBUF_HEAD;
+        hea_sz = dst - hea_buf;
+        break;
+    default:
+        assert(prog.ep_hea_action == EHA_LIT_WITH_NAME);
+        dst = hea_buf;
+        *dst = 0x40
+               | ((flags & LQEF_NO_INDEX) > 0 << 5)
+               | ((TT_STATIC == ef.ef_table_type) << 4)
+               ;
+        dst = qenc_enc_int(dst, hea_buf_end, ef.ef_entry_id, 4);
+        if (dst <= hea_buf)
+            return LQES_NOBUF_HEAD;
+        r = lsqpack_enc_enc_str(dst, hea_buf_end - dst,
+                                (const unsigned char *) value, value_len);
+        if (r < 0)
+            return LQES_NOBUF_HEAD;
+        dst += (unsigned) r;
+        hea_sz = dst - hea_buf;
+        break;
+    }
+
+    switch (prog.ep_tab_action)
+    {
+    case ETA_NEW:
+        r = lsqpack_enc_push_entry(enc, name, name_len, value, value_len);
+        if (r != 0)
+        {
+            if (errno == ENOMEM)
+                return LQES_NOMEM;
+            else
+                return LQES_ERROR;  /* XXX there is no error besides OOM */
+        }
+        break;
+    default:
+        assert(prog.ep_tab_action == ETA_NOOP);
+        break;
+    }
+
+    *enc_sz_p = enc_sz;
+    *hea_sz_p = hea_sz;
     return LQES_OK;
 }
 
