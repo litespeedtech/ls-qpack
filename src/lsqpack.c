@@ -6228,7 +6228,7 @@ typedef enum lsqpack_enc_status (*encode_step_f)(struct lsqpack_enc *,
 
 struct encode_program
 {
-    encode_step_f       ep_steps[4];
+    encode_step_f       ep_steps[3];
 };
 
 /* Functions that follow implement encoder program steps.  They are named
@@ -6237,12 +6237,11 @@ struct encode_program
  *  EP  - this just means "Encoder Program".  This makes these functions easy
  *        to locate.
  *
- *  enc, dyn, hea, pus  - The three-character second prefix signifies which
+ *  enc, hea, pus  - The three-character second prefix signifies which
  *                          step this is.  The meanings are:
  *      enc - Write to encoder stream
- *      dyn - Create dynamic table entry
  *      hea - Write to header stream
- *      pus - Push dynamic table entry
+ *      pus - Create and push dynamic table entry
  *
  * In the rest of function names, the following bits have meanings:
  *
@@ -6254,12 +6253,6 @@ static enum lsqpack_enc_status
 EP_enc_none (struct lsqpack_enc *enc, struct encode_ctx *ctx)
 {
     ctx->ec_output.eco_enc_sz = 0;
-    return LQES_OK;
-}
-
-static enum lsqpack_enc_status
-EP_dyn_none (struct lsqpack_enc *enc, struct encode_ctx *ctx)
-{
     return LQES_OK;
 }
 
@@ -6309,16 +6302,6 @@ EP_hea_lit_with_name (struct lsqpack_enc *enc, struct encode_ctx *ctx)
     ctx->ec_output.eco_header_sz = h_dst - ctx->ec_input.eci_header_buf;
     return LQES_OK;
 }
-
-static enum lsqpack_enc_status
-EP_dyn_new (struct lsqpack_enc *enc, struct encode_ctx *ctx)
-{
-    if (enc->qpe_ins_count < LSQPACK_MAX_ABS_ID)
-        return LQES_OK;
-    else
-        return LQES_ABS_MAX;
-}
-
 
 static enum lsqpack_enc_status
 EP_enc_ins_nameref (struct lsqpack_enc *enc, struct encode_ctx *ctx)
@@ -6398,9 +6381,9 @@ static const struct encode_program encode_programs[2][2][2][2][2] =
   *  |  |  |  |  |
   *  V  V  V  V  V
   */
-    [1][0][1][A][A] = {{ EP_enc_none, EP_dyn_none, EP_hea_static_match, EP_pus_noop, }},
-    [1][0][0][0][A] = {{ EP_enc_none, EP_dyn_none, EP_hea_lit_with_name, EP_pus_noop, }},
-    [1][0][0][1][0] = {{ EP_enc_ins_nameref, EP_dyn_new, EP_hea_lit_with_name, EP_pus_new, }},
+    [1][0][1][A][A] = {{ EP_enc_none, EP_hea_static_match, EP_pus_noop, }},
+    [1][0][0][0][A] = {{ EP_enc_none, EP_hea_lit_with_name, EP_pus_noop, }},
+    [1][0][0][1][0] = {{ EP_enc_ins_nameref, EP_hea_lit_with_name, EP_pus_new, }},
 #undef A
 };
 
@@ -6426,11 +6409,10 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     if (*header_sz == 0)
         return LQES_NOBUF_HEAD;
 
-    if (flags & LQEF_NO_INDEX)
-        index = 0;
-    else
-        index = DYNAMIC_ENTRY_OVERHEAD + name_len + value_len
-                                                <= enc->qpe_max_capacity;
+    index = !(flags & LQEF_NO_INDEX)
+        && DYNAMIC_ENTRY_OVERHEAD + name_len + value_len
+                                                <= enc->qpe_max_capacity
+        && enc->qpe_ins_count < LSQPACK_MAX_ABS_ID;
 
     risk = enc->qpe_cur_header.n_risked > 0
         || enc->qpe_cur_header.others_at_risk
