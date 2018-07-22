@@ -5798,6 +5798,8 @@ qenc_find_table_id (struct lsqpack_enc *enc, const char *name,
         if (nameval_hash == entry->ete_nameval_hash &&
             name_len == entry->ete_name_len &&
             value_len == entry->ete_val_len &&
+            (enc->qpe_cur_header.search_cutoff == 0
+                || entry->ete_id > enc->qpe_cur_header.search_cutoff) &&
             0 == memcmp(name, ETE_NAME(entry), name_len) &&
             0 == memcmp(value, ETE_VALUE(entry), value_len))
         {
@@ -6151,6 +6153,7 @@ lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
     enc->qpe_cur_header.max_ref = 0;
     enc->qpe_cur_header.base_idx = 0;
     enc->qpe_cur_header.n_risked = 0;
+    enc->qpe_cur_header.search_cutoff = 0;
     enc->qpe_n_hinfos++;
 
     /* Check if there are other header blocks with the same stream ID that
@@ -6244,6 +6247,48 @@ static const struct encode_program encode_programs[2][2][2][2][2] =
 #undef A
 };
 
+
+static int
+bitmask_empty (const lsqpack_bitmask_t bitmask)
+{
+    int is_zero;
+    unsigned i;
+
+    for (i = 0; i < LSQPACK_BITMASK_NELEMS; ++i)
+        is_zero &= bitmask[i] == 0;
+
+    return is_zero;
+}
+
+
+static int
+enc_has_or_can_evict_at_least (struct lsqpack_enc *enc, size_t new_entry_size)
+{
+    const struct lsqpack_enc_table_entry *entry;
+    size_t avail;
+
+    avail = enc->qpe_max_capacity - enc->qpe_cur_capacity;
+    if (avail >= new_entry_size)
+        return 1;
+
+    STAILQ_FOREACH(entry, &enc->qpe_all_entries, ete_next_all)
+        if (bitmask_empty(entry->ete_refs))
+        {
+            avail += DYNAMIC_ENTRY_OVERHEAD + entry->ete_name_len +
+                                                    entry->ete_val_len;
+            if (avail >= new_entry_size)
+            {
+                enc->qpe_cur_header.search_cutoff = entry->ete_id;
+                return 1;
+            }
+        }
+        else
+            return 0;
+
+    return 0;
+}
+
+
 enum lsqpack_enc_status
 lsqpack_enc_encode (struct lsqpack_enc *enc,
         unsigned char *enc_buf, size_t *enc_sz_p,
@@ -6269,9 +6314,9 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         return LQES_NOBUF_HEAD;
 
     index = !(flags & LQEF_NO_INDEX)
-        && DYNAMIC_ENTRY_OVERHEAD + name_len + value_len
-                                                <= enc->qpe_max_capacity
-        && enc->qpe_ins_count < LSQPACK_MAX_ABS_ID;
+        && enc->qpe_ins_count < LSQPACK_MAX_ABS_ID
+        && enc_has_or_can_evict_at_least(enc,
+                            DYNAMIC_ENTRY_OVERHEAD + name_len + value_len);
 
   restart:
     risk = enc->qpe_cur_header.n_risked > 0

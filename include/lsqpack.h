@@ -186,6 +186,10 @@ struct lsqpack_enc
         lsqpack_abs_id_t    max_ref;
         /* Base index */
         lsqpack_abs_id_t    base_idx;
+        /* Search cutoff -- to index, entries at this ID and below will be
+         * evicted and thus cannot be found during search.
+         */
+        lsqpack_abs_id_t    search_cutoff;
     }                           qpe_cur_header;
 };
 
