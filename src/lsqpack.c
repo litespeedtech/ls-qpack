@@ -6226,7 +6226,7 @@ struct encode_program
  */
 static const struct encode_program encode_programs[2][2][2][2][2] =
 {
-/* This makes table narrower */
+/* "A" is for "Any" (this makes the table narrower) */
 #define A 0 ... 1
  /*
   *  ,--------------- Found or not found (bool)
