@@ -6230,7 +6230,7 @@ struct encode_program
         EEA_INS_NAMEREF,
     }           ep_enc_action;
     enum {
-        EHA_STATIC_MATCH,
+        EHA_INDEXED,
         EHA_LIT_WITH_NAME,
     }           ep_hea_action;
     enum {
@@ -6268,7 +6268,7 @@ static const struct encode_program encode_programs[2][2][2][2][2] =
   *  |  |  |  |  |
   *  V  V  V  V  V
   */
-    [1][0][1][A][A] = { EEA_NONE,        EHA_STATIC_MATCH,  ETA_NOOP, },
+    [1][0][1][A][A] = { EEA_NONE,        EHA_INDEXED,       ETA_NOOP, },
     [1][0][0][0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME, ETA_NOOP, },
     [1][0][0][1][0] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME, ETA_NEW,  },
 #undef A
@@ -6342,7 +6342,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
 
     switch (prog.ep_hea_action)
     {
-    case EHA_STATIC_MATCH:
+    case EHA_INDEXED:
         dst = hea_buf;
         *dst = 0x80 | 0x40;
         dst = qenc_enc_int(dst, hea_buf_end, ef.ef_entry_id, 6);
