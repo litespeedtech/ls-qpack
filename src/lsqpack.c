@@ -5356,6 +5356,9 @@ struct lsqpack_enc_table_entry
 
 #define ETE_NAME(ete) ((ete)->ete_buf)
 #define ETE_VALUE(ete) (&(ete)->ete_buf[(ete)->ete_name_len])
+#define ENTRY_COST(name_len, value_len) (DYNAMIC_ENTRY_OVERHEAD + \
+                                                        name_len + value_len)
+#define ETE_SIZE(ete) ENTRY_COST((ete)->ete_name_len, (ete)->ete_val_len)
 
 
 #define N_BUCKETS(n_bits) (1U << (n_bits))
@@ -5995,8 +5998,7 @@ qenc_drop_oldest_entry (struct lsqpack_enc *enc)
     assert(entry == STAILQ_FIRST(&enc->qpe_buckets[buckno].by_name));
     STAILQ_REMOVE_HEAD(&enc->qpe_buckets[buckno].by_name, ete_next_name);
 
-    enc->qpe_cur_capacity -= DYNAMIC_ENTRY_OVERHEAD + entry->ete_name_len
-                                                        + entry->ete_val_len;
+    enc->qpe_cur_capacity -= ETE_SIZE(entry);
     --enc->qpe_nelem;
     free(entry);
 }
@@ -6103,7 +6105,7 @@ lsqpack_enc_push_entry (struct lsqpack_enc *enc, const char *name,
     STAILQ_INSERT_TAIL(&enc->qpe_buckets[buckno].by_name, entry,
                                                         ete_next_name);
 
-    enc->qpe_cur_capacity += DYNAMIC_ENTRY_OVERHEAD + name_len + value_len;
+    enc->qpe_cur_capacity += ENTRY_COST(name_len, value_len);
     ++enc->qpe_nelem;
     qenc_remove_overflow_entries(enc);
     return 0;
@@ -6274,8 +6276,7 @@ enc_has_or_can_evict_at_least (struct lsqpack_enc *enc, size_t new_entry_size)
     STAILQ_FOREACH(entry, &enc->qpe_all_entries, ete_next_all)
         if (bitmask_empty(entry->ete_refs))
         {
-            avail += DYNAMIC_ENTRY_OVERHEAD + entry->ete_name_len +
-                                                    entry->ete_val_len;
+            avail += ETE_SIZE(entry);
             if (avail >= new_entry_size)
             {
                 enc->qpe_cur_header.search_cutoff = entry->ete_id;
@@ -6315,8 +6316,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
 
     index = !(flags & LQEF_NO_INDEX)
         && enc->qpe_ins_count < LSQPACK_MAX_ABS_ID
-        && enc_has_or_can_evict_at_least(enc,
-                            DYNAMIC_ENTRY_OVERHEAD + name_len + value_len);
+        && enc_has_or_can_evict_at_least(enc, ENTRY_COST(name_len, value_len));
 
   restart:
     risk = enc->qpe_cur_header.n_risked > 0
