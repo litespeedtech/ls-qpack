@@ -6246,10 +6246,10 @@ static const struct encode_program encode_programs[2][2][2][2][2] =
   *  |  |  |  |  |
   *  V  V  V  V  V
   */
-    [1][0][1][A][A] = { EEA_NONE,        EHA_INDEXED,       ETA_NOOP, 0, },
     [1][0][0][0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME, ETA_NOOP, 0, },
     [1][0][0][1][0] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME, ETA_NEW,  0, },
     [1][0][0][1][1] = { EEA_INS_NAMEREF, EHA_INDEXED,       ETA_NEW,  EPF_HEA_NEW, },
+    [1][0][1][A][A] = { EEA_NONE,        EHA_INDEXED,       ETA_NOOP, 0, },
 #undef A
 };
 
