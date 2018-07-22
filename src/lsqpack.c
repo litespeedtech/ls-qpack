@@ -6212,6 +6212,9 @@ struct encode_program
         ETA_NOOP,
         ETA_NEW,
     }           ep_tab_action;
+    enum {
+        EPF_HEA_NEW     = 1 << 0,   /* New new entry ID in emitted header instruction */
+    }           ep_flags;
 };
 
 /* Factors at play:
@@ -6243,9 +6246,10 @@ static const struct encode_program encode_programs[2][2][2][2][2] =
   *  |  |  |  |  |
   *  V  V  V  V  V
   */
-    [1][0][1][A][A] = { EEA_NONE,        EHA_INDEXED,       ETA_NOOP, },
-    [1][0][0][0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME, ETA_NOOP, },
-    [1][0][0][1][0] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME, ETA_NEW,  },
+    [1][0][1][A][A] = { EEA_NONE,        EHA_INDEXED,       ETA_NOOP, 0, },
+    [1][0][0][0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME, ETA_NOOP, 0, },
+    [1][0][0][1][0] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME, ETA_NEW,  0, },
+    [1][0][0][1][1] = { EEA_INS_NAMEREF, EHA_INDEXED,       ETA_NEW,  EPF_HEA_NEW, },
 #undef A
 };
 
@@ -6306,6 +6310,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
 
     size_t enc_sz, hea_sz;
     unsigned char *dst;
+    lsqpack_abs_id_t id;
     int r;
 
     /* Encoding always outputs at least a byte to the header block.  If
@@ -6359,8 +6364,15 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     {
     case EHA_INDEXED:
         dst = hea_buf;
-        *dst = 0x80 | 0x40;
-        dst = qenc_enc_int(dst, hea_buf_end, ef.ef_entry_id, 6);
+        *dst = 0x80;
+        if (prog.ep_flags & EPF_HEA_NEW)
+            id = enc->qpe_ins_count + 1;
+        else
+        {
+            *dst |= ((TT_STATIC == ef.ef_table_type) << 6);
+            id = ef.ef_entry_id;
+        }
+        dst = qenc_enc_int(dst, hea_buf_end, id, 6);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         hea_sz = dst - hea_buf;
@@ -6369,7 +6381,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         assert(prog.ep_hea_action == EHA_LIT_WITH_NAME);
         dst = hea_buf;
         *dst = 0x40
-               | ((flags & LQEF_NO_INDEX) > 0 << 5)
+               | (((flags & LQEF_NO_INDEX) > 0) << 5)
                | ((TT_STATIC == ef.ef_table_type) << 4)
                ;
         dst = qenc_enc_int(dst, hea_buf_end, ef.ef_entry_id, 4);

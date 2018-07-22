@@ -68,11 +68,11 @@ static const struct qpack_header_block_test
         .qhbt_enc_sz        = 0,
         .qhbt_prefix_sz     = 2,
         .qhbt_prefix_buf    = "\x00\x00",
-        .qhbt_header_sz     = 8,
+        .qhbt_header_sz     = 7,
         .qhbt_header_buf    = {
-            0x40 | 2,
+            0x40 | 0x20 | 0x10 | 2,
             0x80 /* Huffman */ | 5 /* length */,
-            0xa4, 0xa9, 0x9c, 0xf2, 0x7f
+            0xa4, 0xa9, 0x9c, 0xf2, 0x7f,
         },
     },
 
@@ -84,19 +84,41 @@ static const struct qpack_header_block_test
         .qhbt_headers       = {
             { ":method", "method", 0, },
         },
-        .qhbt_enc_sz        = 8,
+        .qhbt_enc_sz        = 7,
         .qhbt_enc_buf       = {
             0x80 | 0x40 /* static */ | 2 /* name index */,
             0x80 /* Huffman */ | 5 /* length */,
-            0xa4, 0xa9, 0x9c, 0xf2, 0x7f
+            0xa4, 0xa9, 0x9c, 0xf2, 0x7f,
         },
         .qhbt_prefix_sz     = 2,
         .qhbt_prefix_buf    = "\x00\x00",
-        .qhbt_header_sz     = 8,
+        .qhbt_header_sz     = 7,
         .qhbt_header_buf    = {
-            0x40 | 2,
+            0x40 | 0x10 /* Static */ | 2,
             0x80 /* Huffman */ | 5 /* length */,
-            0xa4, 0xa9, 0x9c, 0xf2, 0x7f
+            0xa4, 0xa9, 0x9c, 0xf2, 0x7f,
+        },
+    },
+
+    {
+        .qhbt_lineno        = __LINE__,
+        .qhbt_table_size    = LSQPACK_DEF_DYN_TABLE_SIZE,
+        .qhbt_max_risked_streams = LSQPACK_DEF_DYN_TABLE_SIZE,
+        .qhbt_n_headers     = 1,
+        .qhbt_headers       = {
+            { ":method", "method", 0, },
+        },
+        .qhbt_enc_sz        = 7,
+        .qhbt_enc_buf       = {
+            0x80 | 0x40 /* static */ | 2 /* name index */,
+            0x80 /* Huffman */ | 5 /* length */,
+            0xa4, 0xa9, 0x9c, 0xf2, 0x7f,
+        },
+        .qhbt_prefix_sz     = 2,
+        .qhbt_prefix_buf    = "\x00\x00",   /* TODO: now we have  a dependency */
+        .qhbt_header_sz     = 1,
+        .qhbt_header_buf    = {
+            0x80 | 1 /* New dynamic ID */,
         },
     },
 
@@ -108,7 +130,7 @@ run_header_test (const struct qpack_header_block_test *test)
 {
     unsigned char header_buf[HEADER_BUF_SZ], enc_buf[ENC_BUF_SZ],
         prefix_buf[PREFIX_BUF_SZ];
-    off_t header_off, enc_off;
+    unsigned header_off, enc_off;
     size_t header_sz, enc_sz;
     struct lsqpack_enc enc;
     unsigned i;
@@ -144,6 +166,10 @@ run_header_test (const struct qpack_header_block_test *test)
     nw = lsqpack_enc_end_header(&enc, prefix_buf, sizeof(prefix_buf));
     assert(nw == test->qhbt_prefix_sz);
     assert(0 == memcmp(test->qhbt_prefix_buf, prefix_buf, nw));
+    assert(enc_off == test->qhbt_enc_sz);
+    assert(0 == memcmp(test->qhbt_enc_buf, enc_buf, enc_off));
+    assert(header_off == test->qhbt_header_sz);
+    assert(0 == memcmp(test->qhbt_header_buf, header_buf, header_off));
 
     lsqpack_enc_cleanup(&enc);
 }
