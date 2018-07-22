@@ -6192,36 +6192,6 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
         return 0;
 }
 
-struct encode_ctx
-{
-    /* Input */
-    struct {
-        const unsigned char*eci_name,
-                           *eci_value;
-        lsqpack_strlen_t    eci_namelen,
-                            eci_valuelen;
-        struct enc_found    eci_found;
-        unsigned            eci_no_index;
-        unsigned char      *eci_enc_buf,
-                           *eci_header_buf;
-        size_t              eci_enc_sz,
-                            eci_header_sz;
-    }               ec_input;
-
-    /* Output */
-    struct {
-        /* Step 1: write to encoder stream */
-        size_t                           eco_enc_sz;
-
-        /* Step 2: assign next dynamic entry ID */
-
-        /* Step 3: write to header stream */
-        size_t                           eco_header_sz;
-
-        /* Step 4: create and push table entry */
-    }               ec_output;
-};
-
 
 struct encode_program
 {
