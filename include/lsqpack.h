@@ -68,8 +68,6 @@ lsqpack_enc_start_header (struct lsqpack_enc *, uint64_t stream_id,
 enum lsqpack_enc_status
 {
     LQES_OK,
-    LQES_ERROR,     /* Bad.  Terminate. */
-    LQES_NOMEM,     /* Could not allocate memory to insert entry. */
     LQES_NOBUF_ENC,
     LQES_NOBUF_HEAD,
 };
