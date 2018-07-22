@@ -6303,6 +6303,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                                                 <= enc->qpe_max_capacity
         && enc->qpe_ins_count < LSQPACK_MAX_ABS_ID;
 
+  restart:
     risk = enc->qpe_cur_header.n_risked > 0
         || enc->qpe_cur_header.others_at_risk
         || enc->qpe_cur_streams_at_risk < enc->qpe_max_risked_streams;
@@ -6373,11 +6374,11 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     case ETA_NEW:
         r = lsqpack_enc_push_entry(enc, name, name_len, value, value_len);
         if (r != 0)
-        {
-            if (errno == ENOMEM)
-                return LQES_NOMEM;
-            else
-                return LQES_ERROR;  /* XXX there is no error besides OOM */
+        {   /* Push can only fail due to inability to allocate memory.
+             * In this case, fall back on encoding without indexing.
+             */
+            index = 0;
+            goto restart;
         }
         break;
     default:
