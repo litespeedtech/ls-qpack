@@ -6471,7 +6471,17 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         *dst = 0x20
                | (((flags & LQEF_NO_INDEX) > 0) << 4)
                ;
-        /* TODO */
+        r = lsqpack_enc_enc_str4(dst, hea_buf_end - dst,
+                                (const unsigned char *) name, name_len);
+        if (r < 0)
+            return LQES_NOBUF_HEAD;
+        dst += r;
+        r = lsqpack_enc_enc_str(dst, hea_buf_end - dst,
+                                (const unsigned char *) value, value_len);
+        if (r < 0)
+            return LQES_NOBUF_HEAD;
+        dst += r;
+        hea_sz = dst - hea_buf;
         break;
     default:
         assert(prog.ep_hea_action == EHA_LIT_WITH_NAME);
