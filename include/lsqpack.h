@@ -58,7 +58,9 @@ struct lsqpack_enc;
 
 int
 lsqpack_enc_init (struct lsqpack_enc *, unsigned dyn_table_size,
-                    unsigned max_risked_streams);
+    unsigned max_risked_streams,
+    size_t (*read_decoder_stream)(void *decoder_ctx, void *buf, size_t sz),
+    void *decoder_ctx);
 
 /** Start a new header block.  Return 0 on success or -1 on error. */
 int
@@ -105,6 +107,17 @@ lsqpack_enc_encode (struct lsqpack_enc *,
  */
 ssize_t
 lsqpack_enc_end_header (struct lsqpack_enc *, unsigned char *buf, size_t);
+
+/**
+ * Read from decoder stream using the callback provided during initialization.
+ * All bytes are read until the callback returns 0.
+ *
+ * Returns 0 on success, -1 on failure.  -1 indicates either an error on the
+ * decoder.  If read error occurs, it is up to the callback to set some
+ * flags and for the user to check them.
+ */
+int
+lsqpack_enc_read_dec (struct lsqpack_enc *);
 
 void
 lsqpack_enc_cleanup (struct lsqpack_enc *);
@@ -172,6 +185,9 @@ struct lsqpack_enc
      */
     struct lsqpack_header_info *qpe_hinfos_arr;
 
+    size_t                    (*qpe_read_dec)(void *, void *, size_t);
+    void                       *qpe_dec_ctx;
+
     /* Current header state */
     struct {
         struct lsqpack_header_info
@@ -192,6 +208,9 @@ struct lsqpack_enc
          */
         lsqpack_abs_id_t    search_cutoff;
     }                           qpe_cur_header;
+
+    size_t                      qpe_dec_lo_sz;
+    unsigned char               qpe_dec_leftovers[10];
 };
 
 struct lsqpack_arr

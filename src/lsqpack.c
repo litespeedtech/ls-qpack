@@ -5366,7 +5366,9 @@ struct lsqpack_enc_table_entry
 
 int
 lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
-                    unsigned max_risked_streams)
+    unsigned max_risked_streams,
+    size_t (*read_decoder_stream)(void *, void *, size_t),
+    void *decoder_ctx)
 {
     struct lsqpack_double_enc_head *buckets;
     unsigned nbits = 2;
@@ -5395,6 +5397,8 @@ lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
     enc->qpe_max_risked_streams = max_risked_streams;
     enc->qpe_buckets      = buckets;
     enc->qpe_nbits        = nbits;
+    enc->qpe_read_dec     = read_decoder_stream;
+    enc->qpe_dec_ctx      = decoder_ctx;
     return 0;
 }
 
@@ -5738,6 +5742,14 @@ lsqpack_enc_get_stx_tab_id (const char *name, lsqpack_strlen_t name_len,
 
     return 0;
 }
+
+
+#if !LS_QPACK_EMIT_TEST_CODE
+static
+#endif
+       int
+lsqpack_dec_dec_int (const unsigned char **src, const unsigned char *src_end,
+                                        uint8_t prefix_bits, uint32_t *value);
 
 
 enum table_type {
@@ -6546,6 +6558,45 @@ lsqpack_enc_set_max_capacity (struct lsqpack_enc *enc, unsigned max_capacity)
     qenc_remove_overflow_entries(enc);
 }
 
+
+int
+lsqpack_enc_read_dec (struct lsqpack_enc *enc)
+{
+    unsigned char buf[ sizeof(enc->qpe_dec_leftovers) ];
+    size_t nr, off;
+
+    if (enc->qpe_dec_lo_sz)
+    {
+        off = enc->qpe_dec_lo_sz;
+        memcpy(buf, enc->qpe_dec_leftovers, off);
+    }
+    else
+        off = 0;
+
+    while ((nr = enc->qpe_read_dec(enc->qpe_dec_ctx, buf + off,
+                                                    sizeof(buf) - off)) > 0)
+    {
+        off = 0;
+        if (buf[0] & 0x80)              /* Header ACK */
+        {
+        }
+        else if ((buf[0] & 0xC) == 0)   /* Table State Synchronize */
+        {
+        }
+        else                            /* Stream Cancellation */
+        {
+            assert((buf[0] & 0xC) == 0x40);
+        }
+    }
+
+    if (nr)
+        memcpy(enc->qpe_dec_leftovers, buf, nr);
+    enc->qpe_dec_lo_sz = nr;
+
+    return 0;
+}
+
+
 #if 0
 void
 lsqpack_enc_iter_init (struct lsqpack_enc *enc, void **iter)
@@ -6625,6 +6676,7 @@ lsqpack_dec_cleanup (struct lsqpack_dec *dec)
     }
     lsqpack_arr_cleanup(&dec->hpd_dyn_table);
 }
+#endif
 
 
 #if !LS_QPACK_EMIT_TEST_CODE
@@ -6661,6 +6713,7 @@ lsqpack_dec_dec_int (const unsigned char **src, const unsigned char *src_end,
 }
 
 
+#if 0
 static void
 qdec_drop_oldest_entry (struct lsqpack_dec *dec)
 {
