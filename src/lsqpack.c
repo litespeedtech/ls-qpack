@@ -6225,7 +6225,9 @@ struct encode_program
         EHA_INDEXED_NEW,
         EHA_INDEXED_STAT,
         EHA_INDEXED_DYN,
-        EHA_LIT_WITH_NAME,
+        EHA_LIT_WITH_NAME_STAT,
+        EHA_LIT_WITH_NAME_DYN,
+        EHA_LIT_WITH_NAME_NEW,
         EHA_LIT,
     }           ep_hea_action;
     enum {
@@ -6267,14 +6269,16 @@ static const struct encode_program encode_programs[2][2][2][2][2] =
   *  |  |  |  |  |
   *  V  V  V  V  V
   */
-    [0][A][A][0][A] = { EEA_NONE,        EHA_LIT,           ETA_NOOP, 0, },
-    [0][A][A][1][0] = { EEA_INS_LIT,     EHA_LIT,           ETA_NEW,  0, },
-    [0][A][A][1][1] = { EEA_INS_LIT,     EHA_INDEXED_NEW,   ETA_NEW,  EPF_REF_NEW, },
-    [1][0][0][0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME, ETA_NOOP, 0, },
-    [1][0][0][1][0] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME, ETA_NEW,  0, },
-    [1][0][0][1][1] = { EEA_INS_NAMEREF, EHA_INDEXED_NEW,   ETA_NEW,  EPF_REF_NEW, },
-    [1][0][1][A][A] = { EEA_NONE,        EHA_INDEXED_STAT,  ETA_NOOP, 0, },
-    [1][1][1][A][A] = { EEA_NONE,        EHA_INDEXED_DYN,   ETA_NOOP, EPF_REF_FOUND, },
+    [0][A][A][0][A] = { EEA_NONE,        EHA_LIT,                ETA_NOOP, 0, },
+    [0][A][A][1][0] = { EEA_INS_LIT,     EHA_LIT,                ETA_NEW,  0, },
+    [0][A][A][1][1] = { EEA_INS_LIT,     EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
+    [1][0][0][0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
+    [1][0][0][1][0] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME_STAT, ETA_NEW,  0, },
+    [1][0][0][1][1] = { EEA_INS_NAMEREF, EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
+    [1][0][1][A][A] = { EEA_NONE,        EHA_INDEXED_STAT,       ETA_NOOP, 0, },
+    [1][1][0][0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME_DYN,  ETA_NOOP, EPF_REF_FOUND, },
+    [1][1][0][1][A] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME_NEW,  ETA_NEW,  EPF_REF_NEW|EPF_REF_FOUND, },
+    [1][1][1][A][A] = { EEA_NONE,        EHA_INDEXED_DYN,        ETA_NOOP, EPF_REF_FOUND, },
 #undef A
 };
 
@@ -6438,11 +6442,45 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         dst += r;
         hea_sz = dst - hea_buf;
         break;
-    default:
-        assert(prog.ep_hea_action == EHA_LIT_WITH_NAME);
+    case EHA_LIT_WITH_NAME_NEW:
+        id = ef.ef_entry_id;
+ post_base_name_ref:
+        *dst = (((flags & LQEF_NO_INDEX) > 0) << 3);
+        assert(id > enc->qpe_cur_header.base_idx);
+        id -= enc->qpe_cur_header.base_idx;
+        dst = qenc_enc_int(dst, hea_buf_end, id, 3);
+        if (dst <= hea_buf)
+            return LQES_NOBUF_HEAD;
+        r = lsqpack_enc_enc_str(7, dst, hea_buf_end - dst,
+                                (const unsigned char *) value, value_len);
+        if (r < 0)
+            return LQES_NOBUF_HEAD;
+        dst += (unsigned) r;
+        hea_sz = dst - hea_buf;
+        break;
+    case EHA_LIT_WITH_NAME_DYN:
+        id = ef.ef_entry_id;
+        if (id > enc->qpe_cur_header.base_idx)
+            goto post_base_name_ref;
         *dst = 0x40
                | (((flags & LQEF_NO_INDEX) > 0) << 5)
-               | ((TT_STATIC == ef.ef_table_type) << 4)
+               ;
+        id = enc->qpe_cur_header.base_idx - ef.ef_entry_id;
+        dst = qenc_enc_int(dst, hea_buf_end, id, 4);
+        if (dst <= hea_buf)
+            return LQES_NOBUF_HEAD;
+        r = lsqpack_enc_enc_str(7, dst, hea_buf_end - dst,
+                                (const unsigned char *) value, value_len);
+        if (r < 0)
+            return LQES_NOBUF_HEAD;
+        dst += (unsigned) r;
+        hea_sz = dst - hea_buf;
+        break;
+    default:
+        assert(prog.ep_hea_action == EHA_LIT_WITH_NAME_STAT);
+        *dst = 0x40
+               | (((flags & LQEF_NO_INDEX) > 0) << 5)
+               | 0x10
                ;
         dst = qenc_enc_int(dst, hea_buf_end, ef.ef_entry_id, 4);
         if (dst <= hea_buf)
