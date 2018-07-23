@@ -5347,6 +5347,7 @@ struct lsqpack_enc_table_entry
                                     ete_next_all;
     lsqpack_abs_id_t                ete_id;
     lsqpack_bitmask_t               ete_refs;
+    unsigned                        ete_n_reffd;
     unsigned                        ete_nameval_hash;
     unsigned                        ete_name_hash;
     lsqpack_strlen_t                ete_name_len;
@@ -5764,6 +5765,8 @@ struct enc_found
     enum table_type     ef_table_type;
     lsqpack_abs_id_t    ef_entry_id;
     int                 ef_value_match;
+    struct lsqpack_enc_table_entry
+                       *ef_entry;
 };
 
 
@@ -5781,7 +5784,7 @@ qenc_find_table_id (struct lsqpack_enc *enc, const char *name,
     static_table_id = lsqpack_enc_get_stx_tab_id(name, name_len, value,
                                                     value_len, &val_matched);
     if (static_table_id > 0 && val_matched)
-        return (struct enc_found) { 1, TT_STATIC, static_table_id, 1, };
+        return (struct enc_found) { 1, TT_STATIC, static_table_id, 1, NULL, };
 
     /* Search by name and value: */
     XXH32_reset(&hash_state, (uintptr_t) enc);
@@ -5806,14 +5809,14 @@ qenc_find_table_id (struct lsqpack_enc *enc, const char *name,
             0 == memcmp(name, ETE_NAME(entry), name_len) &&
             0 == memcmp(value, ETE_VALUE(entry), value_len))
         {
-            return (struct enc_found) { 1, TT_DYNAMIC, entry->ete_id, 1, };
+            return (struct enc_found) { 1, TT_DYNAMIC, entry->ete_id, 1, entry, };
         }
 
     /* Name/value match is not found, but if the caller found a matching
      * static table entry, no need to continue to search:
      */
     if (static_table_id > 0)
-        return (struct enc_found) { 1, TT_STATIC, static_table_id, 0, };
+        return (struct enc_found) { 1, TT_STATIC, static_table_id, 0, NULL, };
 
     /* Search by name only: */
     buckno = BUCKNO(enc->qpe_nbits, name_hash);
@@ -5822,10 +5825,10 @@ qenc_find_table_id (struct lsqpack_enc *enc, const char *name,
             name_len == entry->ete_name_len &&
             0 == memcmp(name, ETE_NAME(entry), name_len))
         {
-            return (struct enc_found) { 1, TT_DYNAMIC, entry->ete_id, 0, };
+            return (struct enc_found) { 1, TT_DYNAMIC, entry->ete_id, 0, entry, };
         }
 
-    return (struct enc_found) { 0, 0, 0, 0, };
+    return (struct enc_found) { 0, 0, 0, 0, NULL, };
 }
 
 
@@ -6061,7 +6064,7 @@ qenc_grow_tables (struct lsqpack_enc *enc)
 #if !LS_HPACK_EMIT_TEST_CODE
 static
 #endif
-       int
+       struct lsqpack_enc_table_entry *
 lsqpack_enc_push_entry (struct lsqpack_enc *enc, const char *name,
                         lsqpack_strlen_t name_len, const char *value,
                         lsqpack_strlen_t value_len)
@@ -6073,12 +6076,12 @@ lsqpack_enc_push_entry (struct lsqpack_enc *enc, const char *name,
 
     if (enc->qpe_nelem >= N_BUCKETS(enc->qpe_nbits) / 2 &&
                                                 0 != qenc_grow_tables(enc))
-        return -1;
+        return NULL;
 
     size = sizeof(*entry) + name_len + value_len;
     entry = malloc(size);
     if (!entry)
-        return -1;
+        return NULL;
 
     XXH32_reset(&hash_state, (uintptr_t) enc);
     XXH32_update(&hash_state, &name_len, sizeof(name_len));
@@ -6108,7 +6111,7 @@ lsqpack_enc_push_entry (struct lsqpack_enc *enc, const char *name,
     enc->qpe_cur_capacity += ENTRY_COST(name_len, value_len);
     ++enc->qpe_nelem;
     qenc_remove_overflow_entries(enc);
-    return 0;
+    return entry;
 }
 
 
@@ -6214,6 +6217,7 @@ struct encode_program
     }           ep_tab_action;
     enum {
         EPF_HEA_NEW     = 1 << 0,   /* New new entry ID in emitted header instruction */
+        EPF_REF_FOUND   = 1 << 1,
     }           ep_flags;
 };
 
@@ -6304,6 +6308,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
 {
     unsigned char *const enc_buf_end = enc_buf + *enc_sz_p;
     unsigned char *const hea_buf_end = hea_buf + *hea_sz_p;
+    struct lsqpack_enc_table_entry *new_entry;
     struct encode_program prog;
     struct enc_found ef;
     int index, risk;
@@ -6399,19 +6404,24 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     switch (prog.ep_tab_action)
     {
     case ETA_NEW:
-        r = lsqpack_enc_push_entry(enc, name, name_len, value, value_len);
-        if (r != 0)
+        new_entry = lsqpack_enc_push_entry(enc, name, name_len, value,
+                                                                    value_len);
+        if (!new_entry)
         {   /* Push can only fail due to inability to allocate memory.
              * In this case, fall back on encoding without indexing.
              */
             index = 0;
             goto restart;
         }
+        ++new_entry->ete_n_reffd;
         break;
     default:
         assert(prog.ep_tab_action == ETA_NOOP);
         break;
     }
+
+    if (prog.ep_flags & EPF_REF_FOUND)
+        ++ef.ef_entry->ete_n_reffd;
 
     *enc_sz_p = enc_sz;
     *hea_sz_p = hea_sz;
