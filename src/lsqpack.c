@@ -6254,6 +6254,7 @@ struct encode_program
     enum {
         EHA_INDEXED,
         EHA_LIT_WITH_NAME,
+        EHA_LIT,
     }           ep_hea_action;
     enum {
         ETA_NOOP,
@@ -6295,6 +6296,10 @@ static const struct encode_program encode_programs[2][2][2][2][2] =
   *  |  |  |  |  |
   *  V  V  V  V  V
   */
+    [0][A][A][0][A] = { EEA_NONE,        EHA_LIT,           ETA_NOOP, 0, },
+    /*
+    [0][A][A][1][0] = { EEA_INS_LIT,     EHA_LIT,           ETA_NEW,  EPF_HEA_NEW, },
+    */
     [1][0][0][0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME, ETA_NOOP, 0, },
     [1][0][0][1][0] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME, ETA_NEW,  0, },
     [1][0][0][1][1] = { EEA_INS_NAMEREF, EHA_INDEXED,       ETA_NEW,  EPF_HEA_NEW|EPF_REF_NEW, },
@@ -6416,6 +6421,13 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         hea_sz = dst - hea_buf;
+        break;
+    case EHA_LIT:
+        dst = hea_buf;
+        *dst = 0x20
+               | (((flags & LQEF_NO_INDEX) > 0) << 4)
+               ;
+        /* TODO */
         break;
     default:
         assert(prog.ep_hea_action == EHA_LIT_WITH_NAME);
