@@ -108,13 +108,6 @@ lsqpack_enc_cleanup (struct lsqpack_enc *);
 
 #include <sys/queue.h>
 
-#define LSQPACK_BITMASK_BITS 2
-#define LSQPACK_BITMASK_NELEMS (1 << LSQPACK_BITMASK_BITS)
-
-typedef uint64_t lsqpack_bitmask_t[LSQPACK_BITMASK_NELEMS];
-
-#define LSQPACK_MAX_HEADERS (sizeof(lsqpack_bitmask_t) * 8)
-
 struct lsqpack_enc_table_entry;
 
 STAILQ_HEAD(lsqpack_enc_head, lsqpack_enc_table_entry);
@@ -122,10 +115,11 @@ struct lsqpack_double_enc_head;
 
 struct lsqpack_header_info
 {
-    uint64_t    qhi_stream_id;
-    unsigned    qhi_seqno;
-    signed char qhi_valid;
-    signed char qhi_at_risk;
+    uint64_t            qhi_stream_id;
+    unsigned            qhi_seqno;
+    lsqpack_abs_id_t    qhi_min_id;
+    lsqpack_abs_id_t    qhi_max_id;
+    signed char         qhi_at_risk;
 };
 
 struct lsqpack_enc
@@ -134,6 +128,10 @@ struct lsqpack_enc
      * created so far.  This is used to calculate the Absolute Index.
      */
     lsqpack_abs_id_t            qpe_ins_count;
+
+    enum {
+        LSQPACK_ENC_HEADER  = 1 << 0,
+    }                           qpe_flags;
 
     unsigned                    qpe_cur_capacity;
     unsigned                    qpe_max_capacity;
@@ -144,13 +142,12 @@ struct lsqpack_enc
     unsigned                    qpe_max_risked_streams;
     unsigned                    qpe_cur_streams_at_risk;
 
-    /* Max hinfos cannot be larger than LSQPACK_MAX_HEADERS */
-    unsigned                    qpe_max_headers;
-
-    /* Number of used entries in qpe_hinfos[].  Cannot exceed
-     * qpe_max_headers.
+    /* Number of used entries in qpe_hinfos[]. */
+    unsigned                    qpe_hinfos_count;
+    /* Number of entries allocated in qpe_hinfos_arr[].  There is always
+     * an extra element at the end for use as sentinel.
      */
-    unsigned                    qpe_n_hinfos;
+    unsigned                    qpe_hinfos_nalloc;
 
     /* Dynamic table entries (struct enc_table_entry) live in two hash
      * tables: name/value hash table and name hash table.  These tables
@@ -162,19 +159,16 @@ struct lsqpack_enc
     struct lsqpack_double_enc_head
                                *qpe_buckets;
 
-    /* This array is a mapping from the full header identification which
-     * is the (stream ID, sequence number) tuple to a small integer value
-     * that can be used in a bitmask.
-     *
-     * qpe_max_headers + 1 elements are allocated in order to have room
-     * for the sentinel value.
+    /* A min-heap of header info structures.  The first element is one
+     * with smallest qhi_min_id.
      */
-    struct lsqpack_header_info *qpe_hinfos;
+    struct lsqpack_header_info *qpe_hinfos_arr;
 
     /* Current header state */
     struct {
-        /* Negative value means the index is not set. */
-        int                 hinfo_idx;
+        struct lsqpack_header_info
+                            hinfo;
+
         /* Number of at-risk references in this header block */
         unsigned            n_risked;
         /* True if there are other header blocks with the same stream ID
@@ -182,8 +176,7 @@ struct lsqpack_enc
          * as well.)
          */
         int                 others_at_risk;
-        /* Maximum absolute dynamic table index used by the current header. */
-        lsqpack_abs_id_t    max_ref;
+        int                 use_dynamic_table;
         /* Base index */
         lsqpack_abs_id_t    base_idx;
         /* Search cutoff -- to index, entries at this ID and below will be
