@@ -30,7 +30,7 @@ SOFTWARE.
 #include <sys/queue.h>
 
 #include "lsqpack.h"
-#if LS_HPACK_EMIT_TEST_CODE
+#if LS_QPACK_EMIT_TEST_CODE
 #include "lsqpack-test.h"
 #endif
 #include XXH_HEADER_NAME
@@ -5414,7 +5414,7 @@ lsqpack_enc_cleanup (struct lsqpack_enc *enc)
 
 
 //not find return 0, otherwise return the index
-#if !LS_HPACK_EMIT_TEST_CODE
+#if !LS_QPACK_EMIT_TEST_CODE
 static
 #endif
        unsigned
@@ -5885,7 +5885,7 @@ qenc_enc_int (unsigned char *dst, unsigned char *const end, uint32_t value,
 }
 
 
-#if !LS_HPACK_EMIT_TEST_CODE
+#if !LS_QPACK_EMIT_TEST_CODE
 static
 #endif
        int
@@ -5928,7 +5928,7 @@ qenc_huffman_enc (const unsigned char *src, const unsigned char *const src_end,
 }
 
 
-#if !LS_HPACK_EMIT_TEST_CODE
+#if !LS_QPACK_EMIT_TEST_CODE
 static
 #endif
        int
@@ -6002,6 +6002,50 @@ lsqpack_enc_enc_str (unsigned char *const dst, size_t dst_len,
     memmove(dst + size_len, str, str_len);
     memcpy(dst, size_buf, size_len);
     return size_len + str_len;
+}
+
+
+#if !LS_QPACK_EMIT_TEST_CODE
+static
+#endif
+       int
+lsqpack_enc_enc_str4 (unsigned char *const dst, size_t dst_len,
+                        const unsigned char *str, lsqpack_strlen_t str_len)
+{
+    unsigned char *const end = dst + dst_len;
+    unsigned char *p;
+    unsigned i;
+    int rc, enc_size_bits, enc_size_bytes;
+
+    enc_size_bits = 0;
+    for (i = 0; i < str_len; ++i)
+        enc_size_bits += encode_table[ str[i] ].bits;
+    enc_size_bytes = enc_size_bits / 8 + ((enc_size_bits & 7) != 0);
+
+    if (enc_size_bytes < str_len)
+    {
+        *dst |= 8;
+        p = qenc_enc_int(dst, end, enc_size_bytes, 3);
+        if (p == dst)
+            return -1;
+        rc = qenc_huffman_enc(str, str + str_len, p, end - p);
+        if (rc < 0)
+            return -1;
+        return p - dst + rc;
+    }
+    else
+    {
+        p = qenc_enc_int(dst, end, str_len, 3);
+        if (p == dst)
+            return -1;
+        if (str_len <= end - p)
+        {
+            memcpy(p, str, str_len);
+            return p - dst + str_len;
+        }
+        else
+            return -1;
+    }
 }
 
 
@@ -6081,7 +6125,7 @@ qenc_grow_tables (struct lsqpack_enc *enc)
     return 0;
 }
 
-#if !LS_HPACK_EMIT_TEST_CODE
+#if !LS_QPACK_EMIT_TEST_CODE
 static
 #endif
        struct lsqpack_enc_table_entry *
@@ -6579,7 +6623,7 @@ lsqpack_dec_cleanup (struct lsqpack_dec *dec)
 }
 
 
-#if !LS_HPACK_EMIT_TEST_CODE
+#if !LS_QPACK_EMIT_TEST_CODE
 static
 #endif
        int
@@ -6702,7 +6746,7 @@ qdec_huff_decode (const unsigned char *src, int src_len,
 
 
 //reutrn the length in the dst, also update the src
-#if !LS_HPACK_EMIT_TEST_CODE
+#if !LS_QPACK_EMIT_TEST_CODE
 static
 #endif
        int
@@ -6764,7 +6808,7 @@ qdec_get_table_entry (struct lsqpack_dec *dec, uint32_t index)
 }
 
 
-#if !LS_HPACK_EMIT_TEST_CODE
+#if !LS_QPACK_EMIT_TEST_CODE
 static
 #endif
        int

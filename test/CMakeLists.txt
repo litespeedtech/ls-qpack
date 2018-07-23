@@ -1,5 +1,7 @@
 ENABLE_TESTING()
 
-ADD_EXECUTABLE(test_qpack test_qpack.c ../deps/xxhash/xxhash.c)
-TARGET_LINK_LIBRARIES(test_qpack ls-qpack)
-ADD_TEST(qpack test_qpack)
+FOREACH(TEST_NAME qpack enc_str4)
+    ADD_EXECUTABLE(test_${TEST_NAME} test_${TEST_NAME}.c ../deps/xxhash/xxhash.c)
+    TARGET_LINK_LIBRARIES(test_${TEST_NAME} ls-qpack)
+    ADD_TEST(${TEST_NAME} test_${TEST_NAME})
+ENDFOREACH()
