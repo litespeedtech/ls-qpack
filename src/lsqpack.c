@@ -6391,10 +6391,10 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         break;
     }
 
+    dst = hea_buf;
     switch (prog.ep_hea_action)
     {
     case EHA_INDEXED_STAT:
-        dst = hea_buf;
         *dst = 0x80 | 0x40;
         dst = qenc_enc_int(dst, hea_buf_end, ef.ef_entry_id, 6);
         if (dst <= hea_buf)
@@ -6402,15 +6402,20 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         hea_sz = dst - hea_buf;
         break;
     case EHA_INDEXED_NEW:
-        dst = hea_buf;
-        *dst = 0x80;
         id = enc->qpe_ins_count + 1;
-        dst = qenc_enc_int(dst, hea_buf_end, id, 6);
+  post_base_idx:
+        *dst = 0x10;
+        assert(id > enc->qpe_cur_header.base_idx);
+        id -= enc->qpe_cur_header.base_idx;
+        dst = qenc_enc_int(dst, hea_buf_end, id, 4);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         hea_sz = dst - hea_buf;
+        break;
     case EHA_INDEXED_DYN:
-        dst = hea_buf;
+        id = ef.ef_entry_id;
+        if (id > enc->qpe_cur_header.base_idx)
+            goto post_base_idx;
         *dst = 0x80;
         dst = qenc_enc_int(dst, hea_buf_end, ef.ef_entry_id, 6);
         if (dst <= hea_buf)
@@ -6418,7 +6423,6 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         hea_sz = dst - hea_buf;
         break;
     case EHA_LIT:
-        dst = hea_buf;
         *dst = 0x20
                | (((flags & LQEF_NO_INDEX) > 0) << 4)
                ;
@@ -6436,7 +6440,6 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         break;
     default:
         assert(prog.ep_hea_action == EHA_LIT_WITH_NAME);
-        dst = hea_buf;
         *dst = 0x40
                | (((flags & LQEF_NO_INDEX) > 0) << 5)
                | ((TT_STATIC == ef.ef_table_type) << 4)

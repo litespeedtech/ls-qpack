@@ -118,7 +118,7 @@ static const struct qpack_header_block_test
         .qhbt_prefix_buf    = "\x01\x81",
         .qhbt_header_sz     = 1,
         .qhbt_header_buf    = {
-            0x80 | 1 /* New dynamic ID */,
+            0x10 | 1 /* Relative dynamic ID */,
         },
     },
 
@@ -191,7 +191,7 @@ static const struct qpack_header_block_test
         .qhbt_prefix_buf    = "\x01\x81",
         .qhbt_header_sz     = 1,
         .qhbt_header_buf    = {
-            0x80 | 1,
+            0x10 | 1 /* Relative dynamic ID */,
         },
     },
 
