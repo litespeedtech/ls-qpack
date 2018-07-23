@@ -6009,8 +6009,8 @@ lsqpack_enc_enc_str (unsigned char *const dst, size_t dst_len,
 static
 #endif
        int
-lsqpack_enc_enc_str4 (unsigned char *const dst, size_t dst_len,
-                        const unsigned char *str, lsqpack_strlen_t str_len)
+lsqpack_enc_enc_str4 (unsigned prefix_bits, unsigned char *const dst,
+        size_t dst_len, const unsigned char *str, lsqpack_strlen_t str_len)
 {
     unsigned char *const end = dst + dst_len;
     unsigned char *p;
@@ -6024,8 +6024,8 @@ lsqpack_enc_enc_str4 (unsigned char *const dst, size_t dst_len,
 
     if (enc_size_bytes < str_len)
     {
-        *dst |= 8;
-        p = qenc_enc_int(dst, end, enc_size_bytes, 3);
+        *dst |= 1 << prefix_bits;
+        p = qenc_enc_int(dst, end, enc_size_bytes, prefix_bits);
         if (p == dst)
             return -1;
         rc = qenc_huffman_enc(str, str + str_len, p, end - p);
@@ -6035,7 +6035,7 @@ lsqpack_enc_enc_str4 (unsigned char *const dst, size_t dst_len,
     }
     else
     {
-        p = qenc_enc_int(dst, end, str_len, 3);
+        p = qenc_enc_int(dst, end, str_len, prefix_bits);
         if (p == dst)
             return -1;
         if (str_len <= end - p)
@@ -6294,6 +6294,7 @@ struct encode_program
     enum {
         EEA_NONE,
         EEA_INS_NAMEREF,
+        EEA_INS_LIT,
     }           ep_enc_action;
     enum {
         EHA_INDEXED,
@@ -6341,9 +6342,7 @@ static const struct encode_program encode_programs[2][2][2][2][2] =
   *  V  V  V  V  V
   */
     [0][A][A][0][A] = { EEA_NONE,        EHA_LIT,           ETA_NOOP, 0, },
-    /*
-    [0][A][A][1][0] = { EEA_INS_LIT,     EHA_LIT,           ETA_NEW,  EPF_HEA_NEW, },
-    */
+    [0][A][A][1][0] = { EEA_INS_LIT,     EHA_LIT,           ETA_NEW,  0, },
     [1][0][0][0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME, ETA_NOOP, 0, },
     [1][0][0][1][0] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME, ETA_NEW,  0, },
     [1][0][0][1][1] = { EEA_INS_NAMEREF, EHA_INDEXED,       ETA_NEW,  EPF_HEA_NEW|EPF_REF_NEW, },
@@ -6443,6 +6442,21 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         dst += (unsigned) r;
         enc_sz = dst - enc_buf;
         break;
+    case EEA_INS_LIT:
+        dst = enc_buf;
+        *dst = 0x40;
+        r = lsqpack_enc_enc_str4(5, dst, enc_buf_end - dst,
+                                (const unsigned char *) name, name_len);
+        if (r < 0)
+            return LQES_NOBUF_ENC;
+        dst += r;
+        r = lsqpack_enc_enc_str(dst, enc_buf_end - dst,
+                                (const unsigned char *) value, value_len);
+        if (r < 0)
+            return LQES_NOBUF_ENC;
+        dst += r;
+        enc_sz = dst - enc_buf;
+        break;
     default:
         assert(EEA_NONE == prog.ep_enc_action);
         enc_sz = 0;
@@ -6471,7 +6485,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         *dst = 0x20
                | (((flags & LQEF_NO_INDEX) > 0) << 4)
                ;
-        r = lsqpack_enc_enc_str4(dst, hea_buf_end - dst,
+        r = lsqpack_enc_enc_str4(3, dst, hea_buf_end - dst,
                                 (const unsigned char *) name, name_len);
         if (r < 0)
             return LQES_NOBUF_HEAD;
