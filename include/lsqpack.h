@@ -60,7 +60,7 @@ int
 lsqpack_enc_init (struct lsqpack_enc *, unsigned dyn_table_size,
                     unsigned max_risked_streams);
 
-/** Start a new header block */
+/** Start a new header block.  Return 0 on success or -1 on error. */
 int
 lsqpack_enc_start_header (struct lsqpack_enc *, uint64_t stream_id,
                             unsigned seqno);
@@ -94,9 +94,9 @@ lsqpack_enc_encode (struct lsqpack_enc *,
 
 /**
  * End current header block.  The Header Data Prefix is written to `buf'.
- * Returns number of bytes written or 0 on error.
+ * Returns number of bytes written or -1 on error.
  */
-size_t
+ssize_t
 lsqpack_enc_end_header (struct lsqpack_enc *, unsigned char *buf, size_t);
 
 void

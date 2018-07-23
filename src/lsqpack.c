@@ -6182,14 +6182,18 @@ lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
         at_risk = 0;
 
     enc->qpe_cur_header.others_at_risk = at_risk > 0;
+    enc->qpe_flags |= LSQPACK_ENC_HEADER;
 
     return 0;
 }
 
 
-size_t
+ssize_t
 lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
 {
+    if (!(enc->qpe_flags & LSQPACK_ENC_HEADER))
+        return -1;
+
     enc->qpe_flags &= ~LSQPACK_ENC_HEADER;
     if (enc->qpe_cur_header.hinfo.qhi_max_id)
     {
@@ -6410,6 +6414,11 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
             goto restart;
         }
         ++new_entry->ete_n_reffd;
+        assert(new_entry->ete_id > enc->qpe_cur_header.hinfo.qhi_max_id);
+        enc->qpe_cur_header.hinfo.qhi_max_id = new_entry->ete_id;
+        if (enc->qpe_cur_header.hinfo.qhi_min_id == 0
+                || enc->qpe_cur_header.hinfo.qhi_min_id > new_entry->ete_id)
+            enc->qpe_cur_header.hinfo.qhi_min_id = new_entry->ete_id;
         break;
     default:
         assert(prog.ep_tab_action == ETA_NOOP);
@@ -6417,7 +6426,14 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     }
 
     if (prog.ep_flags & EPF_REF_FOUND)
+    {
+        assert(ef.ef_table_type == TT_DYNAMIC);
         ++ef.ef_entry->ete_n_reffd;
+        if (enc->qpe_cur_header.hinfo.qhi_min_id == 0
+                || enc->qpe_cur_header.hinfo.qhi_min_id > ef.ef_entry_id)
+            enc->qpe_cur_header.hinfo.qhi_min_id = ef.ef_entry_id;
+        assert(enc->qpe_cur_header.hinfo.qhi_max_id > ef.ef_entry_id);
+    }
 
     *enc_sz_p = enc_sz;
     *hea_sz_p = hea_sz;
