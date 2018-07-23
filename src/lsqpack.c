@@ -5932,84 +5932,7 @@ qenc_huffman_enc (const unsigned char *src, const unsigned char *const src_end,
 static
 #endif
        int
-lsqpack_enc_enc_str (unsigned char *const dst, size_t dst_len,
-                        const unsigned char *str, lsqpack_strlen_t str_len)
-{
-    unsigned char size_buf[4];
-    unsigned char *p;
-    unsigned size_len;
-    int rc;
-
-    if (dst_len > 1)
-        /* We guess that the string size fits into a single byte -- meaning
-         * compressed string of size 126 and smaller -- which is the normal
-         * case.  Thus, we immediately write compressed string to the output
-         * buffer.  If our guess is not correct, we fix it later.
-         */
-        rc = qenc_huffman_enc(str, str + str_len, dst + 1, dst_len - 1);
-    else if (dst_len == 1)
-        /* Here, the call can only succeed if the string to encode is empty. */
-        rc = 0;
-    else
-        return -1;
-
-    /*
-     * Check if need huffman encoding or not
-     * Comment: (size_t)rc <= str_len   = means if same length, still use
-     *                                                              Huffman
-     *                     ^
-     */
-    if (rc > 0 && (size_t)rc <= str_len)
-    {
-        if (rc < 127)
-        {
-            *dst = 0x80 | rc;
-            return 1 + rc;
-        }
-        size_buf[0] = 0x80;
-        str_len = rc;
-        str = dst + 1;
-    }
-    else if (str_len <= dst_len - 1)
-    {
-        if (str_len < 127)
-        {
-            *dst = str_len;
-            memcpy(dst + 1, str, str_len);
-            return 1 + str_len;
-        }
-        size_buf[0] = 0x00;
-    }
-    else
-        return -1;
-
-    /* The guess of one-byte size was incorrect.  Perform necessary
-     * adjustments.
-     */
-    p = qenc_enc_int(size_buf, size_buf + sizeof(size_buf), str_len, 7);
-    if (p == size_buf)
-        return -1;
-
-    size_len = p - size_buf;
-    assert(size_len > 1);
-
-    /* Check if there is enough room in the output buffer for both
-     * encoded size and the string.
-     */
-    if (size_len + str_len > dst_len)
-        return -1;
-
-    memmove(dst + size_len, str, str_len);
-    memcpy(dst, size_buf, size_len);
-    return size_len + str_len;
-}
-
-
-#if !LS_QPACK_EMIT_TEST_CODE
-static
-#endif
-       int
-lsqpack_enc_enc_str4 (unsigned prefix_bits, unsigned char *const dst,
+lsqpack_enc_enc_str (unsigned prefix_bits, unsigned char *const dst,
         size_t dst_len, const unsigned char *str, lsqpack_strlen_t str_len)
 {
     unsigned char *const end = dst + dst_len;
@@ -6022,6 +5945,7 @@ lsqpack_enc_enc_str4 (unsigned prefix_bits, unsigned char *const dst,
         enc_size_bits += encode_table[ str[i] ].bits;
     enc_size_bytes = enc_size_bits / 8 + ((enc_size_bits & 7) != 0);
 
+    *dst &= ~((1 << (prefix_bits + 1)) - 1);
     if (enc_size_bytes < str_len)
     {
         *dst |= 1 << prefix_bits;
@@ -6435,7 +6359,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         dst = qenc_enc_int(dst, enc_buf_end, ef.ef_entry_id, 6);
         if (dst <= enc_buf)
             return LQES_NOBUF_ENC;
-        r = lsqpack_enc_enc_str(dst, enc_buf_end - dst,
+        r = lsqpack_enc_enc_str(7, dst, enc_buf_end - dst,
                                     (const unsigned char *) value, value_len);
         if (r < 0)
             return LQES_NOBUF_ENC;
@@ -6445,12 +6369,12 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     case EEA_INS_LIT:
         dst = enc_buf;
         *dst = 0x40;
-        r = lsqpack_enc_enc_str4(5, dst, enc_buf_end - dst,
+        r = lsqpack_enc_enc_str(5, dst, enc_buf_end - dst,
                                 (const unsigned char *) name, name_len);
         if (r < 0)
             return LQES_NOBUF_ENC;
         dst += r;
-        r = lsqpack_enc_enc_str(dst, enc_buf_end - dst,
+        r = lsqpack_enc_enc_str(7, dst, enc_buf_end - dst,
                                 (const unsigned char *) value, value_len);
         if (r < 0)
             return LQES_NOBUF_ENC;
@@ -6485,12 +6409,12 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         *dst = 0x20
                | (((flags & LQEF_NO_INDEX) > 0) << 4)
                ;
-        r = lsqpack_enc_enc_str4(3, dst, hea_buf_end - dst,
+        r = lsqpack_enc_enc_str(3, dst, hea_buf_end - dst,
                                 (const unsigned char *) name, name_len);
         if (r < 0)
             return LQES_NOBUF_HEAD;
         dst += r;
-        r = lsqpack_enc_enc_str(dst, hea_buf_end - dst,
+        r = lsqpack_enc_enc_str(7, dst, hea_buf_end - dst,
                                 (const unsigned char *) value, value_len);
         if (r < 0)
             return LQES_NOBUF_HEAD;
@@ -6507,7 +6431,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         dst = qenc_enc_int(dst, hea_buf_end, ef.ef_entry_id, 4);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
-        r = lsqpack_enc_enc_str(dst, hea_buf_end - dst,
+        r = lsqpack_enc_enc_str(7, dst, hea_buf_end - dst,
                                 (const unsigned char *) value, value_len);
         if (r < 0)
             return LQES_NOBUF_HEAD;

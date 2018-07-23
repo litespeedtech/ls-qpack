@@ -7,18 +7,18 @@
 #include "lsqpack-test.h"
 
 
-struct str4_test
+struct str_test
 {
-    int                      s4t_lineno;
-    unsigned                 s4t_prefix_bits;
-    const unsigned char     *s4t_in_str;
-    lsqpack_strlen_t         s4t_in_len;
-    const unsigned char     *s4t_out_buf;
-    int                      s4t_retval;
+    int                      strt_lineno;
+    unsigned                 strt_prefix_bits;
+    const unsigned char     *strt_in_str;
+    lsqpack_strlen_t         strt_in_len;
+    const unsigned char     *strt_out_buf;
+    int                      strt_retval;
 };
 
 
-static const struct str4_test tests[] =
+static const struct str_test tests[] =
 {
 
     {
@@ -117,18 +117,18 @@ static const struct str4_test tests[] =
 int
 main (void)
 {
-    const struct str4_test *test;
+    const struct str_test *test;
     int r;
     unsigned char out[0x100000];
 
     for (test = tests; test < tests + sizeof(tests) / sizeof(tests[0]); ++test)
     {
         out[0] = 0;
-        r = lsqpack_enc_enc_str4(test->s4t_prefix_bits, out, sizeof(out),
-                                         test->s4t_in_str, test->s4t_in_len);
-        assert(r == test->s4t_retval);
+        r = lsqpack_enc_enc_str(test->strt_prefix_bits, out, sizeof(out),
+                                         test->strt_in_str, test->strt_in_len);
+        assert(r == test->strt_retval);
         if (r > 0)
-            assert(0 == memcmp(test->s4t_out_buf, out, r));
+            assert(0 == memcmp(test->strt_out_buf, out, r));
     }
 
     return 0;
