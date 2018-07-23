@@ -6182,7 +6182,8 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
             return 0;
 
         buf = dst;
-        if (enc->qpe_cur_header.base_idx > enc->qpe_cur_header.hinfo.qhi_max_id)
+        if (enc->qpe_cur_header.base_idx
+                                    >= enc->qpe_cur_header.hinfo.qhi_max_id)
         {
             sign = 0;
             diff = enc->qpe_cur_header.base_idx
@@ -6267,6 +6268,7 @@ static const struct encode_program encode_programs[2][2][2][2][2] =
   */
     [0][A][A][0][A] = { EEA_NONE,        EHA_LIT,           ETA_NOOP, 0, },
     [0][A][A][1][0] = { EEA_INS_LIT,     EHA_LIT,           ETA_NEW,  0, },
+    [0][A][A][1][1] = { EEA_INS_LIT,     EHA_INDEXED,       ETA_NEW,  EPF_HEA_NEW|EPF_REF_NEW, },
     [1][0][0][0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME, ETA_NOOP, 0, },
     [1][0][0][1][0] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME, ETA_NEW,  0, },
     [1][0][0][1][1] = { EEA_INS_NAMEREF, EHA_INDEXED,       ETA_NEW,  EPF_HEA_NEW|EPF_REF_NEW, },
@@ -6457,6 +6459,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
             ++new_entry->ete_n_reffd;
             assert(new_entry->ete_id > enc->qpe_cur_header.hinfo.qhi_max_id);
             enc->qpe_cur_header.hinfo.qhi_max_id = new_entry->ete_id;
+            ++enc->qpe_cur_header.n_risked;
             if (enc->qpe_cur_header.hinfo.qhi_min_id == 0
                     || enc->qpe_cur_header.hinfo.qhi_min_id > new_entry->ete_id)
                 enc->qpe_cur_header.hinfo.qhi_min_id = new_entry->ete_id;
@@ -6471,6 +6474,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     {
         assert(ef.ef_table_type == TT_DYNAMIC);
         ++ef.ef_entry->ete_n_reffd;
+        enc->qpe_cur_header.n_risked += enc->qpe_max_acked_id < ef.ef_entry_id;
         if (enc->qpe_cur_header.hinfo.qhi_min_id == 0
                 || enc->qpe_cur_header.hinfo.qhi_min_id > ef.ef_entry_id)
             enc->qpe_cur_header.hinfo.qhi_min_id = ef.ef_entry_id;

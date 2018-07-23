@@ -171,6 +171,30 @@ static const struct qpack_header_block_test
         },
     },
 
+    {
+        .qhbt_lineno        = __LINE__,
+        .qhbt_table_size    = LSQPACK_DEF_DYN_TABLE_SIZE,
+        .qhbt_max_risked_streams = 1,
+        .qhbt_n_headers     = 1,
+        .qhbt_headers       = {
+            { "dude", "where is my car?", 0, },
+        },
+        .qhbt_enc_sz        = 17,
+        .qhbt_enc_buf       = {
+            0x40 | 0x20 | 3,
+            0x92, 0xd9, 0x0b,
+            0x80 | 0xC,
+            0xf1, 0x39, 0x6c, 0x2a, 0x86, 0x42, 0x94, 0xfa,
+            0x50, 0x83, 0xb3, 0xfc,
+        },
+        .qhbt_prefix_sz     = 2,
+        .qhbt_prefix_buf    = "\x01\x81",
+        .qhbt_header_sz     = 1,
+        .qhbt_header_buf    = {
+            0x80 | 1,
+        },
+    },
+
 };
 
 
