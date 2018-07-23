@@ -115,7 +115,7 @@ static const struct qpack_header_block_test
             0xa4, 0xa9, 0x9c, 0xf2, 0x7f,
         },
         .qhbt_prefix_sz     = 2,
-        .qhbt_prefix_buf    = "\x00\x00",   /* TODO: now we have  a dependency */
+        .qhbt_prefix_buf    = "\x01\x81",
         .qhbt_header_sz     = 1,
         .qhbt_header_buf    = {
             0x80 | 1 /* New dynamic ID */,

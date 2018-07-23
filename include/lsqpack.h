@@ -94,7 +94,14 @@ lsqpack_enc_encode (struct lsqpack_enc *,
 
 /**
  * End current header block.  The Header Data Prefix is written to `buf'.
- * Returns number of bytes written or -1 on error.
+ *
+ * Returns:
+ *  -   A non-negative values indicates success and is the number of bytes
+ *      written to `buf'.
+ *  -   Zero means that there is not enough room in `buf' to write out the
+ *      full prefix.
+ *  -   A negative value means an error.  This is returned if there is no
+ *      started header to end.
  */
 ssize_t
 lsqpack_enc_end_header (struct lsqpack_enc *, unsigned char *buf, size_t);
@@ -128,6 +135,7 @@ struct lsqpack_enc
      * created so far.  This is used to calculate the Absolute Index.
      */
     lsqpack_abs_id_t            qpe_ins_count;
+    lsqpack_abs_id_t            qpe_max_acked_id;
 
     enum {
         LSQPACK_ENC_HEADER  = 1 << 0,

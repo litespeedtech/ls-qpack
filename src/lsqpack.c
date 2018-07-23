@@ -5774,8 +5774,8 @@ qenc_find_entry_in_static_table (const char *name, lsqpack_strlen_t name_len,
 
 
 static struct enc_found
-qenc_find_entry_in_either_table (struct lsqpack_enc *enc, const char *name,
-        lsqpack_strlen_t name_len, const char *value,
+qenc_find_entry_in_either_table (struct lsqpack_enc *enc, int risk,
+        const char *name, lsqpack_strlen_t name_len, const char *value,
         lsqpack_strlen_t value_len)
 {
     struct lsqpack_enc_table_entry *entry;
@@ -5807,6 +5807,7 @@ qenc_find_entry_in_either_table (struct lsqpack_enc *enc, const char *name,
         if (nameval_hash == entry->ete_nameval_hash &&
             name_len == entry->ete_name_len &&
             value_len == entry->ete_val_len &&
+            (risk || entry->ete_id <= enc->qpe_max_acked_id) &&
             (enc->qpe_cur_header.search_cutoff == 0
                 || entry->ete_id > enc->qpe_cur_header.search_cutoff) &&
             0 == memcmp(name, ETE_NAME(entry), name_len) &&
@@ -5826,6 +5827,9 @@ qenc_find_entry_in_either_table (struct lsqpack_enc *enc, const char *name,
     STAILQ_FOREACH(entry, &enc->qpe_buckets[buckno].by_name, ete_next_name)
         if (name_hash == entry->ete_name_hash &&
             name_len == entry->ete_name_len &&
+            (risk || entry->ete_id <= enc->qpe_max_acked_id) &&
+            (enc->qpe_cur_header.search_cutoff == 0
+                || entry->ete_id > enc->qpe_cur_header.search_cutoff) &&
             0 == memcmp(name, ETE_NAME(entry), name_len))
         {
             return (struct enc_found) { 1, TT_DYNAMIC, entry->ete_id, 0, entry, };
@@ -5836,12 +5840,12 @@ qenc_find_entry_in_either_table (struct lsqpack_enc *enc, const char *name,
 
 
 static struct enc_found
-qenc_find_entry (struct lsqpack_enc *enc, const char *name,
+qenc_find_entry (struct lsqpack_enc *enc, int risk, const char *name,
         lsqpack_strlen_t name_len, const char *value,
         lsqpack_strlen_t value_len)
 {
     if (enc->qpe_cur_header.use_dynamic_table)
-        return qenc_find_entry_in_either_table(enc, name, name_len, value,
+        return qenc_find_entry_in_either_table(enc, risk, name, name_len, value,
                                                                     value_len);
     else
         return qenc_find_entry_in_static_table(name, name_len, value, value_len);
@@ -6143,7 +6147,7 @@ lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
     enc->qpe_cur_header.hinfo = (struct lsqpack_header_info)
                         { .qhi_stream_id = stream_id, .qhi_seqno = seqno, };
     enc->qpe_cur_header.n_risked = 0;
-    enc->qpe_cur_header.base_idx = 0;
+    enc->qpe_cur_header.base_idx = enc->qpe_ins_count;
     enc->qpe_cur_header.search_cutoff = 0;
     enc->qpe_cur_header.use_dynamic_table = 1;
 
@@ -6191,19 +6195,49 @@ lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
 ssize_t
 lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
 {
+    unsigned char *dst, *end;
+    lsqpack_abs_id_t diff;
+    unsigned sign;
+
     if (!(enc->qpe_flags & LSQPACK_ENC_HEADER))
         return -1;
 
-    enc->qpe_flags &= ~LSQPACK_ENC_HEADER;
     if (enc->qpe_cur_header.hinfo.qhi_max_id)
     {
-        assert(0);
-        /* TODO */
-        return 0;
+        end = buf + sz;
+
+        dst = qenc_enc_int(buf, end, enc->qpe_cur_header.hinfo.qhi_max_id, 8);
+        if (dst <= buf)
+            return 0;
+
+        if (dst >= end)
+            return 0;
+
+        buf = dst;
+        if (enc->qpe_cur_header.base_idx > enc->qpe_cur_header.hinfo.qhi_max_id)
+        {
+            sign = 0;
+            diff = enc->qpe_cur_header.base_idx
+                                    - enc->qpe_cur_header.hinfo.qhi_max_id;
+        }
+        else
+        {
+            sign = 1;
+            diff = enc->qpe_cur_header.hinfo.qhi_max_id
+                                    - enc->qpe_cur_header.base_idx;
+        }
+        *buf = sign << 7;
+        dst = qenc_enc_int(buf, end, diff, 7);
+        if (dst <= buf)
+            return 0;
+
+        enc->qpe_flags &= ~LSQPACK_ENC_HEADER;
+        return dst - end + sz;
     }
     else if (sz >= 2)
     {
         memset(buf, 0, 2);
+        enc->qpe_flags &= ~LSQPACK_ENC_HEADER;
         return 2;
     }
     else
@@ -6226,8 +6260,9 @@ struct encode_program
         ETA_NEW,
     }           ep_tab_action;
     enum {
-        EPF_HEA_NEW     = 1 << 0,   /* New new entry ID in emitted header instruction */
+        EPF_HEA_NEW     = 1 << 0,   /* New entry ID in emitted header instruction */
         EPF_REF_FOUND   = 1 << 1,
+        EPF_REF_NEW     = 1 << 2,
     }           ep_flags;
 };
 
@@ -6262,7 +6297,7 @@ static const struct encode_program encode_programs[2][2][2][2][2] =
   */
     [1][0][0][0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME, ETA_NOOP, 0, },
     [1][0][0][1][0] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME, ETA_NEW,  0, },
-    [1][0][0][1][1] = { EEA_INS_NAMEREF, EHA_INDEXED,       ETA_NEW,  EPF_HEA_NEW, },
+    [1][0][0][1][1] = { EEA_INS_NAMEREF, EHA_INDEXED,       ETA_NEW,  EPF_HEA_NEW|EPF_REF_NEW, },
     [1][0][1][A][A] = { EEA_NONE,        EHA_INDEXED,       ETA_NOOP, 0, },
 #undef A
 };
@@ -6333,7 +6368,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         || enc->qpe_cur_header.others_at_risk
         || enc->qpe_cur_streams_at_risk < enc->qpe_max_risked_streams;
 
-    ef = qenc_find_entry(enc, name, name_len, value, value_len);
+    ef = qenc_find_entry(enc, risk, name, name_len, value, value_len);
 
     prog = encode_programs
                 [ef.ef_found]
@@ -6413,12 +6448,15 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
             index = 0;
             goto restart;
         }
-        ++new_entry->ete_n_reffd;
-        assert(new_entry->ete_id > enc->qpe_cur_header.hinfo.qhi_max_id);
-        enc->qpe_cur_header.hinfo.qhi_max_id = new_entry->ete_id;
-        if (enc->qpe_cur_header.hinfo.qhi_min_id == 0
-                || enc->qpe_cur_header.hinfo.qhi_min_id > new_entry->ete_id)
-            enc->qpe_cur_header.hinfo.qhi_min_id = new_entry->ete_id;
+        if (prog.ep_flags & EPF_REF_NEW)
+        {
+            ++new_entry->ete_n_reffd;
+            assert(new_entry->ete_id > enc->qpe_cur_header.hinfo.qhi_max_id);
+            enc->qpe_cur_header.hinfo.qhi_max_id = new_entry->ete_id;
+            if (enc->qpe_cur_header.hinfo.qhi_min_id == 0
+                    || enc->qpe_cur_header.hinfo.qhi_min_id > new_entry->ete_id)
+                enc->qpe_cur_header.hinfo.qhi_min_id = new_entry->ete_id;
+        }
         break;
     default:
         assert(prog.ep_tab_action == ETA_NOOP);
