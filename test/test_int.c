@@ -71,6 +71,65 @@ static const struct int_test tests[] =
         .it_dec_retval  = 0,
     },
 
+    {   .it_lineno      = __LINE__,
+        .it_prefix_bits = 7,
+        .it_encoded     = { 0b01111111, 0b10000001, 0b10000010, 0b10000011,
+                            0b10000100, 0b10000101, 0b10000110, 0b10000111,
+                            0b10001000,
+                            0b00000011, },
+        .it_enc_sz      = 10,
+                       /*     01234560123456012345601234560123456012345601234560123456 */
+        .it_decoded     = 0b1100010000000111000011000001010000100000001100000100000001
+                                + 0b1111111,
+        .it_dec_retval  = 0,
+    },
+
+    {   .it_lineno      = __LINE__,
+        .it_prefix_bits = 7,
+        .it_encoded     = { 0b01111111, 0b10000001, 0b10000010, 0b10000011,
+                            0b10000100, 0b10000101, 0b10000110, 0b10000111,
+                            0b10001000,
+                            0b00000011, },
+        .it_enc_sz      = 10,
+                       /*     01234560123456012345601234560123456012345601234560123456 */
+        .it_decoded     = 0b1100010000000111000011000001010000100000001100000100000001
+                                + 0b1111111,
+        .it_dec_retval  = 0,
+    },
+
+    {   .it_lineno      = __LINE__,
+        .it_prefix_bits = 7,
+        .it_encoded     = { 0b01111111, 0b10000001, 0b10000010, 0b10000011,
+                            0b10000100, 0b10000101, 0b10000110, 0b10000111,
+                            0b10001000, 0b10001001,
+                            0b00000001, },
+        .it_enc_sz      = 11,
+                       /*    012345601234560123456012345601234560123456012345601234560123456 */
+        .it_decoded     = 0b1000100100010000000111000011000001010000100000001100000100000001
+                                + 0b1111111,
+        .it_dec_retval  = 0,
+    },
+
+    {   .it_lineno      = __LINE__,
+        .it_prefix_bits = 7,
+        .it_encoded     = { 0b01111111, 0b11101111, 0b11111111, 0b11111111,
+                            0b11111111, 0b11111111, 0b11111111, 0b11111111,
+                            0b11111111, 0b11111111,
+                            0b00000001, },
+        .it_enc_sz      = 11,
+        .it_dec_retval  = -2,
+    },
+
+    {   .it_lineno      = __LINE__,
+        .it_prefix_bits = 7,
+        .it_encoded     = { 0b01111111, 0b10000001, 0b10000010, 0b10000011,
+                            0b10000100, 0b10000101, 0b10000110, 0b10000111,
+                            0b10001000, 0b10001001,
+                            0b00000011, },
+        .it_enc_sz      = 11,
+        .it_dec_retval  = -2,
+    },
+
 };
 
 int
@@ -89,13 +148,20 @@ main (void)
             src = test->it_encoded;
             rv = lsqpack_dec_int(&src, src + sz, test->it_prefix_bits, &val);
             assert(-1 == rv);
+            assert(src == test->it_encoded);
         }
         for (; sz < sizeof(test->it_encoded); ++sz)
         {
             src = test->it_encoded;
             rv = lsqpack_dec_int(&src, src + sz, test->it_prefix_bits, &val);
             assert(rv == test->it_dec_retval);
-            assert(val == test->it_decoded);
+            if (0 == rv)
+            {
+                assert(val == test->it_decoded);
+                assert(src == test->it_encoded + test->it_enc_sz);
+            }
+            else
+                assert(src == test->it_encoded);
         }
     }
 

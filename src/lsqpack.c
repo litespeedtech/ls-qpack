@@ -6680,6 +6680,11 @@ lsqpack_dec_cleanup (struct lsqpack_dec *dec)
 
 
 /* Assumption: we have at least one byte to work with */
+/* Return value:
+ *  0   OK
+ *  -1  Out of input
+ *  -2  Value cannot be represented as 64-bit integer (overflow)
+ */
 #if !LS_QPACK_EMIT_TEST_CODE
 static
 #endif
@@ -6689,9 +6694,8 @@ lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
 {
     unsigned char prefix_max;
     const unsigned char *src;
-    uint32_t u32;
-    unsigned ct1;
-    uint64_t val, B, M;
+    uint64_t val, B;
+    unsigned M;
 
     prefix_max = (1 << prefix_bits) - 1;
     src = *src_p;
@@ -6700,47 +6704,12 @@ lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
 
     if (val < prefix_max)
     {
+        *src_p = src;
         *value_p = val;
         return 0;
     }
 
-    if (src + 4 <= src_end)
-    {
-        memcpy(&u32, src, 4);
-        ct1 = ((u32 >>  7) & 0x1)
-            | ((u32 >> 14) & 0x2)
-            | ((u32 >> 21) & 0x4)
-            | ((u32 >> 28) & 0x8)
-            ;
-        ct1 = __builtin_ctz(~ct1);
-        switch (ct1)
-        {
-        case 0:
-            *value_p = (u32 & 0x7F) + val;
-            *src_p = src + 1;
-            return 0;
-        case 1:
-            *value_p = ((u32 & 0x7F) | ((u32 & 0x7F00) >> 1)) + val;
-            *src_p = src + 2;
-            return 0;
-        case 2:
-            *src_p = src + 3;
-            *value_p = ((u32 & 0x7F) | ((u32 & 0x7F00) >> 1) | ((u32 & 0x7F0000) >> 2)) + val;
-            return 0;
-        case 3:
-            *src_p += 4;
-            *value_p = ((u32 & 0x7F) | ((u32 & 0x7F00) >> 1) | ((u32 & 0x7F0000) >> 2) | ((u32 & 0x7F000000) >> 3)) + val;
-            return 0;
-        default:
-            src += 4;
-            val = ((u32 & 0x7F) | ((u32 & 0x7F00) >> 1) | ((u32 & 0x7F0000) >> 2) | ((u32 & 0x7F000000) >> 3)) + val;
-            goto loop;
-        }
-    }
-    else
-        M = 0;
-
-  loop:
+    M = 0;
     do
     {
         if (src < src_end)
@@ -6754,8 +6723,14 @@ lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
     }
     while (B & 0x80);
 
-    *value_p = val;
-    return -(M > sizeof(val) * 8);
+    if (M <= 63 || (M == 70 && src[-1] <= 1 && (val & (1ull << 63))))
+    {
+        *src_p = src;
+        *value_p = val;
+        return 0;
+    }
+    else
+        return -2;
 }
 
 
