@@ -5748,8 +5748,8 @@ lsqpack_enc_get_stx_tab_id (const char *name, lsqpack_strlen_t name_len,
 static
 #endif
        int
-lsqpack_dec_dec_int (const unsigned char **src, const unsigned char *src_end,
-                                        uint8_t prefix_bits, uint32_t *value);
+lsqpack_dec_int (const unsigned char **src, const unsigned char *src_end,
+                                        unsigned prefix_bits, uint64_t *value);
 
 
 enum table_type {
@@ -6679,37 +6679,45 @@ lsqpack_dec_cleanup (struct lsqpack_dec *dec)
 #endif
 
 
+/* Assumption: we have at least one byte to work with */
 #if !LS_QPACK_EMIT_TEST_CODE
 static
 #endif
        int
-lsqpack_dec_dec_int (const unsigned char **src, const unsigned char *src_end,
-                                        uint8_t prefix_bits, uint32_t *value)
+lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
+                                        unsigned prefix_bits, uint64_t *value_p)
 {
-    uint32_t B, M;
-    uint8_t prefix_max = (1 << prefix_bits) - 1;
+    unsigned char prefix_max;
+    const unsigned char *src;
+    uint64_t val, B, M;
 
-    *value = (*(*src)++ & prefix_max);
+    prefix_max = (1 << prefix_bits) - 1;
+    src = *src_p;
+    val = *src++;
+    val &= prefix_max;
 
-    if (*value < prefix_max)
+    if (val < prefix_max)
+    {
+        *value_p = val;
         return 0;
+    }
 
-    /* To optimize the loop for the normal case, the overflow is checked
-     * outside the loop.  The decoder is limited to 28-bit integer values,
-     * which is far above limitations imposed by the APIs (16-bit integers).
-     */
     M = 0;
     do
     {
-        if ((*src) >= src_end)
+        if (src < src_end)
+        {
+            B = *src++;
+            val = val + ((B & 0x7f) << M);
+            M += 7;
+        }
+        else
             return -1;
-        B = *(*src)++;
-        *value = *value + ((B & 0x7f) << M);
-        M += 7;
     }
     while (B & 0x80);
 
-    return -(M > sizeof(*value) * 8);
+    *value_p = val;
+    return -(M > sizeof(val) * 8);
 }
 
 
