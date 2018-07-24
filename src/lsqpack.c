@@ -6559,39 +6559,86 @@ lsqpack_enc_set_max_capacity (struct lsqpack_enc *enc, unsigned max_capacity)
 }
 
 
+static int
+enc_proc_header_ack (struct lsqpack_enc *enc, uint64_t stream_id)
+{
+    return -1;  /* TODO */
+}
+
+
+static int
+enc_proc_table_synch (struct lsqpack_enc *enc, uint64_t stream_id)
+{
+    return -1;  /* TODO */
+}
+
+
+static int
+enc_proc_stream_cancel (struct lsqpack_enc *enc, uint64_t stream_id)
+{
+    return -1;  /* TODO */
+}
+
+
 int
 lsqpack_enc_read_dec (struct lsqpack_enc *enc)
 {
-    unsigned char buf[ sizeof(enc->qpe_dec_leftovers) ];
-    size_t nr, off;
+    size_t nr, off, buf_sz;
+    uint64_t val;
+    int r;
+    const unsigned char *p;
+    unsigned prefix_bits;
+    int (*handler)(struct lsqpack_enc *, uint64_t);
+    unsigned char *const buf = enc->qpe_dec_buf;
 
-    if (enc->qpe_dec_lo_sz)
+    while ((nr = enc->qpe_read_dec(enc->qpe_dec_ctx,
+                        enc->qpe_dec_buf + enc->qpe_dec_buf_sz,
+                        sizeof(enc->qpe_dec_buf) - enc->qpe_dec_buf_sz)) > 0)
     {
-        off = enc->qpe_dec_lo_sz;
-        memcpy(buf, enc->qpe_dec_leftovers, off);
-    }
-    else
-        off = 0;
+        enc->qpe_dec_buf_sz += nr;
+        do
+        {
+            if (buf[0] & 0x80)              /* Header ACK */
+            {
+                prefix_bits = 7;
+                handler = enc_proc_header_ack;
+            }
+            else if ((buf[0] & 0xC) == 0)   /* Table State Synchronize */
+            {
+                prefix_bits = 6;
+                handler = enc_proc_table_synch;
+            }
+            else                            /* Stream Cancellation */
+            {
+                assert((buf[0] & 0xC) == 0x40);
+                prefix_bits = 6;
+                handler = enc_proc_stream_cancel;
+            }
 
-    while ((nr = enc->qpe_read_dec(enc->qpe_dec_ctx, buf + off,
-                                                    sizeof(buf) - off)) > 0)
-    {
-        off = 0;
-        if (buf[0] & 0x80)              /* Header ACK */
-        {
+            p = buf;
+            r = lsqpack_dec_int(&p, buf + nr, prefix_bits, &val);
+            if (r == 0)
+            {
+                /* TODO: adjust buffer */
+                r = handler(enc, val);
+                if (r == 0)
+                {
+                    /* TODO */
+                    break;
+                }
+                else
+                    return -1;
+            }
+            else if (r == -1)
+                break;
+            else
+                return -1;
         }
-        else if ((buf[0] & 0xC) == 0)   /* Table State Synchronize */
-        {
-        }
-        else                            /* Stream Cancellation */
-        {
-            assert((buf[0] & 0xC) == 0x40);
-        }
+        while (enc->qpe_dec_buf_sz > 0);
     }
 
-    if (nr)
-        memcpy(enc->qpe_dec_leftovers, buf, nr);
-    enc->qpe_dec_lo_sz = nr;
+    if (enc->qpe_dec_buf_sz == sizeof(enc->qpe_dec_buf))
+        return -1;
 
     return 0;
 }

@@ -209,8 +209,8 @@ struct lsqpack_enc
         lsqpack_abs_id_t    search_cutoff;
     }                           qpe_cur_header;
 
-    size_t                      qpe_dec_lo_sz;
-    unsigned char               qpe_dec_leftovers[10];
+    size_t                      qpe_dec_buf_sz;
+    unsigned char               qpe_dec_buf[11];
 };
 
 struct lsqpack_arr
