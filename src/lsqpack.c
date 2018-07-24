@@ -6689,6 +6689,8 @@ lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
 {
     unsigned char prefix_max;
     const unsigned char *src;
+    uint32_t u32;
+    unsigned ct1;
     uint64_t val, B, M;
 
     prefix_max = (1 << prefix_bits) - 1;
@@ -6702,7 +6704,43 @@ lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
         return 0;
     }
 
-    M = 0;
+    if (src + 4 <= src_end)
+    {
+        memcpy(&u32, src, 4);
+        ct1 = ((u32 >>  7) & 0x1)
+            | ((u32 >> 14) & 0x2)
+            | ((u32 >> 21) & 0x4)
+            | ((u32 >> 28) & 0x8)
+            ;
+        ct1 = __builtin_ctz(~ct1);
+        switch (ct1)
+        {
+        case 0:
+            *value_p = (u32 & 0x7F) + val;
+            *src_p = src + 1;
+            return 0;
+        case 1:
+            *value_p = ((u32 & 0x7F) | ((u32 & 0x7F00) >> 1)) + val;
+            *src_p = src + 2;
+            return 0;
+        case 2:
+            *src_p = src + 3;
+            *value_p = ((u32 & 0x7F) | ((u32 & 0x7F00) >> 1) | ((u32 & 0x7F0000) >> 2)) + val;
+            return 0;
+        case 3:
+            *src_p += 4;
+            *value_p = ((u32 & 0x7F) | ((u32 & 0x7F00) >> 1) | ((u32 & 0x7F0000) >> 2) | ((u32 & 0x7F000000) >> 3)) + val;
+            return 0;
+        default:
+            src += 4;
+            val = ((u32 & 0x7F) | ((u32 & 0x7F00) >> 1) | ((u32 & 0x7F0000) >> 2) | ((u32 & 0x7F000000) >> 3)) + val;
+            goto loop;
+        }
+    }
+    else
+        M = 0;
+
+  loop:
     do
     {
         if (src < src_end)
