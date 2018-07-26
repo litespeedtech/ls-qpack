@@ -55,12 +55,15 @@ typedef unsigned lsqpack_abs_id_t;
 #define LSQPACK_MAX_MAX_RISKED_STREAMS ((1 << 16) - 1)
 
 struct lsqpack_enc;
+struct lsqpack_dec;
+
+typedef ssize_t (*lsqpack_stream_read_f)(void *stream, void *buf, size_t sz);
+typedef ssize_t (*lsqpack_stream_write_f)(void *stream, void *buf, size_t sz);
 
 int
 lsqpack_enc_init (struct lsqpack_enc *, unsigned dyn_table_size,
-    unsigned max_risked_streams,
-    size_t (*read_decoder_stream)(void *decoder_ctx, void *buf, size_t sz),
-    void *decoder_ctx);
+    unsigned max_risked_streams, lsqpack_stream_read_f read_decoder,
+    void *decoder_stream);
 
 /** Start a new header block.  Return 0 on success or -1 on error. */
 int
@@ -121,6 +124,68 @@ lsqpack_enc_read_dec (struct lsqpack_enc *);
 
 void
 lsqpack_enc_cleanup (struct lsqpack_enc *);
+
+/**
+ * The header is a single name/value pair.  The strings are NUL-terminated.
+ */
+struct lsqpack_header
+{
+    const char         *qh_name;
+    const char         *qh_value;
+    lsqpack_strlen_t    qh_name_len;
+    lsqpack_strlen_t    qh_value_len;
+    /** qh_id is internal to the decoder */
+    void               *qh_id;
+};
+
+/**
+ * The header set represents the decoded header block.
+ */
+struct lsqpack_header_set
+{
+    struct lsqpack_header  **qhs_headers;
+    unsigned                 qhs_count;
+    /** qhs_header_ctx is internal to the decoder */
+    void                    *qhs_header_ctx;
+};
+
+/* The callback `header_block_done' is called when the decoder is done
+ * reading from the header block.  At this point, the decoder is no
+ * longer using the stream reference.  If header block decoding was
+ * successful, the header set is not NULL.  This is a read-only structure
+ * that must be returned to the decoder when it has been processed.
+ */
+int
+lsqpack_dec_init (struct lsqpack_dec *, unsigned dyn_table_size,
+    unsigned max_risked_streams,
+    lsqpack_stream_read_f read_encoder, void *encoder_stream,
+    lsqpack_stream_write_f write_decoder, void *decoder_stream,
+    lsqpack_stream_read_f read_header_block,
+    void (*header_block_done)(void *header_block_stream,
+                                        const struct lsqpack_header_set *));
+
+/* The decoder will attempt to read exactly `header_block_size' byte from
+ * the stream using the read_header_block specified during initialization.
+ * If the header block cannot be processed due to blocked references, the
+ * decoder keeps the stream until the references become unblocked.  The
+ * user knows that the header block processing is complete (successful or
+ * not) when `header_block_done' callback is called.
+ */
+int
+lsqpack_dec_header_in (struct lsqpack_dec *,
+                        void *header_block_stream, size_t header_block_size);
+
+/* Return the header set structure to the decoder */
+void
+lsqpack_dec_release_header_set (struct lsqpack_dec *,
+                                        const struct lsqpack_header_set *);
+
+/* Clean up the decoder.  If any there are any blocked header blocks,
+ * `header_block_done' will be called for each of them with the second
+ * argument set to NULL.
+ */
+void
+lsqpack_dec_cleanup (struct lsqpack_dec *);
 
 /*
  * Internals follow
@@ -185,7 +250,7 @@ struct lsqpack_enc
      */
     struct lsqpack_header_info *qpe_hinfos_arr;
 
-    size_t                    (*qpe_read_dec)(void *, void *, size_t);
+    lsqpack_stream_read_f       qpe_read_dec;
     void                       *qpe_dec_ctx;
 
     /* Current header state */

@@ -5369,7 +5369,7 @@ struct lsqpack_enc_table_entry
 int
 lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
     unsigned max_risked_streams,
-    size_t (*read_decoder_stream)(void *, void *, size_t),
+    lsqpack_stream_read_f read_decoder_stream,
     void *decoder_ctx)
 {
     struct lsqpack_double_enc_head *buckets;
@@ -6594,7 +6594,8 @@ enc_proc_stream_cancel (struct lsqpack_enc *enc, uint64_t stream_id)
 int
 lsqpack_enc_read_dec (struct lsqpack_enc *enc)
 {
-    size_t nr, n_to_read;
+    size_t n_to_read;
+    ssize_t nr;
     uint64_t val;
     int r;
     const unsigned char *p;
@@ -6607,8 +6608,8 @@ lsqpack_enc_read_dec (struct lsqpack_enc *enc)
         n_to_read = sizeof(enc->qpe_dec_buf) - enc->qpe_dec_buf_sz;
         nr = enc->qpe_read_dec(enc->qpe_dec_ctx, enc->qpe_dec_buf
                                     + enc->qpe_dec_buf_sz, n_to_read);
-        if (nr == 0)
-            break;
+        if (nr < 0)
+            return -1;
         enc->qpe_dec_buf_sz += nr;
         while (enc->qpe_dec_buf_sz > 1)
         {
@@ -6652,9 +6653,10 @@ lsqpack_enc_read_dec (struct lsqpack_enc *enc)
                 return -1;
         }
     }
-    while (nr == n_to_read);
+    while ((size_t) nr == n_to_read);
 
     assert(enc->qpe_dec_buf_sz <= sizeof(enc->qpe_dec_buf));
+
     return 0;
 }
 
