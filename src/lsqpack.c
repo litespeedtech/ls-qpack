@@ -6754,8 +6754,9 @@ static
 lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
                                         unsigned prefix_bits, uint64_t *value_p)
 {
-    unsigned char prefix_max;
+    const unsigned char *const orig_src = *src_p;
     const unsigned char *src;
+    unsigned char prefix_max;
     uint64_t val, B;
     unsigned M;
 
@@ -6780,8 +6781,10 @@ lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
             val = val + ((B & 0x7f) << M);
             M += 7;
         }
-        else
+        else if (src - orig_src < 11 /* 11 bytes to encode UINT64_MAX */ )
             return -1;
+        else
+            return -2;
     }
     while (B & 0x80);
 

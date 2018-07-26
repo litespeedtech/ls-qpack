@@ -167,6 +167,14 @@ static const struct int_test tests[] =
         .it_dec_retval  = -2,
     },
 
+    {   .it_lineno      = __LINE__,
+        .it_prefix_bits = 7,
+        .it_encoded     = { 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                            0xFF, 0xFF, 0xFF, },
+        .it_enc_sz      = 11,
+        .it_dec_retval  = -2,
+    },
+
 };
 
 int
@@ -190,7 +198,7 @@ main (void)
             assert(-1 == rv);
             assert(src == test->it_encoded);
         }
-        for (; sz < sizeof(test->it_encoded); ++sz)
+        for (; sz <= sizeof(test->it_encoded); ++sz)
         {
             src = test->it_encoded;
             rv = lsqpack_dec_int(&src, src + sz, test->it_prefix_bits, &val);
