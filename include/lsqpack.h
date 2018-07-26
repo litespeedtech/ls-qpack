@@ -210,7 +210,10 @@ struct lsqpack_enc
     }                           qpe_cur_header;
 
     size_t                      qpe_dec_buf_sz;
-    unsigned char               qpe_dec_buf[11];
+    /* UINT64_MAX takes 11 bytes to encode, plus a decoder operation is
+     * one byte.  Thus, the buffer is 12 bytes.
+     */
+    unsigned char               qpe_dec_buf[12];
 };
 
 struct lsqpack_arr

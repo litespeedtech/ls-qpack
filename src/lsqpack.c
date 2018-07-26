@@ -6586,7 +6586,7 @@ enc_proc_stream_cancel (struct lsqpack_enc *enc, uint64_t stream_id)
 int
 lsqpack_enc_read_dec (struct lsqpack_enc *enc)
 {
-    size_t nr, off, buf_sz;
+    size_t nr, n_to_read;
     uint64_t val;
     int r;
     const unsigned char *p;
@@ -6594,12 +6594,15 @@ lsqpack_enc_read_dec (struct lsqpack_enc *enc)
     int (*handler)(struct lsqpack_enc *, uint64_t);
     unsigned char *const buf = enc->qpe_dec_buf;
 
-    while ((nr = enc->qpe_read_dec(enc->qpe_dec_ctx,
-                        enc->qpe_dec_buf + enc->qpe_dec_buf_sz,
-                        sizeof(enc->qpe_dec_buf) - enc->qpe_dec_buf_sz)) > 0)
+    do
     {
+        n_to_read = sizeof(enc->qpe_dec_buf) - enc->qpe_dec_buf_sz;
+        nr = enc->qpe_read_dec(enc->qpe_dec_ctx, enc->qpe_dec_buf
+                                    + enc->qpe_dec_buf_sz, n_to_read);
+        if (nr == 0)
+            break;
         enc->qpe_dec_buf_sz += nr;
-        do
+        while (enc->qpe_dec_buf_sz > 1)
         {
             if (buf[0] & 0x80)              /* Header ACK */
             {
@@ -6622,14 +6625,17 @@ lsqpack_enc_read_dec (struct lsqpack_enc *enc)
             r = lsqpack_dec_int(&p, buf + nr, prefix_bits, &val);
             if (r == 0)
             {
-                /* TODO: adjust buffer */
-                r = handler(enc, val);
-                if (r == 0)
-                {
-                    /* TODO */
-                    break;
-                }
+                if ((intptr_t) enc->qpe_dec_buf_sz > p - buf)
+                    memmove(enc->qpe_dec_buf,
+                                enc->qpe_dec_buf + (p - buf),
+                                    enc->qpe_dec_buf_sz - (p - buf));
                 else
+                {
+                    assert((intptr_t) enc->qpe_dec_buf_sz == p - buf);
+                }
+                enc->qpe_dec_buf_sz -= (p - buf);
+                r = handler(enc, val);
+                if (r != 0)
                     return -1;
             }
             else if (r == -1)
@@ -6637,12 +6643,10 @@ lsqpack_enc_read_dec (struct lsqpack_enc *enc)
             else
                 return -1;
         }
-        while (enc->qpe_dec_buf_sz > 0);
     }
+    while (nr == n_to_read);
 
-    if (enc->qpe_dec_buf_sz == sizeof(enc->qpe_dec_buf))
-        return -1;
-
+    assert(enc->qpe_dec_buf_sz <= sizeof(enc->qpe_dec_buf));
     return 0;
 }
 
