@@ -1,5 +1,7 @@
 #include <assert.h>
+#include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "lsqpack.h"
 #include "lsqpack-test.h"
@@ -112,6 +114,41 @@ static const struct int_test tests[] =
 
     {   .it_lineno      = __LINE__,
         .it_prefix_bits = 7,
+        .it_encoded     = { 0b01111111, 0b10000000, 0b11111111, 0b11111111,
+                            0b11111111, 0b11111111, 0b11111111, 0b11111111,
+                            0b11111111, 0b11111111,
+                            0b00000001, },
+        .it_enc_sz      = 11,
+        .it_decoded     = UINT64_MAX,
+        .it_dec_retval  = 0,
+    },
+
+    {   .it_lineno      = __LINE__,
+        .it_prefix_bits = 7,
+            /* Same as above, but with extra bit that overflows it */
+                                      /* ----v---- */
+        .it_encoded     = { 0b01111111, 0b10010000, 0b11111111, 0b11111111,
+                            0b11111111, 0b11111111, 0b11111111, 0b11111111,
+                            0b11111111, 0b11111111,
+                            0b00000001, },
+        .it_enc_sz      = 11,
+        .it_dec_retval  = -2,
+    },
+
+    {   .it_lineno      = __LINE__,
+        .it_prefix_bits = 8,
+        .it_encoded     = { 0b11111111, 0b10000001, 0b10000010, 0b10000011,
+                            0b10000100, 0b10000101, 0b10000110, 0b10000111,
+                            0b10001000, 0b10001001, 0b00000001, },
+        .it_enc_sz      = 11,
+                       /*    012345601234560123456012345601234560123456012345601234560123456 */
+        .it_decoded     = 0b1000100100010000000111000011000001010000100000001100000100000001
+                                + 0b11111111,
+        .it_dec_retval  = 0,
+    },
+
+    {   .it_lineno      = __LINE__,
+        .it_prefix_bits = 7,
         .it_encoded     = { 0b01111111, 0b11101111, 0b11111111, 0b11111111,
                             0b11111111, 0b11111111, 0b11111111, 0b11111111,
                             0b11111111, 0b11111111,
@@ -137,10 +174,13 @@ main (void)
 {
     const struct int_test *test;
     const unsigned char *src;
+    unsigned char *dst;
+    unsigned char buf[ sizeof(((struct int_test *) NULL)->it_encoded) ];
     uint64_t val;
     size_t sz;
     int rv;
 
+    /* Test the decoder */
     for (test = tests; test < tests + sizeof(tests) / sizeof(tests[0]); ++test)
     {
         for (sz = 1; sz < test->it_enc_sz; ++sz)
@@ -162,6 +202,27 @@ main (void)
             }
             else
                 assert(src == test->it_encoded);
+        }
+    }
+
+    /* Test the encoder */
+    for (test = tests; test < tests + sizeof(tests) / sizeof(tests[0]); ++test)
+    {
+        if (test->it_dec_retval != 0)
+            continue;
+        for (sz = 1; sz < test->it_enc_sz; ++sz)
+        {
+            dst = lsqpack_enc_int(buf, buf + sz, test->it_decoded,
+                                                        test->it_prefix_bits);
+            assert(dst == buf);     /* Not enough room */
+        }
+        for (; sz <= sizeof(buf); ++sz)
+        {
+            buf[0] = '\0';
+            dst = lsqpack_enc_int(buf, buf + sz, test->it_decoded,
+                                                        test->it_prefix_bits);
+            assert(dst - buf == (intptr_t) test->it_enc_sz);
+            assert(0 == memcmp(buf, test->it_encoded, test->it_enc_sz));
         }
     }
 

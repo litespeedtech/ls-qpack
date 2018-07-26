@@ -5864,15 +5864,18 @@ qenc_find_entry (struct lsqpack_enc *enc, int risk, const char *name,
 }
 
 
-static unsigned char *
-qenc_enc_int (unsigned char *dst, unsigned char *const end, uint32_t value,
-                                                        uint8_t prefix_bits)
+#if !LS_QPACK_EMIT_TEST_CODE
+static
+#endif
+       unsigned char *
+lsqpack_enc_int (unsigned char *dst, unsigned char *const end, uint64_t value,
+                                                        unsigned prefix_bits)
 {
     unsigned char *const dst_orig = dst;
 
     /* This function assumes that at least one byte is available */
     assert(dst < end);
-    if (value < (uint32_t)(1 << prefix_bits) - 1)
+    if (value < (1u << prefix_bits) - 1)
         *dst++ |= value;
     else
     {
@@ -5961,7 +5964,7 @@ lsqpack_enc_enc_str (unsigned prefix_bits, unsigned char *const dst,
     if (enc_size_bytes < str_len)
     {
         *dst |= 1 << prefix_bits;
-        p = qenc_enc_int(dst, end, enc_size_bytes, prefix_bits);
+        p = lsqpack_enc_int(dst, end, enc_size_bytes, prefix_bits);
         if (p == dst)
             return -1;
         rc = qenc_huffman_enc(str, str + str_len, p, end - p);
@@ -5971,7 +5974,7 @@ lsqpack_enc_enc_str (unsigned prefix_bits, unsigned char *const dst,
     }
     else
     {
-        p = qenc_enc_int(dst, end, str_len, prefix_bits);
+        p = lsqpack_enc_int(dst, end, str_len, prefix_bits);
         if (p == dst)
             return -1;
         if (str_len <= end - p)
@@ -6186,7 +6189,7 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
     {
         end = buf + sz;
 
-        dst = qenc_enc_int(buf, end, enc->qpe_cur_header.hinfo.qhi_max_id, 8);
+        dst = lsqpack_enc_int(buf, end, enc->qpe_cur_header.hinfo.qhi_max_id, 8);
         if (dst <= buf)
             return 0;
 
@@ -6208,7 +6211,7 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
                                     - enc->qpe_cur_header.base_idx;
         }
         *buf = sign << 7;
-        dst = qenc_enc_int(buf, end, diff, 7);
+        dst = lsqpack_enc_int(buf, end, diff, 7);
         if (dst <= buf)
             return 0;
 
@@ -6376,7 +6379,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         *dst = 0x80
                | ((TT_STATIC == ef.ef_table_type) << 6)
                ;
-        dst = qenc_enc_int(dst, enc_buf_end, ef.ef_entry_id, 6);
+        dst = lsqpack_enc_int(dst, enc_buf_end, ef.ef_entry_id, 6);
         if (dst <= enc_buf)
             return LQES_NOBUF_ENC;
         r = lsqpack_enc_enc_str(7, dst, enc_buf_end - dst,
@@ -6412,7 +6415,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     {
     case EHA_INDEXED_STAT:
         *dst = 0x80 | 0x40;
-        dst = qenc_enc_int(dst, hea_buf_end, ef.ef_entry_id, 6);
+        dst = lsqpack_enc_int(dst, hea_buf_end, ef.ef_entry_id, 6);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         hea_sz = dst - hea_buf;
@@ -6423,7 +6426,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         *dst = 0x10;
         assert(id > enc->qpe_cur_header.base_idx);
         id -= enc->qpe_cur_header.base_idx;
-        dst = qenc_enc_int(dst, hea_buf_end, id, 4);
+        dst = lsqpack_enc_int(dst, hea_buf_end, id, 4);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         hea_sz = dst - hea_buf;
@@ -6433,7 +6436,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         if (id > enc->qpe_cur_header.base_idx)
             goto post_base_idx;
         *dst = 0x80;
-        dst = qenc_enc_int(dst, hea_buf_end, ef.ef_entry_id, 6);
+        dst = lsqpack_enc_int(dst, hea_buf_end, ef.ef_entry_id, 6);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         hea_sz = dst - hea_buf;
@@ -6460,7 +6463,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         *dst = (((flags & LQEF_NO_INDEX) > 0) << 3);
         assert(id > enc->qpe_cur_header.base_idx);
         id -= enc->qpe_cur_header.base_idx;
-        dst = qenc_enc_int(dst, hea_buf_end, id, 3);
+        dst = lsqpack_enc_int(dst, hea_buf_end, id, 3);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         r = lsqpack_enc_enc_str(7, dst, hea_buf_end - dst,
@@ -6478,7 +6481,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                | (((flags & LQEF_NO_INDEX) > 0) << 5)
                ;
         id = enc->qpe_cur_header.base_idx - ef.ef_entry_id;
-        dst = qenc_enc_int(dst, hea_buf_end, id, 4);
+        dst = lsqpack_enc_int(dst, hea_buf_end, id, 4);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         r = lsqpack_enc_enc_str(7, dst, hea_buf_end - dst,
@@ -6494,7 +6497,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                | (((flags & LQEF_NO_INDEX) > 0) << 5)
                | 0x10
                ;
-        dst = qenc_enc_int(dst, hea_buf_end, ef.ef_entry_id, 4);
+        dst = lsqpack_enc_int(dst, hea_buf_end, ef.ef_entry_id, 4);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         r = lsqpack_enc_enc_str(7, dst, hea_buf_end - dst,
