@@ -46,6 +46,8 @@ SOFTWARE.
  */
 #define DYNAMIC_ENTRY_OVERHEAD 32u
 
+#define MAX_QUIC_STREAM_ID ((1ull << 62) - 1)
+
 #define NAME_VAL(a, b) sizeof(a) - 1, sizeof(b) - 1, (a), (b)
 
 static const struct
@@ -6565,13 +6567,17 @@ lsqpack_enc_set_max_capacity (struct lsqpack_enc *enc, unsigned max_capacity)
 static int
 enc_proc_header_ack (struct lsqpack_enc *enc, uint64_t stream_id)
 {
+    if (stream_id > MAX_QUIC_STREAM_ID)
+        return -1;
     return -1;  /* TODO */
 }
 
 
 static int
-enc_proc_table_synch (struct lsqpack_enc *enc, uint64_t stream_id)
+enc_proc_table_synch (struct lsqpack_enc *enc, uint64_t abs_id)
 {
+    if (abs_id > LSQPACK_MAX_ABS_ID)
+        return -1;
     return -1;  /* TODO */
 }
 
@@ -6579,6 +6585,8 @@ enc_proc_table_synch (struct lsqpack_enc *enc, uint64_t stream_id)
 static int
 enc_proc_stream_cancel (struct lsqpack_enc *enc, uint64_t stream_id)
 {
+    if (stream_id > MAX_QUIC_STREAM_ID)
+        return -1;
     return -1;  /* TODO */
 }
 
