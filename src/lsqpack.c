@@ -6547,7 +6547,9 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         if (enc->qpe_cur_header.hinfo.qhi_min_id == 0
                 || enc->qpe_cur_header.hinfo.qhi_min_id > ef.ef_entry_id)
             enc->qpe_cur_header.hinfo.qhi_min_id = ef.ef_entry_id;
-        assert(enc->qpe_cur_header.hinfo.qhi_max_id > ef.ef_entry_id);
+        if (enc->qpe_cur_header.hinfo.qhi_max_id == 0
+                || enc->qpe_cur_header.hinfo.qhi_max_id < ef.ef_entry_id)
+            enc->qpe_cur_header.hinfo.qhi_max_id = ef.ef_entry_id;
     }
 
     *enc_sz_p = enc_sz;
