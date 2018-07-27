@@ -134,8 +134,7 @@ struct lsqpack_header
     const char         *qh_value;
     lsqpack_strlen_t    qh_name_len;
     lsqpack_strlen_t    qh_value_len;
-    /** qh_id is internal to the decoder */
-    void               *qh_id;
+    uintptr_t           qh_opaque;
 };
 
 /**
@@ -145,8 +144,6 @@ struct lsqpack_header_set
 {
     struct lsqpack_header  **qhs_headers;
     unsigned                 qhs_count;
-    /** qhs_header_ctx is internal to the decoder */
-    void                    *qhs_header_ctx;
 };
 
 /* The callback `header_block_done' is called when the decoder is done
@@ -155,7 +152,7 @@ struct lsqpack_header_set
  * successful, the header set is not NULL.  This is a read-only structure
  * that must be returned to the decoder when it has been processed.
  */
-int
+void
 lsqpack_dec_init (struct lsqpack_dec *, unsigned dyn_table_size,
     unsigned max_risked_streams,
     lsqpack_stream_read_f read_encoder, void *encoder_stream,
@@ -188,7 +185,7 @@ void
 lsqpack_dec_cleanup (struct lsqpack_dec *);
 
 /*
- * Internals follow
+ * Internals follow.  The internals are subject to change without notice.
  */
 
 #include <sys/queue.h>
@@ -287,6 +284,46 @@ struct lsqpack_arr
                     nelem,
                     off;
     uintptr_t      *els;
+};
+
+TAILQ_HEAD(lsqpack_header_sets, lsqpack_header_set_elem);
+struct lsqpack_blocked_header;
+
+struct lsqpack_dec
+{
+    /** This is the hard limit set at initialization */
+    unsigned                qpd_max_capacity;
+    /** The current maximum capacity can be adjusted at run-time */
+    unsigned                qpd_cur_max_capacity;
+    unsigned                qpd_cur_capacity;
+    unsigned                qpd_max_risked_streams;
+    lsqpack_abs_id_t        qpd_ins_count;
+    lsqpack_abs_id_t        qpd_del_count;
+    void                   *qpd_enc_stream;
+    lsqpack_stream_read_f   qpd_read_enc;
+    void                   *qpd_dec_stream;
+    lsqpack_stream_write_f  qpd_write_dec;
+    lsqpack_stream_read_f   qpd_read_header_block;
+    void                  (*qpd_header_block_done)(void *header_block_stream,
+                                const struct lsqpack_header_set *);
+
+    /** Outstanding header sets */
+    struct lsqpack_header_sets
+                            qpd_header_sets;
+
+    /** This is the dynamic table */
+    struct lsqpack_arr      qpd_dyn_table;
+
+    /** Blocked headers are kept in a min-heap */
+    struct lsqpack_blocked_header
+                           *qpd_blocked_headers;
+    /** Number of blocked headers */
+    unsigned                qpd_bh_count;
+    /**
+     * Number of elements currently allocated in the qpd_blocked_headers
+     * array.
+     */
+    unsigned                qpd_bh_nalloc;
 };
 
 #ifdef __cplusplus

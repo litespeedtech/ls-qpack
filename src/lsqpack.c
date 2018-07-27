@@ -6694,7 +6694,6 @@ lsqpack_enc_iter_next (struct lsqpack_enc *enc, void **iter,
 #endif
 
 
-#if 0
 /* Dynamic table entry: */
 struct dec_table_entry
 {
@@ -6721,12 +6720,25 @@ struct decode_status
 
 
 void
-lsqpack_dec_init (struct lsqpack_dec *dec)
+lsqpack_dec_init (struct lsqpack_dec *dec, unsigned dyn_table_size,
+    unsigned max_risked_streams,
+    lsqpack_stream_read_f read_encoder, void *encoder_stream,
+    lsqpack_stream_write_f write_decoder, void *decoder_stream,
+    lsqpack_stream_read_f read_header_block,
+    void (*header_block_done)(void *, const struct lsqpack_header_set *))
 {
     memset(dec, 0, sizeof(*dec));
-    dec->hpd_max_capacity = LSQPACK_DEF_DYN_TABLE_SIZE;
-    dec->hpd_cur_max_capacity = LSQPACK_DEF_DYN_TABLE_SIZE;
-    lsqpack_arr_init(&dec->hpd_dyn_table);
+    dec->qpd_max_capacity = dyn_table_size;
+    dec->qpd_cur_max_capacity = dyn_table_size;
+    dec->qpd_max_risked_streams = max_risked_streams;
+    dec->qpd_enc_stream = encoder_stream;
+    dec->qpd_read_enc = read_encoder;
+    dec->qpd_dec_stream = decoder_stream;
+    dec->qpd_write_dec = write_decoder;
+    dec->qpd_read_header_block = read_header_block;
+    dec->qpd_header_block_done = header_block_done;
+    TAILQ_INIT(&dec->qpd_header_sets);
+    lsqpack_arr_init(&dec->qpd_dyn_table);
 }
 
 
@@ -6735,14 +6747,17 @@ lsqpack_dec_cleanup (struct lsqpack_dec *dec)
 {
     uintptr_t val;
 
-    while (lsqpack_arr_count(&dec->hpd_dyn_table) > 0)
+    /* TODO: free blocked streams */
+
+    /* TODO: mark unreturned header sets */
+
+    while (lsqpack_arr_count(&dec->qpd_dyn_table) > 0)
     {
-        val = lsqpack_arr_pop(&dec->hpd_dyn_table);
+        val = lsqpack_arr_pop(&dec->qpd_dyn_table);
         free((struct dec_table_entry *) val);
     }
-    lsqpack_arr_cleanup(&dec->hpd_dyn_table);
+    lsqpack_arr_cleanup(&dec->qpd_dyn_table);
 }
-#endif
 
 
 /* Assumption: we have at least one byte to work with */
