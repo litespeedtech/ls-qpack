@@ -172,6 +172,9 @@ int
 lsqpack_dec_header_in (struct lsqpack_dec *,
                         void *header_block_stream, size_t header_block_size);
 
+int
+lsqpack_dec_enc_in (struct lsqpack_dec *, const unsigned char *, size_t);
+
 /* Return the header set structure to the decoder */
 void
 lsqpack_dec_release_header_set (struct lsqpack_dec *,
@@ -189,6 +192,9 @@ lsqpack_dec_cleanup (struct lsqpack_dec *);
  */
 
 #include <sys/queue.h>
+
+/* It takes 11 bytes to encode UINT64_MAX as HPACK integer */
+#define LSQPACK_UINT64_ENC_SZ 11
 
 struct lsqpack_enc_table_entry;
 
@@ -275,7 +281,7 @@ struct lsqpack_enc
     /* UINT64_MAX takes 11 bytes to encode, plus a decoder operation is
      * one byte.  Thus, the buffer is 12 bytes.
      */
-    unsigned char               qpe_dec_buf[12];
+    unsigned char               qpe_dec_buf[1 + LSQPACK_UINT64_ENC_SZ];
 };
 
 struct lsqpack_arr
@@ -287,7 +293,8 @@ struct lsqpack_arr
 };
 
 TAILQ_HEAD(lsqpack_header_sets, lsqpack_header_set_elem);
-struct lsqpack_blocked_header;
+
+struct lsqpack_header_block;
 
 struct lsqpack_dec
 {
@@ -315,7 +322,7 @@ struct lsqpack_dec
     struct lsqpack_arr      qpd_dyn_table;
 
     /** Blocked headers are kept in a min-heap */
-    struct lsqpack_blocked_header
+    struct lsqpack_header_block
                            *qpd_blocked_headers;
     /** Number of blocked headers */
     unsigned                qpd_bh_count;

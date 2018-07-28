@@ -213,6 +213,26 @@ main (void)
         }
     }
 
+    /* Test stateful decoder */
+    for (test = tests; test < tests + sizeof(tests) / sizeof(tests[0]); ++test)
+    {
+        struct lsqpack_dec_int_state state;
+        state.resume = 0;
+        for (sz = 0; sz < test->it_enc_sz - 1; ++sz)
+        {
+            src = test->it_encoded + sz;
+            rv = lsqpack_dec_int_r(&src, src + 1, test->it_prefix_bits,
+                                                                &val, &state);
+            assert(-1 == rv);
+        }
+        src = test->it_encoded + sz;
+        rv = lsqpack_dec_int_r(&src, src + 1, test->it_prefix_bits,
+                                                            &val, &state);
+        assert(rv == test->it_dec_retval);
+        if (0 == rv)
+            assert(val == test->it_decoded);
+    }
+
     /* Test the encoder */
     for (test = tests; test < tests + sizeof(tests) / sizeof(tests[0]); ++test)
     {

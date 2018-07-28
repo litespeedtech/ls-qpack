@@ -6818,6 +6818,118 @@ lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
 }
 
 
+#if !LS_QPACK_EMIT_TEST_CODE
+struct lsqpack_dec_int_state
+{
+    int         resume;
+    unsigned    M, nread;
+    uint64_t    val;
+};
+
+
+static
+#endif
+       int
+lsqpack_dec_int_r (const unsigned char **src_p, const unsigned char *src_end,
+                   unsigned prefix_bits, uint64_t *value_p,
+                   struct lsqpack_dec_int_state *state)
+{
+    const unsigned char *const orig_src = *src_p;
+    const unsigned char *src;
+    unsigned char prefix_max;
+    unsigned M, nread;
+    uint64_t val, B;
+
+    if (state->resume)
+    {
+        val = state->val;
+        M = state->M;
+        goto resume;
+    }
+
+    prefix_max = (1 << prefix_bits) - 1;
+    src = *src_p;
+    val = *src++;
+    val &= prefix_max;
+
+    if (val < prefix_max)
+    {
+        *src_p = src;
+        *value_p = val;
+        return 0;
+    }
+
+    M = 0;
+    do
+    {
+        if (src < src_end)
+        {
+  resume:   B = *src++;
+            val = val + ((B & 0x7f) << M);
+            M += 7;
+        }
+        else
+        {
+            nread = (state->resume ? state->nread : 0) + (src - orig_src);
+            if (nread < LSQPACK_UINT64_ENC_SZ)
+            {
+                state->val = val;
+                state->M = M;
+                state->nread = nread;
+                state->resume = 1;
+                return -1;
+            }
+            else
+                return -2;
+        }
+    }
+    while (B & 0x80);
+
+    if (M <= 63 || (M == 70 && src[-1] <= 1 && (val & (1ull << 63))))
+    {
+        *src_p = src;
+        *value_p = val;
+        return 0;
+    }
+    else
+        return -2;
+}
+
+
+int
+lsqpack_dec_header_in (struct lsqpack_dec *dec, void *stream,
+                                                        size_t header_size)
+{
+    return -1;  /* TODO */
+}
+
+
+int
+lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *enc_buf,
+                                                                size_t enc_sz)
+{
+#if 0
+    const unsigned char *const enc_end = enc_buf + enc_sz;
+
+    while (enc_buf < enc_end)
+    {
+        switch (dec->qpd_enc_read.er_state)
+        {
+        case ES_BEGIN:
+            if ((*enc_buf & 0x40) == 0x40)
+            {
+                dec->qpd_enc_read.er_instr = 2;
+                dec->qpd_enc_read.er_state = ES_READ_NAME_LEN;
+            }
+            continue;
+        case ES_READ_NAME_LEN:
+        }
+    }
+#endif
+    return -1;  /* TODO */
+}
+
+
 #if 0
 static void
 qdec_drop_oldest_entry (struct lsqpack_dec *dec)
