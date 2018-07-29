@@ -5368,9 +5368,7 @@ struct lsqpack_enc_table_entry
 
 int
 lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
-    unsigned max_risked_streams,
-    lsqpack_stream_read_f read_decoder_stream,
-    void *decoder_ctx)
+    unsigned max_risked_streams)
 {
     struct lsqpack_double_enc_head *buckets;
     unsigned nbits = 2;
@@ -5399,8 +5397,6 @@ lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
     enc->qpe_max_risked_streams = max_risked_streams;
     enc->qpe_buckets      = buckets;
     enc->qpe_nbits        = nbits;
-    enc->qpe_read_dec     = read_decoder_stream;
-    enc->qpe_dec_ctx      = decoder_ctx;
     return 0;
 }
 
@@ -6594,71 +6590,60 @@ enc_proc_stream_cancel (struct lsqpack_enc *enc, uint64_t stream_id)
 
 
 int
-lsqpack_enc_read_dec (struct lsqpack_enc *enc)
+lsqpack_enc_decoder_in (struct lsqpack_enc *enc,
+                                    const unsigned char *buf, size_t buf_sz)
 {
-    size_t n_to_read;
-    ssize_t nr;
+    const unsigned char *const end = buf + buf_sz;
     uint64_t val;
     int r;
-    const unsigned char *p;
-    unsigned prefix_bits;
-    int (*handler)(struct lsqpack_enc *, uint64_t);
-    unsigned char *const buf = enc->qpe_dec_buf;
+    unsigned prefix_bits = -1;  /* This can be any value in a resumed call
+                                 * to the integer decoder -- it is only
+                                 * used in the first call.
+                                 */
 
-    do
+    while (buf < end)
     {
-        n_to_read = sizeof(enc->qpe_dec_buf) - enc->qpe_dec_buf_sz;
-        nr = enc->qpe_read_dec(enc->qpe_dec_ctx, enc->qpe_dec_buf
-                                    + enc->qpe_dec_buf_sz, n_to_read);
-        if (nr < 0)
-            return -1;
-        enc->qpe_dec_buf_sz += nr;
-        while (enc->qpe_dec_buf_sz > 1)
+        switch (enc->qpe_dec_stream_state.dec_int_state.resume)
         {
+        case 0:
             if (buf[0] & 0x80)              /* Header ACK */
             {
                 prefix_bits = 7;
-                handler = enc_proc_header_ack;
+                enc->qpe_dec_stream_state.handler = enc_proc_header_ack;
             }
             else if ((buf[0] & 0xC) == 0)   /* Table State Synchronize */
             {
                 prefix_bits = 6;
-                handler = enc_proc_table_synch;
+                enc->qpe_dec_stream_state.handler = enc_proc_table_synch;
             }
             else                            /* Stream Cancellation */
             {
                 assert((buf[0] & 0xC) == 0x40);
                 prefix_bits = 6;
-                handler = enc_proc_stream_cancel;
+                enc->qpe_dec_stream_state.handler = enc_proc_stream_cancel;
             }
-
-            p = buf;
-            r = lsqpack_dec_int(&p, buf + nr, prefix_bits, &val);
+            /* fall through */
+        case 1:
+            r = lsqpack_dec_int_r(&buf, end, prefix_bits, &val,
+                                &enc->qpe_dec_stream_state.dec_int_state);
             if (r == 0)
             {
-                if ((intptr_t) enc->qpe_dec_buf_sz > p - buf)
-                    memmove(enc->qpe_dec_buf,
-                                enc->qpe_dec_buf + (p - buf),
-                                    enc->qpe_dec_buf_sz - (p - buf));
-                else
-                {
-                    assert((intptr_t) enc->qpe_dec_buf_sz == p - buf);
-                }
-                enc->qpe_dec_buf_sz -= (p - buf);
-                r = handler(enc, val);
+                r = enc->qpe_dec_stream_state.handler(enc, val);
                 if (r != 0)
                     return -1;
             }
             else if (r == -1)
-                break;
+            {
+                enc->qpe_dec_stream_state.dec_int_state.resume = 1;
+                return 0;
+            }
             else
                 return -1;
+            break;
         }
     }
-    while ((size_t) nr == n_to_read);
 
-    assert(enc->qpe_dec_buf_sz <= sizeof(enc->qpe_dec_buf));
-
+    enc->qpe_dec_stream_state.dec_int_state.resume = 0;
     return 0;
 }
 
@@ -6821,12 +6806,6 @@ lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
 
 
 #if !LS_QPACK_EMIT_TEST_CODE
-struct lsqpack_dec_int_state
-{
-    int         resume;
-    unsigned    M, nread;
-    uint64_t    val;
-};
 
 
 static

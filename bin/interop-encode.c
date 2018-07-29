@@ -130,8 +130,7 @@ main (int argc, char **argv)
         }
     }
 
-    if (0 != lsqpack_enc_init(&encoder, dyn_table_size,
-                                            max_risked_streams, NULL, NULL))
+    if (0 != lsqpack_enc_init(&encoder, dyn_table_size, max_risked_streams))
     {
         perror("lsqpack_enc_init");
         exit(EXIT_FAILURE);

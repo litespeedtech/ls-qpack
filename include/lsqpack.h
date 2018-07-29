@@ -62,8 +62,7 @@ typedef ssize_t (*lsqpack_stream_write_f)(void *stream, void *buf, size_t sz);
 
 int
 lsqpack_enc_init (struct lsqpack_enc *, unsigned dyn_table_size,
-    unsigned max_risked_streams, lsqpack_stream_read_f read_decoder,
-    void *decoder_stream);
+    unsigned max_risked_streams);
 
 /** Start a new header block.  Return 0 on success or -1 on error. */
 int
@@ -112,15 +111,11 @@ ssize_t
 lsqpack_enc_end_header (struct lsqpack_enc *, unsigned char *buf, size_t);
 
 /**
- * Read from decoder stream using the callback provided during initialization.
- * All bytes are read until the callback returns 0.
- *
- * Returns 0 on success, -1 on failure.  -1 indicates either an error on the
- * decoder.  If read error occurs, it is up to the callback to set some
- * flags and for the user to check them.
+ * Process next chunk of bytes from the decoder stream.  Returns 0 on success,
+ * -1 on failure.  The failure should be treated as fatal.
  */
 int
-lsqpack_enc_read_dec (struct lsqpack_enc *);
+lsqpack_enc_decoder_in (struct lsqpack_enc *, const unsigned char *, size_t);
 
 void
 lsqpack_enc_cleanup (struct lsqpack_enc *);
@@ -210,6 +205,13 @@ struct lsqpack_header_info
     signed char         qhi_at_risk;
 };
 
+struct lsqpack_dec_int_state
+{
+    int         resume;
+    unsigned    M, nread;
+    uint64_t    val;
+};
+
 struct lsqpack_enc
 {
     /* The number of all the entries in the dynamic table that have been
@@ -253,9 +255,6 @@ struct lsqpack_enc
      */
     struct lsqpack_header_info *qpe_hinfos_arr;
 
-    lsqpack_stream_read_f       qpe_read_dec;
-    void                       *qpe_dec_ctx;
-
     /* Current header state */
     struct {
         struct lsqpack_header_info
@@ -277,11 +276,10 @@ struct lsqpack_enc
         lsqpack_abs_id_t    search_cutoff;
     }                           qpe_cur_header;
 
-    size_t                      qpe_dec_buf_sz;
-    /* UINT64_MAX takes 11 bytes to encode, plus a decoder operation is
-     * one byte.  Thus, the buffer is 12 bytes.
-     */
-    unsigned char               qpe_dec_buf[1 + LSQPACK_UINT64_ENC_SZ];
+    struct {
+        struct lsqpack_dec_int_state dec_int_state;
+        int   (*handler)(struct lsqpack_enc *, uint64_t);
+    }                           qpe_dec_stream_state;
 };
 
 struct lsqpack_arr
