@@ -6712,11 +6712,13 @@ enum
     HPACK_HUFFMAN_FLAG_FAIL = 0x04,
 };
 
+#if !LS_QPACK_EMIT_TEST_CODE
 struct decode_status
 {
     uint8_t state;
     uint8_t eos;
 };
+#endif
 
 
 void
@@ -6964,6 +6966,7 @@ lsqpack_dec_set_max_capacity (struct lsqpack_dec *dec, unsigned max_capacity)
     dec->hpd_max_capacity = max_capacity;
     qdec_update_max_capacity(dec, max_capacity);
 }
+#endif
 
 
 static unsigned char *
@@ -6987,38 +6990,102 @@ qdec_huff_dec4bits (uint8_t src_4bits, unsigned char *dst,
 }
 
 
-static int
-qdec_huff_decode (const unsigned char *src, int src_len,
-                                            unsigned char *dst, int dst_len)
+#if !LS_QPACK_EMIT_TEST_CODE
+struct huff_decode_state
+{
+    int                     resume;
+    struct decode_status    status;
+};
+
+struct huff_decode_retval
+{
+    enum
+    {
+        HUFF_DEC_OK,
+        HUFF_DEC_END_SRC,
+        HUFF_DEC_END_DST,
+        HUFF_DEC_ERROR,
+    }                       status;
+    unsigned                n_dst;
+    unsigned                n_src;
+};
+
+/* A non-negative value indicates success.  A negative value is one of
+ * the HUFF_DEC_* codes above.
+ */
+static
+#endif
+       struct huff_decode_retval
+lsqpack_huff_decode_r (const unsigned char *src, int src_len,
+            unsigned char *dst, int dst_len, struct huff_decode_state *state,
+            int final)
 {
     const unsigned char *p_src = src;
     const unsigned char *const src_end = src + src_len;
     unsigned char *p_dst = dst;
     unsigned char *dst_end = dst + dst_len;
-    struct decode_status status = { 0, 1 };
 
+    switch (state->resume)
+    {
+    case 1: goto ck1;
+    case 2: goto ck2;
+    case 3: goto ck3;
+    }
+
+    state->status.state = 0;
+    state->status.eos   = 1;
+
+  ck1:
     while (p_src != src_end)
     {
         if (p_dst == dst_end)
-            return -2;
-        if ((p_dst = qdec_huff_dec4bits(*p_src >> 4, p_dst, &status))
+        {
+            state->resume = 2;
+            return (struct huff_decode_retval) {
+                            .status = HUFF_DEC_END_DST,
+                            .n_dst  = dst_len,
+                            .n_src  = p_src - src,
+            };
+        }
+  ck2:
+        if ((p_dst = qdec_huff_dec4bits(*p_src >> 4, p_dst, &state->status))
                 == NULL)
-            return -1;
+            return (struct huff_decode_retval) { .status = HUFF_DEC_ERROR, };
         if (p_dst == dst_end)
-            return -2;
-        if ((p_dst = qdec_huff_dec4bits(*p_src & 0xf, p_dst, &status))
+        {
+            state->resume = 3;
+            return (struct huff_decode_retval) {
+                            .status = HUFF_DEC_END_DST,
+                            .n_dst  = dst_len,
+                            .n_src  = p_src - src,
+            };
+        }
+  ck3:
+        if ((p_dst = qdec_huff_dec4bits(*p_src & 0xf, p_dst, &state->status))
                 == NULL)
-            return -1;
+            return (struct huff_decode_retval) { .status = HUFF_DEC_ERROR, };
         ++p_src;
     }
 
-    if (!status.eos)
-        return -1;
-
-    return p_dst - dst;
+    if (final)
+        return (struct huff_decode_retval) {
+                    .status = state->status.eos ? HUFF_DEC_OK : HUFF_DEC_ERROR,
+                    .n_dst  = p_dst - dst,
+                    .n_src  = p_src - src,
+        };
+    else
+    {
+        state->resume = 1;
+        return (struct huff_decode_retval) {
+                    .status = HUFF_DEC_END_SRC,
+                    .n_dst  = p_dst - dst,
+                    .n_src  = p_src - src,
+        };
+    }
 }
 
 
+#if 0
 //reutrn the length in the dst, also update the src
 #if !LS_QPACK_EMIT_TEST_CODE
 static
@@ -7042,7 +7109,7 @@ qdec_dec_str (unsigned char *dst, size_t dst_len, const unsigned char **src,
 
     if (is_huffman)
     {
-        ret = qdec_huff_decode(*src, len, dst, dst_len);
+        ret = lsqpack_huff_decode(*src, len, dst, dst_len);
         if (ret < 0)
             return -3; //Wrong code
 

@@ -26,4 +26,34 @@ lsqpack_dec_int_r (const unsigned char **src_p, const unsigned char *src_end,
                    unsigned prefix_bits, uint64_t *value_p,
                    struct lsqpack_dec_int_state *state);
 
+struct decode_status
+{
+    uint8_t state;
+    uint8_t eos;
+};
+
+struct huff_decode_state
+{
+    int                     resume;
+    struct decode_status    status;
+};
+
+struct huff_decode_retval
+{
+    enum
+    {
+        HUFF_DEC_OK,
+        HUFF_DEC_END_SRC,
+        HUFF_DEC_END_DST,
+        HUFF_DEC_ERROR,
+    }                       status;
+    unsigned                n_dst;
+    unsigned                n_src;
+};
+
+struct huff_decode_retval
+lsqpack_huff_decode_r (const unsigned char *src, int src_len,
+            unsigned char *dst, int dst_len, struct huff_decode_state *state,
+            int final);
+
 #endif
