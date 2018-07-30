@@ -314,7 +314,7 @@ void
 run_test (const struct test_huff_dec *test)
 {
     struct huff_decode_retval retval;
-    struct huff_decode_state state;
+    struct lsqpack_huff_decode_state state;
     unsigned in_chunk_sz, out_chunk_sz, in_off, out_off, n_to_read, n_to_write;
     char output[0x1000];
 

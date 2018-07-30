@@ -150,7 +150,6 @@ struct lsqpack_header_set
 void
 lsqpack_dec_init (struct lsqpack_dec *, unsigned dyn_table_size,
     unsigned max_risked_streams,
-    lsqpack_stream_read_f read_encoder, void *encoder_stream,
     lsqpack_stream_write_f write_decoder, void *decoder_stream,
     lsqpack_stream_read_f read_header_block,
     void (*header_block_done)(void *header_block_stream,
@@ -294,6 +293,18 @@ TAILQ_HEAD(lsqpack_header_sets, lsqpack_header_set_elem);
 
 struct lsqpack_header_block;
 
+struct lsqpack_decode_status
+{
+    uint8_t state;
+    uint8_t eos;
+};
+
+struct lsqpack_huff_decode_state
+{
+    int                             resume;
+    struct lsqpack_decode_status    status;
+};
+
 struct lsqpack_dec
 {
     /** This is the hard limit set at initialization */
@@ -304,8 +315,6 @@ struct lsqpack_dec
     unsigned                qpd_max_risked_streams;
     lsqpack_abs_id_t        qpd_ins_count;
     lsqpack_abs_id_t        qpd_del_count;
-    void                   *qpd_enc_stream;
-    lsqpack_stream_read_f   qpd_read_enc;
     void                   *qpd_dec_stream;
     lsqpack_stream_write_f  qpd_write_dec;
     lsqpack_stream_read_f   qpd_read_header_block;
@@ -329,6 +338,36 @@ struct lsqpack_dec
      * array.
      */
     unsigned                qpd_bh_nalloc;
+    /** Reading the encoder stream */
+    struct {
+        int                                                 resume;
+        union {
+            /* State for reading in the Insert With Named Reference
+             * instruction.
+             */
+            struct {
+                struct lsqpack_dec_int_state        dec_int_state;
+                struct lsqpack_huff_decode_state    dec_huff_state;
+                uint64_t                            name_idx;
+                uint64_t                            val_len;
+                struct lsqpack_dec_table_entry     *reffed_entry;
+                struct lsqpack_dec_table_entry     *entry;
+                const char                         *name;
+                unsigned                            alloced_val_len;
+                unsigned                            val_off;
+                unsigned                            nread;
+                unsigned                            name_len;
+                signed char                         is_huffman;
+                signed char                         is_static;
+            }                                               with_namref;
+
+            struct {
+            }                                               wo_namref;
+
+            struct {
+            }                                               duplicate;
+        }               ctx_u;
+    }                       qpd_enc_state;
 };
 
 #ifdef __cplusplus

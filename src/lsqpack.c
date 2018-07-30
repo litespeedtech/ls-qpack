@@ -6631,6 +6631,7 @@ lsqpack_enc_decoder_in (struct lsqpack_enc *enc,
                 r = enc->qpe_dec_stream_state.handler(enc, val);
                 if (r != 0)
                     return -1;
+                enc->qpe_dec_stream_state.dec_int_state.resume = 0;
             }
             else if (r == -1)
             {
@@ -6643,7 +6644,6 @@ lsqpack_enc_decoder_in (struct lsqpack_enc *enc,
         }
     }
 
-    enc->qpe_dec_stream_state.dec_int_state.resume = 0;
     return 0;
 }
 
@@ -6680,10 +6680,11 @@ lsqpack_enc_iter_next (struct lsqpack_enc *enc, void **iter,
 
 
 /* Dynamic table entry: */
-struct dec_table_entry
+struct lsqpack_dec_table_entry
 {
-    uint16_t    dte_name_len;
-    uint16_t    dte_val_len;
+    unsigned    dte_name_len;
+    unsigned    dte_val_len;
+    unsigned    dte_refcnt;
     char        dte_buf[0];     /* Contains both name and value */
 };
 
@@ -6697,19 +6698,13 @@ enum
     HPACK_HUFFMAN_FLAG_FAIL = 0x04,
 };
 
-#if !LS_QPACK_EMIT_TEST_CODE
-struct decode_status
-{
-    uint8_t state;
-    uint8_t eos;
-};
-#endif
+static struct lsqpack_dec_table_entry *
+qdec_get_table_entry (struct lsqpack_dec *dec, lsqpack_abs_id_t id);
 
 
 void
 lsqpack_dec_init (struct lsqpack_dec *dec, unsigned dyn_table_size,
     unsigned max_risked_streams,
-    lsqpack_stream_read_f read_encoder, void *encoder_stream,
     lsqpack_stream_write_f write_decoder, void *decoder_stream,
     lsqpack_stream_read_f read_header_block,
     void (*header_block_done)(void *, const struct lsqpack_header_set *))
@@ -6718,14 +6713,21 @@ lsqpack_dec_init (struct lsqpack_dec *dec, unsigned dyn_table_size,
     dec->qpd_max_capacity = dyn_table_size;
     dec->qpd_cur_max_capacity = dyn_table_size;
     dec->qpd_max_risked_streams = max_risked_streams;
-    dec->qpd_enc_stream = encoder_stream;
-    dec->qpd_read_enc = read_encoder;
     dec->qpd_dec_stream = decoder_stream;
     dec->qpd_write_dec = write_decoder;
     dec->qpd_read_header_block = read_header_block;
     dec->qpd_header_block_done = header_block_done;
     TAILQ_INIT(&dec->qpd_header_sets);
     lsqpack_arr_init(&dec->qpd_dyn_table);
+}
+
+
+static void
+qdec_decref_entry (struct lsqpack_dec_table_entry *entry)
+{
+    --entry->dte_refcnt;
+    if (0 == entry->dte_refcnt)
+        free(entry);
 }
 
 
@@ -6741,7 +6743,7 @@ lsqpack_dec_cleanup (struct lsqpack_dec *dec)
     while (lsqpack_arr_count(&dec->qpd_dyn_table) > 0)
     {
         val = lsqpack_arr_pop(&dec->qpd_dyn_table);
-        free((struct dec_table_entry *) val);
+        qdec_decref_entry((struct lsqpack_dec_table_entry *) val);
     }
     lsqpack_arr_cleanup(&dec->qpd_dyn_table);
 }
@@ -6885,29 +6887,206 @@ lsqpack_dec_header_in (struct lsqpack_dec *dec, void *stream,
 }
 
 
-int
-lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *enc_buf,
-                                                                size_t enc_sz)
+#if !LS_QPACK_EMIT_TEST_CODE
+static
+#endif
+       int
+lsqpack_dec_push_entry (struct lsqpack_dec *dec,
+                                        struct lsqpack_dec_table_entry *entry)
 {
-#if 0
-    const unsigned char *const enc_end = enc_buf + enc_sz;
-
-    while (enc_buf < enc_end)
+    if (0 == lsqpack_arr_push(&dec->qpd_dyn_table, (uintptr_t) entry))
     {
-        switch (dec->qpd_enc_read.er_state)
+        ++dec->qpd_ins_count;
+        return 0;
+    }
+    else
+        return -1;
+}
+
+
+enum {
+    DEI_NEXT_INST,
+    DEI_IWNR_READ_NAME_IDX,
+    DEI_IWNR_BEGIN_READ_VAL_LEN,
+    DEI_IWNR_READ_VAL_LEN,
+    DEI_IWNR_READ_VALUE_PLAIN,
+    DEI_IWNR_READ_VALUE_HUFFMAN,
+};
+
+int
+lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
+                                                                size_t buf_sz)
+{
+    const unsigned char *const end = buf + buf_sz;
+    struct lsqpack_dec_table_entry *entry;
+    struct huff_decode_retval hdr;
+    unsigned prefix_bits = -1;
+    int r;
+
+    while (buf < end)
+    {
+        switch (dec->qpd_enc_state.resume)
         {
-        case ES_BEGIN:
-            if ((*enc_buf & 0x40) == 0x40)
+        case DEI_NEXT_INST:
+            if (buf[0] & 0x80)
             {
-                dec->qpd_enc_read.er_instr = 2;
-                dec->qpd_enc_read.er_state = ES_READ_NAME_LEN;
+                dec->qpd_enc_state.ctx_u.with_namref.is_static = (buf[0] & 0x40) > 0;
+                dec->qpd_enc_state.ctx_u.with_namref.dec_int_state.resume = 0;
+                dec->qpd_enc_state.resume = DEI_IWNR_READ_NAME_IDX;
+                prefix_bits = 6;
             }
-            continue;
-        case ES_READ_NAME_LEN:
+            else
+            {
+                break;  /* TODO */
+            }
+            /* Fall-through */
+        case DEI_IWNR_READ_NAME_IDX:
+            r = lsqpack_dec_int_r(&buf, end, prefix_bits,
+                &dec->qpd_enc_state.ctx_u.with_namref.name_idx,
+                &dec->qpd_enc_state.ctx_u.with_namref.dec_int_state);
+            if (r == 0)
+            {
+                if (dec->qpd_enc_state.ctx_u.with_namref.is_static)
+                {
+                    if (dec->qpd_enc_state.ctx_u.with_namref.name_idx < 1
+                        || dec->qpd_enc_state.ctx_u.with_namref.name_idx
+                                                    > QPACK_STATIC_TABLE_SIZE)
+                        return -1;
+                    dec->qpd_enc_state.ctx_u.with_namref.reffed_entry = NULL;
+                }
+                else
+                {
+                    dec->qpd_enc_state.ctx_u.with_namref.reffed_entry =
+                        qdec_get_table_entry(dec, dec->qpd_enc_state.ctx_u.
+                                                        with_namref.name_idx);
+                    if (!dec->qpd_enc_state.ctx_u.with_namref.reffed_entry)
+                        return -1;
+                    ++dec->qpd_enc_state.ctx_u.with_namref.reffed_entry
+                                                                ->dte_refcnt;
+                }
+                dec->qpd_enc_state.resume = DEI_IWNR_BEGIN_READ_VAL_LEN;
+                break;
+            }
+            else if (r == -1)
+                return 0;
+            else
+                return -1;
+        case DEI_IWNR_BEGIN_READ_VAL_LEN:
+            dec->qpd_enc_state.ctx_u.with_namref.is_huffman = (buf[0] & 0x80) > 0;
+            dec->qpd_enc_state.ctx_u.with_namref.dec_int_state.resume = 0;
+            dec->qpd_enc_state.resume = DEI_IWNR_READ_VAL_LEN;
+            prefix_bits = 7;
+            /* fall-through */
+        case DEI_IWNR_READ_VAL_LEN:
+            r = lsqpack_dec_int_r(&buf, end, prefix_bits,
+                &dec->qpd_enc_state.ctx_u.with_namref.val_len,
+                &dec->qpd_enc_state.ctx_u.with_namref.dec_int_state);
+            if (r == 0)
+            {
+                if (dec->qpd_enc_state.ctx_u.with_namref.is_static)
+                {
+                    dec->qpd_enc_state.ctx_u.with_namref.name_len =
+                        static_table[dec->qpd_enc_state.ctx_u.with_namref.name_idx - 1].name_len;
+                    dec->qpd_enc_state.ctx_u.with_namref.name =
+                        static_table[dec->qpd_enc_state.ctx_u.with_namref.name_idx - 1].name;
+                }
+                else
+                {
+                    dec->qpd_enc_state.ctx_u.with_namref.name_len =
+                        dec->qpd_enc_state.ctx_u.with_namref.reffed_entry->dte_name_len;
+                    dec->qpd_enc_state.ctx_u.with_namref.name =
+                        DTE_NAME(dec->qpd_enc_state.ctx_u.with_namref.reffed_entry);
+                }
+                if (dec->qpd_enc_state.ctx_u.with_namref.is_huffman)
+                    dec->qpd_enc_state.ctx_u.with_namref.alloced_val_len =
+                        dec->qpd_enc_state.ctx_u.with_namref.val_len +
+                        dec->qpd_enc_state.ctx_u.with_namref.val_len / 4;
+                else
+                    dec->qpd_enc_state.ctx_u.with_namref.alloced_val_len =
+                        dec->qpd_enc_state.ctx_u.with_namref.val_len;
+                dec->qpd_enc_state.ctx_u.with_namref.entry = malloc(
+                    sizeof(*dec->qpd_enc_state.ctx_u.with_namref.entry)
+                  + dec->qpd_enc_state.ctx_u.with_namref.name_len
+                  + dec->qpd_enc_state.ctx_u.with_namref.alloced_val_len
+                );
+                if (!dec->qpd_enc_state.ctx_u.with_namref.entry)
+                    return -1;
+                dec->qpd_enc_state.ctx_u.with_namref.entry->dte_name_len =
+                    dec->qpd_enc_state.ctx_u.with_namref.name_len;
+                if (dec->qpd_enc_state.ctx_u.with_namref.is_huffman)
+                {
+                    dec->qpd_enc_state.resume = DEI_IWNR_READ_VALUE_HUFFMAN;
+                    dec->qpd_enc_state.ctx_u.with_namref.dec_huff_state.resume = 0;
+                }
+                else
+                    dec->qpd_enc_state.resume = DEI_IWNR_READ_VALUE_PLAIN;
+            }
+            else if (r == -1)
+                return 0;
+            else
+                return -1;
+            break;
+        case DEI_IWNR_READ_VALUE_HUFFMAN:
+            hdr = lsqpack_huff_decode_r(buf, end - buf,
+                (unsigned char *) DTE_VALUE(dec->qpd_enc_state.ctx_u.with_namref.entry)
+                    + dec->qpd_enc_state.ctx_u.with_namref.val_off,
+                dec->qpd_enc_state.ctx_u.with_namref.alloced_val_len
+                    - dec->qpd_enc_state.ctx_u.with_namref.val_off,
+                &dec->qpd_enc_state.ctx_u.with_namref.dec_huff_state,
+                dec->qpd_enc_state.ctx_u.with_namref.nread
+                    + (unsigned) (end - buf)
+                        == dec->qpd_enc_state.ctx_u.with_namref.val_len
+            );
+            switch (hdr.status)
+            {
+            case HUFF_DEC_OK:
+                buf += hdr.n_src;
+                dec->qpd_enc_state.ctx_u.with_namref.entry->dte_val_len
+                    = dec->qpd_enc_state.ctx_u.with_namref.val_off + hdr.n_dst;
+                dec->qpd_enc_state.ctx_u.with_namref.entry->dte_refcnt = 1;
+                memcpy(DTE_NAME(dec->qpd_enc_state.ctx_u.with_namref.entry),
+                       dec->qpd_enc_state.ctx_u.with_namref.name,
+                       dec->qpd_enc_state.ctx_u.with_namref.name_len);
+                if (dec->qpd_enc_state.ctx_u.with_namref.reffed_entry)
+                {
+                    qdec_decref_entry(dec->qpd_enc_state.ctx_u.with_namref.reffed_entry);
+                    dec->qpd_enc_state.ctx_u.with_namref.reffed_entry = NULL;
+                }
+                r = lsqpack_dec_push_entry(dec,
+                            dec->qpd_enc_state.ctx_u.with_namref.entry);
+                if (0 == r)
+                {
+                    dec->qpd_enc_state.ctx_u.with_namref.entry = NULL;
+                    break;
+                }
+                qdec_decref_entry(dec->qpd_enc_state.ctx_u.with_namref.entry);
+                dec->qpd_enc_state.ctx_u.with_namref.entry = NULL;
+                return -1;
+            case HUFF_DEC_END_SRC:
+                break;
+            case HUFF_DEC_END_DST:
+                dec->qpd_enc_state.ctx_u.with_namref.alloced_val_len *= 2;
+                entry = realloc(dec->qpd_enc_state.ctx_u.with_namref.entry,
+                    sizeof(*dec->qpd_enc_state.ctx_u.with_namref.entry)
+                  + dec->qpd_enc_state.ctx_u.with_namref.name_len
+                  + dec->qpd_enc_state.ctx_u.with_namref.alloced_val_len);
+                if (!entry)
+                    return -1;
+                dec->qpd_enc_state.ctx_u.with_namref.entry = entry;
+                buf += hdr.n_src;
+                dec->qpd_enc_state.ctx_u.with_namref.nread += hdr.n_src;
+                dec->qpd_enc_state.ctx_u.with_namref.val_off += hdr.n_dst;
+                break;
+            default:
+                return -1;
+            }
+            break;
+        default:
+            assert(0);
         }
     }
-#endif
-    return -1;  /* TODO */
+
+    return 0;
 }
 
 
@@ -6915,11 +7094,11 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *enc_buf,
 static void
 qdec_drop_oldest_entry (struct lsqpack_dec *dec)
 {
-    struct dec_table_entry *entry;
+    struct lsqpack_dec_table_entry *entry;
     entry = (void *) lsqpack_arr_shift(&dec->hpd_dyn_table);
     dec->hpd_cur_capacity -= DYNAMIC_ENTRY_OVERHEAD + entry->dte_name_len
                                                         + entry->dte_val_len;
-    free(entry);
+    qdec_decref_entry(entry);
 }
 
 
@@ -6950,7 +7129,7 @@ lsqpack_dec_set_max_capacity (struct lsqpack_dec *dec, unsigned max_capacity)
 
 static unsigned char *
 qdec_huff_dec4bits (uint8_t src_4bits, unsigned char *dst,
-                                        struct decode_status *status)
+                                        struct lsqpack_decode_status *status)
 {
     const struct decode_el cur_dec_code =
         decode_tables[status->state][src_4bits];
@@ -6970,12 +7149,6 @@ qdec_huff_dec4bits (uint8_t src_4bits, unsigned char *dst,
 
 
 #if !LS_QPACK_EMIT_TEST_CODE
-struct huff_decode_state
-{
-    int                     resume;
-    struct decode_status    status;
-};
-
 struct huff_decode_retval
 {
     enum
@@ -6996,8 +7169,8 @@ static
 #endif
        struct huff_decode_retval
 lsqpack_huff_decode_r (const unsigned char *src, int src_len,
-            unsigned char *dst, int dst_len, struct huff_decode_state *state,
-            int final)
+            unsigned char *dst, int dst_len,
+            struct lsqpack_huff_decode_state *state, int final)
 {
     const unsigned char *p_src = src;
     const unsigned char *const src_end = src + src_len;
@@ -7108,62 +7281,30 @@ qdec_dec_str (unsigned char *dst, size_t dst_len, const unsigned char **src,
 
     return ret;
 }
+#endif
 
 
-/* hpd_dyn_table is a dynamic array.  New entries are pushed onto it,
- * while old entries are shifted from it.
- */
-static struct dec_table_entry *
-qdec_get_table_entry (struct lsqpack_dec *dec, uint32_t index)
+static struct lsqpack_dec_table_entry *
+qdec_get_table_entry (struct lsqpack_dec *dec, lsqpack_abs_id_t id)
 {
     uintptr_t val;
 
-    index -= QPACK_STATIC_TABLE_SIZE;
-    if (index == 0 || index > lsqpack_arr_count(&dec->hpd_dyn_table))
+    if (id <= dec->qpd_del_count || id > dec->qpd_ins_count)
         return NULL;
 
-    index = lsqpack_arr_count(&dec->hpd_dyn_table) - index;
-    val = lsqpack_arr_get(&dec->hpd_dyn_table, index);
-    return (struct dec_table_entry *) val;
+    id = dec->qpd_ins_count - id - 1;
+    val = lsqpack_arr_get(&dec->qpd_dyn_table, id);
+    return (struct lsqpack_dec_table_entry *) val;
 }
 
 
-#if !LS_QPACK_EMIT_TEST_CODE
-static
-#endif
-       int
-lsqpack_dec_push_entry (struct lsqpack_dec *dec, const char *name,
-                        uint16_t name_len, const char *val, uint16_t val_len)
-{
-    struct dec_table_entry *entry;
-    size_t size;
-
-    size = sizeof(*entry) + name_len + val_len;
-    entry = malloc(size);
-    if (!entry)
-        return -1;
-
-    if (0 != lsqpack_arr_push(&dec->hpd_dyn_table, (uintptr_t) entry))
-    {
-        free(entry);
-        return -1;
-    }
-
-    dec->hpd_cur_capacity += DYNAMIC_ENTRY_OVERHEAD + name_len + val_len;
-    entry->dte_name_len = name_len;
-    entry->dte_val_len = val_len;
-    memcpy(DTE_NAME(entry), name, name_len);
-    memcpy(DTE_VALUE(entry), val, val_len);
-    return 0;
-}
-
-
+#if 0
 int
 lsqpack_dec_decode (struct lsqpack_dec *dec,
     const unsigned char **src, const unsigned char *src_end,
     char *dst, char *const dst_end, uint16_t *name_len, uint16_t *val_len)
 {
-    struct dec_table_entry *entry;
+    struct lsqpack_dec_table_entry *entry;
     uint32_t index, new_capacity;
     int indexed_type, len;
 
