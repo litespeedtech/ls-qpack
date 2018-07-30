@@ -8,6 +8,8 @@
 
 #include "lsqpack.h"
 
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
 /* Dynamic table entry: */
 struct lsqpack_dec_table_entry
 {
@@ -76,17 +78,28 @@ static void
 run_test (const struct test_read_encoder_stream *test)
 {
     struct lsqpack_dec dec;
+    size_t chunk_sz, off;
     int r;
 
-    lsqpack_dec_init(&dec, LSQPACK_DEF_DYN_TABLE_SIZE,
-        LSQPACK_DEF_MAX_RISKED_STREAMS, NULL, NULL, NULL, NULL);
+    for (chunk_sz = 1; chunk_sz <= test->input_sz; ++chunk_sz)
+    {
+        lsqpack_dec_init(&dec, LSQPACK_DEF_DYN_TABLE_SIZE,
+            LSQPACK_DEF_MAX_RISKED_STREAMS, NULL, NULL, NULL, NULL);
 
-    r = lsqpack_dec_enc_in(&dec, test->input, test->input_sz);
-    assert(r == 0);
+        off = 0;
+        do
+        {
+            r = lsqpack_dec_enc_in(&dec, test->input + off,
+                                        MIN(chunk_sz, test->input_sz - off));
+            assert(r == 0);
+            off += MIN(chunk_sz, test->input_sz - off);
+        }
+        while (off < test->input_sz);
 
-    verify_dyn_table(&dec, test);
+        verify_dyn_table(&dec, test);
 
-    lsqpack_dec_cleanup(&dec);
+        lsqpack_dec_cleanup(&dec);
+    }
 }
 
 

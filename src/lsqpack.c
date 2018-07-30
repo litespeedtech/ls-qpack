@@ -7063,6 +7063,9 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 dec->qpd_enc_state.ctx_u.with_namref.entry = NULL;
                 return -1;
             case HUFF_DEC_END_SRC:
+                buf += hdr.n_src;
+                dec->qpd_enc_state.ctx_u.with_namref.nread += hdr.n_src;
+                dec->qpd_enc_state.ctx_u.with_namref.val_off += hdr.n_dst;
                 break;
             case HUFF_DEC_END_DST:
                 dec->qpd_enc_state.ctx_u.with_namref.alloced_val_len *= 2;
