@@ -51,6 +51,16 @@ static const struct test_read_encoder_stream tests[] =
         },
     },
 
+    {   __LINE__,
+        "\xc1\x8b\xf1\xe3\xc2\xf5\x15\x31\xa2\x45\xcf\x64\xdf\x01",
+        14,
+        2,
+        {
+            { ":authority", "www.netbsd.org", },
+            { ":authority", "www.netbsd.org", },
+        },
+    },
+
 };
 
 

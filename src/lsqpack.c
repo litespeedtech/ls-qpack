@@ -35,6 +35,8 @@ SOFTWARE.
 #endif
 #include XXH_HEADER_NAME
 
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
 #define QPACK_STATIC_TABLE_SIZE   61
 
 /* RFC 7541, Section 4.1:
@@ -6911,6 +6913,7 @@ enum {
     DEI_IWNR_READ_VAL_LEN,
     DEI_IWNR_READ_VALUE_PLAIN,
     DEI_IWNR_READ_VALUE_HUFFMAN,
+    DEI_DUP_READ_IDX,
 };
 
 int
@@ -6918,9 +6921,10 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                                                                 size_t buf_sz)
 {
     const unsigned char *const end = buf + buf_sz;
-    struct lsqpack_dec_table_entry *entry;
+    struct lsqpack_dec_table_entry *entry, *new_entry;
     struct huff_decode_retval hdr;
     unsigned prefix_bits = -1;
+    size_t size;
     int r;
 
     while (buf < end)
@@ -6934,13 +6938,24 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 dec->qpd_enc_state.ctx_u.with_namref.dec_int_state.resume = 0;
                 dec->qpd_enc_state.resume = DEI_IWNR_READ_NAME_IDX;
                 prefix_bits = 6;
+                goto dei_iwnr_read_name_idx;
+            }
+            else if (buf[0] & 0x40)
+            {
+            }
+            else if (buf[0] & 0x20)
+            {
             }
             else
             {
-                break;  /* TODO */
+                dec->qpd_enc_state.ctx_u.duplicate.dec_int_state.resume = 0;
+                dec->qpd_enc_state.resume = DEI_DUP_READ_IDX;
+                prefix_bits = 5;
+                goto dei_dup_read_idx;
             }
-            /* Fall-through */
+            break;
         case DEI_IWNR_READ_NAME_IDX:
+  dei_iwnr_read_name_idx:
             r = lsqpack_dec_int_r(&buf, end, prefix_bits,
                 &dec->qpd_enc_state.ctx_u.with_namref.name_idx,
                 &dec->qpd_enc_state.ctx_u.with_namref.dec_int_state);
@@ -7027,14 +7042,16 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 return -1;
             break;
         case DEI_IWNR_READ_VALUE_HUFFMAN:
-            hdr = lsqpack_huff_decode_r(buf, end - buf,
+            size = MIN((unsigned) (end - buf),
+                dec->qpd_enc_state.ctx_u.with_namref.val_len
+                    - dec->qpd_enc_state.ctx_u.with_namref.nread);
+            hdr = lsqpack_huff_decode_r(buf, size,
                 (unsigned char *) DTE_VALUE(dec->qpd_enc_state.ctx_u.with_namref.entry)
                     + dec->qpd_enc_state.ctx_u.with_namref.val_off,
                 dec->qpd_enc_state.ctx_u.with_namref.alloced_val_len
                     - dec->qpd_enc_state.ctx_u.with_namref.val_off,
                 &dec->qpd_enc_state.ctx_u.with_namref.dec_huff_state,
-                dec->qpd_enc_state.ctx_u.with_namref.nread
-                    + (unsigned) (end - buf)
+                dec->qpd_enc_state.ctx_u.with_namref.nread + size
                         == dec->qpd_enc_state.ctx_u.with_namref.val_len
             );
             switch (hdr.status)
@@ -7056,6 +7073,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                             dec->qpd_enc_state.ctx_u.with_namref.entry);
                 if (0 == r)
                 {
+                    dec->qpd_enc_state.resume = 0;
                     dec->qpd_enc_state.ctx_u.with_namref.entry = NULL;
                     break;
                 }
@@ -7084,6 +7102,36 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 return -1;
             }
             break;
+        case DEI_DUP_READ_IDX:
+  dei_dup_read_idx:
+            r = lsqpack_dec_int_r(&buf, end, prefix_bits,
+                &dec->qpd_enc_state.ctx_u.duplicate.index,
+                &dec->qpd_enc_state.ctx_u.duplicate.dec_int_state);
+            if (r == 0)
+            {
+                entry = qdec_get_table_entry(dec,
+                                    dec->qpd_enc_state.ctx_u.duplicate.index);
+                if (!entry)
+                    return -1;
+                size = sizeof(*new_entry) + entry->dte_name_len
+                                                        + entry->dte_val_len;
+                new_entry = malloc(size);
+                if (!new_entry)
+                    return -1;
+                memcpy(new_entry, entry, size);
+                new_entry->dte_refcnt = 1;
+                if (0 == lsqpack_dec_push_entry(dec, new_entry))
+                {
+                    dec->qpd_enc_state.resume = 0;
+                    break;
+                }
+                qdec_decref_entry(new_entry);
+                return -1;
+            }
+            else if (r == -1)
+                return 0;
+            else
+                return -1;
         default:
             assert(0);
         }
@@ -7295,7 +7343,7 @@ qdec_get_table_entry (struct lsqpack_dec *dec, lsqpack_abs_id_t id)
     if (id <= dec->qpd_del_count || id > dec->qpd_ins_count)
         return NULL;
 
-    id = dec->qpd_ins_count - id - 1;
+    id = dec->qpd_ins_count - id;
     val = lsqpack_arr_get(&dec->qpd_dyn_table, id);
     return (struct lsqpack_dec_table_entry *) val;
 }

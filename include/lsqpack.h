@@ -365,6 +365,8 @@ struct lsqpack_dec
             }                                               wo_namref;
 
             struct {
+                struct lsqpack_dec_int_state        dec_int_state;
+                uint64_t                            index;
             }                                               duplicate;
         }               ctx_u;
     }                       qpd_enc_state;
