@@ -361,7 +361,18 @@ struct lsqpack_dec
                 signed char                         is_static;
             }                                               with_namref;
 
+            /* State for reading in the Insert Without Named Reference
+             * instruction.
+             */
             struct {
+                struct lsqpack_dec_int_state        dec_int_state;
+                struct lsqpack_huff_decode_state    dec_huff_state;
+                uint64_t                            str_len;
+                struct lsqpack_dec_table_entry     *entry;
+                unsigned                            alloced_len;
+                unsigned                            str_off;
+                unsigned                            nread;
+                signed char                         is_huffman;
             }                                               wo_namref;
 
             struct {
