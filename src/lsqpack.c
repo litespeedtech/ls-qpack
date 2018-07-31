@@ -6927,6 +6927,9 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
     size_t size;
     int r;
 
+#define WINR dec->qpd_enc_state.ctx_u.with_namref
+#define DUPL dec->qpd_enc_state.ctx_u.duplicate
+
     while (buf < end)
     {
         switch (dec->qpd_enc_state.resume)
@@ -6934,8 +6937,8 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
         case DEI_NEXT_INST:
             if (buf[0] & 0x80)
             {
-                dec->qpd_enc_state.ctx_u.with_namref.is_static = (buf[0] & 0x40) > 0;
-                dec->qpd_enc_state.ctx_u.with_namref.dec_int_state.resume = 0;
+                WINR.is_static = (buf[0] & 0x40) > 0;
+                WINR.dec_int_state.resume = 0;
                 dec->qpd_enc_state.resume = DEI_IWNR_READ_NAME_IDX;
                 prefix_bits = 6;
                 goto dei_iwnr_read_name_idx;
@@ -6948,7 +6951,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             }
             else
             {
-                dec->qpd_enc_state.ctx_u.duplicate.dec_int_state.resume = 0;
+                DUPL.dec_int_state.resume = 0;
                 dec->qpd_enc_state.resume = DEI_DUP_READ_IDX;
                 prefix_bits = 5;
                 goto dei_dup_read_idx;
@@ -6957,27 +6960,23 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
         case DEI_IWNR_READ_NAME_IDX:
   dei_iwnr_read_name_idx:
             r = lsqpack_dec_int_r(&buf, end, prefix_bits,
-                &dec->qpd_enc_state.ctx_u.with_namref.name_idx,
-                &dec->qpd_enc_state.ctx_u.with_namref.dec_int_state);
+                                    &WINR.name_idx, &WINR.dec_int_state);
             if (r == 0)
             {
-                if (dec->qpd_enc_state.ctx_u.with_namref.is_static)
+                if (WINR.is_static)
                 {
-                    if (dec->qpd_enc_state.ctx_u.with_namref.name_idx < 1
-                        || dec->qpd_enc_state.ctx_u.with_namref.name_idx
-                                                    > QPACK_STATIC_TABLE_SIZE)
+                    if (WINR.name_idx < 1
+                                || WINR.name_idx > QPACK_STATIC_TABLE_SIZE)
                         return -1;
-                    dec->qpd_enc_state.ctx_u.with_namref.reffed_entry = NULL;
+                    WINR.reffed_entry = NULL;
                 }
                 else
                 {
-                    dec->qpd_enc_state.ctx_u.with_namref.reffed_entry =
-                        qdec_get_table_entry(dec, dec->qpd_enc_state.ctx_u.
-                                                        with_namref.name_idx);
-                    if (!dec->qpd_enc_state.ctx_u.with_namref.reffed_entry)
+                    WINR.reffed_entry = qdec_get_table_entry(dec,
+                                                                WINR.name_idx);
+                    if (!WINR.reffed_entry)
                         return -1;
-                    ++dec->qpd_enc_state.ctx_u.with_namref.reffed_entry
-                                                                ->dte_refcnt;
+                    ++WINR.reffed_entry->dte_refcnt;
                 }
                 dec->qpd_enc_state.resume = DEI_IWNR_BEGIN_READ_VAL_LEN;
                 break;
@@ -6987,51 +6986,39 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             else
                 return -1;
         case DEI_IWNR_BEGIN_READ_VAL_LEN:
-            dec->qpd_enc_state.ctx_u.with_namref.is_huffman = (buf[0] & 0x80) > 0;
-            dec->qpd_enc_state.ctx_u.with_namref.dec_int_state.resume = 0;
+            WINR.is_huffman = (buf[0] & 0x80) > 0;
+            WINR.dec_int_state.resume = 0;
             dec->qpd_enc_state.resume = DEI_IWNR_READ_VAL_LEN;
             prefix_bits = 7;
             /* fall-through */
         case DEI_IWNR_READ_VAL_LEN:
-            r = lsqpack_dec_int_r(&buf, end, prefix_bits,
-                &dec->qpd_enc_state.ctx_u.with_namref.val_len,
-                &dec->qpd_enc_state.ctx_u.with_namref.dec_int_state);
+            r = lsqpack_dec_int_r(&buf, end, prefix_bits, &WINR.val_len,
+                                                        &WINR.dec_int_state);
             if (r == 0)
             {
-                if (dec->qpd_enc_state.ctx_u.with_namref.is_static)
+                if (WINR.is_static)
                 {
-                    dec->qpd_enc_state.ctx_u.with_namref.name_len =
-                        static_table[dec->qpd_enc_state.ctx_u.with_namref.name_idx - 1].name_len;
-                    dec->qpd_enc_state.ctx_u.with_namref.name =
-                        static_table[dec->qpd_enc_state.ctx_u.with_namref.name_idx - 1].name;
+                    WINR.name_len = static_table[WINR.name_idx - 1].name_len;
+                    WINR.name = static_table[WINR.name_idx - 1].name;
                 }
                 else
                 {
-                    dec->qpd_enc_state.ctx_u.with_namref.name_len =
-                        dec->qpd_enc_state.ctx_u.with_namref.reffed_entry->dte_name_len;
-                    dec->qpd_enc_state.ctx_u.with_namref.name =
-                        DTE_NAME(dec->qpd_enc_state.ctx_u.with_namref.reffed_entry);
+                    WINR.name_len = WINR.reffed_entry->dte_name_len;
+                    WINR.name = DTE_NAME(WINR.reffed_entry);
                 }
-                if (dec->qpd_enc_state.ctx_u.with_namref.is_huffman)
-                    dec->qpd_enc_state.ctx_u.with_namref.alloced_val_len =
-                        dec->qpd_enc_state.ctx_u.with_namref.val_len +
-                        dec->qpd_enc_state.ctx_u.with_namref.val_len / 4;
+                if (WINR.is_huffman)
+                    WINR.alloced_val_len = WINR.val_len + WINR.val_len / 4;
                 else
-                    dec->qpd_enc_state.ctx_u.with_namref.alloced_val_len =
-                        dec->qpd_enc_state.ctx_u.with_namref.val_len;
-                dec->qpd_enc_state.ctx_u.with_namref.entry = malloc(
-                    sizeof(*dec->qpd_enc_state.ctx_u.with_namref.entry)
-                  + dec->qpd_enc_state.ctx_u.with_namref.name_len
-                  + dec->qpd_enc_state.ctx_u.with_namref.alloced_val_len
-                );
-                if (!dec->qpd_enc_state.ctx_u.with_namref.entry)
+                    WINR.alloced_val_len = WINR.val_len;
+                WINR.entry = malloc(sizeof(*WINR.entry) + WINR.name_len
+                                                    + WINR.alloced_val_len);
+                if (!WINR.entry)
                     return -1;
-                dec->qpd_enc_state.ctx_u.with_namref.entry->dte_name_len =
-                    dec->qpd_enc_state.ctx_u.with_namref.name_len;
-                if (dec->qpd_enc_state.ctx_u.with_namref.is_huffman)
+                WINR.entry->dte_name_len = WINR.name_len;
+                if (WINR.is_huffman)
                 {
                     dec->qpd_enc_state.resume = DEI_IWNR_READ_VALUE_HUFFMAN;
-                    dec->qpd_enc_state.ctx_u.with_namref.dec_huff_state.resume = 0;
+                    WINR.dec_huff_state.resume = 0;
                 }
                 else
                     dec->qpd_enc_state.resume = DEI_IWNR_READ_VALUE_PLAIN;
@@ -7042,61 +7029,48 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 return -1;
             break;
         case DEI_IWNR_READ_VALUE_HUFFMAN:
-            size = MIN((unsigned) (end - buf),
-                dec->qpd_enc_state.ctx_u.with_namref.val_len
-                    - dec->qpd_enc_state.ctx_u.with_namref.nread);
+            size = MIN((unsigned) (end - buf), WINR.val_len - WINR.nread);
             hdr = lsqpack_huff_decode_r(buf, size,
-                (unsigned char *) DTE_VALUE(dec->qpd_enc_state.ctx_u.with_namref.entry)
-                    + dec->qpd_enc_state.ctx_u.with_namref.val_off,
-                dec->qpd_enc_state.ctx_u.with_namref.alloced_val_len
-                    - dec->qpd_enc_state.ctx_u.with_namref.val_off,
-                &dec->qpd_enc_state.ctx_u.with_namref.dec_huff_state,
-                dec->qpd_enc_state.ctx_u.with_namref.nread + size
-                        == dec->qpd_enc_state.ctx_u.with_namref.val_len
-            );
+                    (unsigned char *) DTE_VALUE(WINR.entry) + WINR.val_off,
+                    WINR.alloced_val_len - WINR.val_off,
+                    &WINR.dec_huff_state, WINR.nread + size == WINR.val_len);
             switch (hdr.status)
             {
             case HUFF_DEC_OK:
                 buf += hdr.n_src;
-                dec->qpd_enc_state.ctx_u.with_namref.entry->dte_val_len
-                    = dec->qpd_enc_state.ctx_u.with_namref.val_off + hdr.n_dst;
-                dec->qpd_enc_state.ctx_u.with_namref.entry->dte_refcnt = 1;
-                memcpy(DTE_NAME(dec->qpd_enc_state.ctx_u.with_namref.entry),
-                       dec->qpd_enc_state.ctx_u.with_namref.name,
-                       dec->qpd_enc_state.ctx_u.with_namref.name_len);
-                if (dec->qpd_enc_state.ctx_u.with_namref.reffed_entry)
+                WINR.entry->dte_val_len = WINR.val_off + hdr.n_dst;
+                WINR.entry->dte_refcnt = 1;
+                memcpy(DTE_NAME(WINR.entry), WINR.name, WINR.name_len);
+                if (WINR.reffed_entry)
                 {
-                    qdec_decref_entry(dec->qpd_enc_state.ctx_u.with_namref.reffed_entry);
-                    dec->qpd_enc_state.ctx_u.with_namref.reffed_entry = NULL;
+                    qdec_decref_entry(WINR.reffed_entry);
+                    WINR.reffed_entry = NULL;
                 }
-                r = lsqpack_dec_push_entry(dec,
-                            dec->qpd_enc_state.ctx_u.with_namref.entry);
+                r = lsqpack_dec_push_entry(dec, WINR.entry);
                 if (0 == r)
                 {
                     dec->qpd_enc_state.resume = 0;
-                    dec->qpd_enc_state.ctx_u.with_namref.entry = NULL;
+                    WINR.entry = NULL;
                     break;
                 }
-                qdec_decref_entry(dec->qpd_enc_state.ctx_u.with_namref.entry);
-                dec->qpd_enc_state.ctx_u.with_namref.entry = NULL;
+                qdec_decref_entry(WINR.entry);
+                WINR.entry = NULL;
                 return -1;
             case HUFF_DEC_END_SRC:
                 buf += hdr.n_src;
-                dec->qpd_enc_state.ctx_u.with_namref.nread += hdr.n_src;
-                dec->qpd_enc_state.ctx_u.with_namref.val_off += hdr.n_dst;
+                WINR.nread += hdr.n_src;
+                WINR.val_off += hdr.n_dst;
                 break;
             case HUFF_DEC_END_DST:
-                dec->qpd_enc_state.ctx_u.with_namref.alloced_val_len *= 2;
-                entry = realloc(dec->qpd_enc_state.ctx_u.with_namref.entry,
-                    sizeof(*dec->qpd_enc_state.ctx_u.with_namref.entry)
-                  + dec->qpd_enc_state.ctx_u.with_namref.name_len
-                  + dec->qpd_enc_state.ctx_u.with_namref.alloced_val_len);
+                WINR.alloced_val_len *= 2;
+                entry = realloc(WINR.entry, sizeof(*WINR.entry)
+                                        + WINR.name_len + WINR.alloced_val_len);
                 if (!entry)
                     return -1;
-                dec->qpd_enc_state.ctx_u.with_namref.entry = entry;
+                WINR.entry = entry;
                 buf += hdr.n_src;
-                dec->qpd_enc_state.ctx_u.with_namref.nread += hdr.n_src;
-                dec->qpd_enc_state.ctx_u.with_namref.val_off += hdr.n_dst;
+                WINR.nread += hdr.n_src;
+                WINR.val_off += hdr.n_dst;
                 break;
             default:
                 return -1;
@@ -7104,13 +7078,11 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             break;
         case DEI_DUP_READ_IDX:
   dei_dup_read_idx:
-            r = lsqpack_dec_int_r(&buf, end, prefix_bits,
-                &dec->qpd_enc_state.ctx_u.duplicate.index,
-                &dec->qpd_enc_state.ctx_u.duplicate.dec_int_state);
+            r = lsqpack_dec_int_r(&buf, end, prefix_bits, &DUPL.index,
+                                                        &DUPL.dec_int_state);
             if (r == 0)
             {
-                entry = qdec_get_table_entry(dec,
-                                    dec->qpd_enc_state.ctx_u.duplicate.index);
+                entry = qdec_get_table_entry(dec, DUPL.index);
                 if (!entry)
                     return -1;
                 size = sizeof(*new_entry) + entry->dte_name_len
@@ -7136,6 +7108,9 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             assert(0);
         }
     }
+
+#undef WINR
+#undef DUPL
 
     return 0;
 }
