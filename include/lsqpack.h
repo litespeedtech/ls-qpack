@@ -368,6 +368,11 @@ struct lsqpack_dec
                 struct lsqpack_dec_int_state        dec_int_state;
                 uint64_t                            index;
             }                                               duplicate;
+
+            struct {
+                struct lsqpack_dec_int_state        dec_int_state;
+                uint64_t                            new_size;
+            }                                               size_update;
         }               ctx_u;
     }                       qpd_enc_state;
 };

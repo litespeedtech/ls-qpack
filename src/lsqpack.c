@@ -6692,6 +6692,7 @@ struct lsqpack_dec_table_entry
 
 #define DTE_NAME(dte) ((dte)->dte_buf)
 #define DTE_VALUE(dte) (&(dte)->dte_buf[(dte)->dte_name_len])
+#define DTE_SIZE(dte) ENTRY_COST((dte)->dte_name_len, (dte)->dte_val_len)
 
 enum
 {
@@ -6889,6 +6890,32 @@ lsqpack_dec_header_in (struct lsqpack_dec *dec, void *stream,
 }
 
 
+static void
+qdec_drop_oldest_entry (struct lsqpack_dec *dec)
+{
+    struct lsqpack_dec_table_entry *entry;
+    entry = (void *) lsqpack_arr_shift(&dec->qpd_dyn_table);
+    dec->qpd_cur_capacity -= DTE_SIZE(entry);
+    qdec_decref_entry(entry);
+}
+
+
+static void
+qdec_remove_overflow_entries (struct lsqpack_dec *dec)
+{
+    while (dec->qpd_cur_capacity > dec->qpd_cur_max_capacity)
+        qdec_drop_oldest_entry(dec);
+}
+
+
+static void
+qdec_update_max_capacity (struct lsqpack_dec *dec, unsigned new_capacity)
+{
+    dec->qpd_cur_max_capacity = new_capacity;
+    qdec_remove_overflow_entries(dec);
+}
+
+
 #if !LS_QPACK_EMIT_TEST_CODE
 static
 #endif
@@ -6898,6 +6925,7 @@ lsqpack_dec_push_entry (struct lsqpack_dec *dec,
 {
     if (0 == lsqpack_arr_push(&dec->qpd_dyn_table, (uintptr_t) entry))
     {
+        dec->qpd_cur_capacity += DTE_SIZE(entry);
         ++dec->qpd_ins_count;
         return 0;
     }
@@ -6914,6 +6942,7 @@ enum {
     DEI_IWNR_READ_VALUE_PLAIN,
     DEI_IWNR_READ_VALUE_HUFFMAN,
     DEI_DUP_READ_IDX,
+    DEI_SIZE_UPD_READ_IDX,
 };
 
 int
@@ -6929,6 +6958,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
 
 #define WINR dec->qpd_enc_state.ctx_u.with_namref
 #define DUPL dec->qpd_enc_state.ctx_u.duplicate
+#define TBSZ dec->qpd_enc_state.ctx_u.size_update
 
     while (buf < end)
     {
@@ -6948,6 +6978,10 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             }
             else if (buf[0] & 0x20)
             {
+                TBSZ.dec_int_state.resume = 0;
+                dec->qpd_enc_state.resume = DEI_SIZE_UPD_READ_IDX;
+                prefix_bits = 5;
+                goto dei_size_upd_read_idx;
             }
             else
             {
@@ -7103,6 +7137,24 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             else if (r == -1)
                 return 0;
             else
+        case DEI_SIZE_UPD_READ_IDX:
+  dei_size_upd_read_idx:
+            r = lsqpack_dec_int_r(&buf, end, prefix_bits, &TBSZ.new_size,
+                                                        &TBSZ.dec_int_state);
+            if (r == 0)
+            {
+                if (TBSZ.new_size <= dec->qpd_max_capacity)
+                {
+                    dec->qpd_enc_state.resume = 0;
+                    qdec_update_max_capacity(dec, TBSZ.new_size);
+                    break;
+                }
+                else
+                    return -1;
+            }
+            else if (r == -1)
+                return 0;
+            else
                 return -1;
         default:
             assert(0);
@@ -7116,41 +7168,12 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
 }
 
 
-#if 0
-static void
-qdec_drop_oldest_entry (struct lsqpack_dec *dec)
-{
-    struct lsqpack_dec_table_entry *entry;
-    entry = (void *) lsqpack_arr_shift(&dec->hpd_dyn_table);
-    dec->hpd_cur_capacity -= DYNAMIC_ENTRY_OVERHEAD + entry->dte_name_len
-                                                        + entry->dte_val_len;
-    qdec_decref_entry(entry);
-}
-
-
-static void
-qdec_remove_overflow_entries (struct lsqpack_dec *dec)
-{
-    while (dec->hpd_cur_capacity > dec->hpd_cur_max_capacity)
-        qdec_drop_oldest_entry(dec);
-}
-
-
-static void
-qdec_update_max_capacity (struct lsqpack_dec *dec, uint32_t new_capacity)
-{
-    dec->hpd_cur_max_capacity = new_capacity;
-    qdec_remove_overflow_entries(dec);
-}
-
-
 void
 lsqpack_dec_set_max_capacity (struct lsqpack_dec *dec, unsigned max_capacity)
 {
-    dec->hpd_max_capacity = max_capacity;
+    dec->qpd_max_capacity = max_capacity;
     qdec_update_max_capacity(dec, max_capacity);
 }
-#endif
 
 
 static unsigned char *
