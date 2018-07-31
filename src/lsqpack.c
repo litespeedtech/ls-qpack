@@ -7024,7 +7024,6 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 prefix_bits = 5;
                 goto dei_dup_read_idx;
             }
-            break;
         case DEI_WINR_READ_NAME_IDX:
   dei_winr_read_name_idx:
             r = lsqpack_dec_int_r(&buf, end, prefix_bits,
