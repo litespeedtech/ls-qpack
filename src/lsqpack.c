@@ -6657,37 +6657,6 @@ lsqpack_enc_decoder_in (struct lsqpack_enc *enc,
 }
 
 
-#if 0
-void
-lsqpack_enc_iter_init (struct lsqpack_enc *enc, void **iter)
-{
-    *iter = STAILQ_FIRST(&enc->qpe_all_entries);
-}
-
-
-/* Returns 0 if entry is found */
-int
-lsqpack_enc_iter_next (struct lsqpack_enc *enc, void **iter,
-                                        struct enc_dyn_table_entry *retval)
-{
-    const struct lsqpack_enc_table_entry *entry;
-
-    entry = *iter;
-    if (!entry)
-        return -1;
-
-    *iter = STAILQ_NEXT(entry, ete_next_all);
-
-    retval->name = ETE_NAME(entry);
-    retval->value = ETE_VALUE(entry);
-    retval->name_len = entry->ete_name_len;
-    retval->value_len = entry->ete_val_len;
-    retval->entry_id = entry->ete_id;
-    return 0;
-}
-#endif
-
-
 /* Dynamic table entry: */
 struct lsqpack_dec_table_entry
 {
@@ -7538,50 +7507,3 @@ lsqpack_huff_decode_r (const unsigned char *src, int src_len,
         };
     }
 }
-
-
-#if 0
-//reutrn the length in the dst, also update the src
-#if !LS_QPACK_EMIT_TEST_CODE
-static
-#endif
-       int
-qdec_dec_str (unsigned char *dst, size_t dst_len, const unsigned char **src,
-        const unsigned char *src_end)
-{
-    if ((*src) == src_end)
-        return 0;
-
-    int is_huffman = (*(*src) & 0x80);
-    uint32_t len;
-    if (0 != lsqpack_dec_dec_int(src, src_end, 7, &len))
-        return -2;  //wrong int
-
-    int ret = 0;
-    if ((uint32_t)(src_end - (*src)) < len) {
-        return -2;  //wrong int
-    }
-
-    if (is_huffman)
-    {
-        ret = lsqpack_huff_decode(*src, len, dst, dst_len);
-        if (ret < 0)
-            return -3; //Wrong code
-
-        (*src) += len;
-    }
-    else
-    {
-        if (dst_len < (size_t)(src_end - (*src)))
-            ret = -3;  //dst not enough space
-        else
-        {
-            memcpy(dst, (*src), len);
-            (*src) += len;
-            ret = len;
-        }
-    }
-
-    return ret;
-}
-#endif
