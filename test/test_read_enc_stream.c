@@ -69,6 +69,16 @@ static const struct test_read_encoder_stream tests[] =
         },
     },
 
+    {   __LINE__,
+        "\x63\x92\xd9\x0b\x8c\xe5\x39\x6c\x2a\x86\x42\x94\xfa\x50\x83\xb3"
+        "\xfc",
+        17,
+        1,
+        {
+            { "dude", "Where is my car?", },
+        },
+    },
+
 };
 
 

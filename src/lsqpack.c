@@ -6957,13 +6957,20 @@ lsqpack_dec_push_entry (struct lsqpack_dec *dec,
 
 enum {
     DEI_NEXT_INST,
-    DEI_IWNR_READ_NAME_IDX,
-    DEI_IWNR_BEGIN_READ_VAL_LEN,
-    DEI_IWNR_READ_VAL_LEN,
-    DEI_IWNR_READ_VALUE_PLAIN,
-    DEI_IWNR_READ_VALUE_HUFFMAN,
+    DEI_WINR_READ_NAME_IDX,
+    DEI_WINR_BEGIN_READ_VAL_LEN,
+    DEI_WINR_READ_VAL_LEN,
+    DEI_WINR_READ_VALUE_PLAIN,
+    DEI_WINR_READ_VALUE_HUFFMAN,
     DEI_DUP_READ_IDX,
     DEI_SIZE_UPD_READ_IDX,
+    DEI_WONR_READ_NAME_LEN,
+    DEI_WONR_READ_NAME_HUFFMAN,
+    DEI_WONR_READ_NAME_PLAIN,
+    DEI_WONR_BEGIN_READ_VAL_LEN,
+    DEI_WONR_READ_VAL_LEN,
+    DEI_WONR_READ_VALUE_HUFFMAN,
+    DEI_WONR_READ_VALUE_PLAIN,
 };
 
 int
@@ -6978,6 +6985,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
     int r;
 
 #define WINR dec->qpd_enc_state.ctx_u.with_namref
+#define WONR dec->qpd_enc_state.ctx_u.wo_namref
 #define DUPL dec->qpd_enc_state.ctx_u.duplicate
 #define TBSZ dec->qpd_enc_state.ctx_u.size_update
 
@@ -6990,12 +6998,17 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             {
                 WINR.is_static = (buf[0] & 0x40) > 0;
                 WINR.dec_int_state.resume = 0;
-                dec->qpd_enc_state.resume = DEI_IWNR_READ_NAME_IDX;
+                dec->qpd_enc_state.resume = DEI_WINR_READ_NAME_IDX;
                 prefix_bits = 6;
-                goto dei_iwnr_read_name_idx;
+                goto dei_winr_read_name_idx;
             }
             else if (buf[0] & 0x40)
             {
+                WONR.is_huffman = (buf[0] & 0x20) > 0;
+                WONR.dec_int_state.resume = 0;
+                dec->qpd_enc_state.resume = DEI_WONR_READ_NAME_LEN;
+                prefix_bits = 5;
+                goto dei_wonr_read_name_idx;
             }
             else if (buf[0] & 0x20)
             {
@@ -7012,8 +7025,8 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 goto dei_dup_read_idx;
             }
             break;
-        case DEI_IWNR_READ_NAME_IDX:
-  dei_iwnr_read_name_idx:
+        case DEI_WINR_READ_NAME_IDX:
+  dei_winr_read_name_idx:
             r = lsqpack_dec_int_r(&buf, end, prefix_bits,
                                     &WINR.name_idx, &WINR.dec_int_state);
             if (r == 0)
@@ -7033,20 +7046,20 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                         return -1;
                     ++WINR.reffed_entry->dte_refcnt;
                 }
-                dec->qpd_enc_state.resume = DEI_IWNR_BEGIN_READ_VAL_LEN;
+                dec->qpd_enc_state.resume = DEI_WINR_BEGIN_READ_VAL_LEN;
                 break;
             }
             else if (r == -1)
                 return 0;
             else
                 return -1;
-        case DEI_IWNR_BEGIN_READ_VAL_LEN:
+        case DEI_WINR_BEGIN_READ_VAL_LEN:
             WINR.is_huffman = (buf[0] & 0x80) > 0;
             WINR.dec_int_state.resume = 0;
-            dec->qpd_enc_state.resume = DEI_IWNR_READ_VAL_LEN;
+            dec->qpd_enc_state.resume = DEI_WINR_READ_VAL_LEN;
             prefix_bits = 7;
             /* fall-through */
-        case DEI_IWNR_READ_VAL_LEN:
+        case DEI_WINR_READ_VAL_LEN:
             r = lsqpack_dec_int_r(&buf, end, prefix_bits, &WINR.val_len,
                                                         &WINR.dec_int_state);
             if (r == 0)
@@ -7073,18 +7086,18 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 WINR.nread = 0;
                 if (WINR.is_huffman)
                 {
-                    dec->qpd_enc_state.resume = DEI_IWNR_READ_VALUE_HUFFMAN;
+                    dec->qpd_enc_state.resume = DEI_WINR_READ_VALUE_HUFFMAN;
                     WINR.dec_huff_state.resume = 0;
                 }
                 else
-                    dec->qpd_enc_state.resume = DEI_IWNR_READ_VALUE_PLAIN;
+                    dec->qpd_enc_state.resume = DEI_WINR_READ_VALUE_PLAIN;
             }
             else if (r == -1)
                 return 0;
             else
                 return -1;
             break;
-        case DEI_IWNR_READ_VALUE_HUFFMAN:
+        case DEI_WINR_READ_VALUE_HUFFMAN:
             size = MIN((unsigned) (end - buf), WINR.val_len - WINR.nread);
             hdr = lsqpack_huff_decode_r(buf, size,
                     (unsigned char *) DTE_VALUE(WINR.entry) + WINR.val_off,
@@ -7132,6 +7145,133 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 return -1;
             }
             break;
+        case DEI_WONR_READ_NAME_LEN:
+  dei_wonr_read_name_idx:
+            r = lsqpack_dec_int_r(&buf, end, prefix_bits, &WONR.str_len,
+                                                        &DUPL.dec_int_state);
+            if (r == 0)
+            {
+                /* TODO: Check that the name is not larger than the max dynamic
+                 * table capacity, for example.
+                 */
+                WONR.alloced_len = WONR.str_len * 2;
+                size = sizeof(*new_entry) + WONR.alloced_len;
+                WONR.entry = malloc(size);
+                if (!WONR.entry)
+                    return -1;
+                WONR.nread = 0;
+                WONR.str_off = 0;
+                if (WONR.is_huffman)
+                    dec->qpd_enc_state.resume = DEI_WONR_READ_NAME_HUFFMAN;
+                else
+                    dec->qpd_enc_state.resume = DEI_WONR_READ_NAME_PLAIN;
+                break;
+            }
+            else if (r == -1)
+                return 0;
+            else
+                return -1;
+        case DEI_WONR_READ_NAME_HUFFMAN:
+            size = MIN((unsigned) (end - buf), WONR.str_len - WONR.nread);
+            hdr = lsqpack_huff_decode_r(buf, size,
+                    (unsigned char *) DTE_NAME(WONR.entry) + WONR.str_off,
+                    WONR.alloced_len - WONR.str_off,
+                    &WONR.dec_huff_state, WONR.nread + size == WONR.str_len);
+            switch (hdr.status)
+            {
+            case HUFF_DEC_OK:
+                buf += hdr.n_src;
+                WONR.entry->dte_name_len = WONR.str_off + hdr.n_dst;
+                dec->qpd_enc_state.resume = DEI_WONR_BEGIN_READ_VAL_LEN;
+                break;
+            case HUFF_DEC_END_SRC:
+                buf += hdr.n_src;
+                WONR.nread += hdr.n_src;
+                WONR.str_off += hdr.n_dst;
+                break;
+            case HUFF_DEC_END_DST:
+                WONR.alloced_len *= 2;
+                entry = realloc(WONR.entry, sizeof(*WONR.entry)
+                                                        + WONR.alloced_len);
+                if (!entry)
+                    return -1;
+                WINR.entry = entry;
+                buf += hdr.n_src;
+                WONR.nread += hdr.n_src;
+                WONR.str_off += hdr.n_dst;
+                break;
+            default:
+                return -1;
+            }
+            break;
+        case DEI_WONR_BEGIN_READ_VAL_LEN:
+            WONR.is_huffman = (buf[0] & 0x80) > 0;
+            WONR.dec_int_state.resume = 0;
+            dec->qpd_enc_state.resume = DEI_WONR_READ_VAL_LEN;
+            prefix_bits = 7;
+            /* fall-through */
+        case DEI_WONR_READ_VAL_LEN:
+            r = lsqpack_dec_int_r(&buf, end, prefix_bits, &WONR.str_len,
+                                                        &WONR.dec_int_state);
+            if (r == 0)
+            {
+                WONR.nread = 0;
+                WONR.str_off = 0;
+                if (WONR.is_huffman)
+                {
+                    dec->qpd_enc_state.resume = DEI_WONR_READ_VALUE_HUFFMAN;
+                    WONR.dec_huff_state.resume = 0;
+                }
+                else
+                    dec->qpd_enc_state.resume = DEI_WONR_READ_VALUE_PLAIN;
+            }
+            else if (r == -1)
+                return 0;
+            else
+                return -1;
+            break;
+        case DEI_WONR_READ_VALUE_HUFFMAN:
+            size = MIN((unsigned) (end - buf), WONR.str_len - WONR.nread);
+            hdr = lsqpack_huff_decode_r(buf, size,
+                    (unsigned char *) DTE_VALUE(WONR.entry) + WONR.str_off,
+                    WONR.alloced_len - WONR.entry->dte_name_len - WONR.str_off,
+                    &WONR.dec_huff_state, WONR.nread + size == WONR.str_len);
+            switch (hdr.status)
+            {
+            case HUFF_DEC_OK:
+                buf += hdr.n_src;
+                WONR.entry->dte_val_len = WONR.str_off + hdr.n_dst;
+                WONR.entry->dte_refcnt = 1;
+                r = lsqpack_dec_push_entry(dec, WONR.entry);
+                if (0 == r)
+                {
+                    dec->qpd_enc_state.resume = 0;
+                    WONR.entry = NULL;
+                    break;
+                }
+                qdec_decref_entry(WONR.entry);
+                WONR.entry = NULL;
+                return -1;
+            case HUFF_DEC_END_SRC:
+                buf += hdr.n_src;
+                WONR.nread += hdr.n_src;
+                WONR.str_off += hdr.n_dst;
+                break;
+            case HUFF_DEC_END_DST:
+                WONR.alloced_len *= 2;
+                entry = realloc(WONR.entry, sizeof(*WONR.entry)
+                                                        + WONR.alloced_len);
+                if (!entry)
+                    return -1;
+                WONR.entry = entry;
+                buf += hdr.n_src;
+                WONR.nread += hdr.n_src;
+                WONR.str_off += hdr.n_dst;
+                break;
+            default:
+                return -1;
+            }
+            break;
         case DEI_DUP_READ_IDX:
   dei_dup_read_idx:
             r = lsqpack_dec_int_r(&buf, end, prefix_bits, &DUPL.index,
@@ -7159,6 +7299,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             else if (r == -1)
                 return 0;
             else
+                return -1;
         case DEI_SIZE_UPD_READ_IDX:
   dei_size_upd_read_idx:
             r = lsqpack_dec_int_r(&buf, end, prefix_bits, &TBSZ.new_size,
@@ -7184,7 +7325,9 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
     }
 
 #undef WINR
+#undef WONR
 #undef DUPL
+#undef TBSZ
 
     return 0;
 }
