@@ -7144,6 +7144,43 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 return -1;
             }
             break;
+        case DEI_WINR_READ_VALUE_PLAIN:
+            if (WINR.alloced_val_len < WINR.val_len)
+            {
+                WINR.alloced_val_len = WINR.val_len;
+                entry = realloc(WINR.entry, sizeof(*WINR.entry)
+                                                        + WINR.alloced_val_len);
+                if (entry)
+                    WINR.entry = entry;
+                else
+                    return -1;
+            }
+            size = MIN((unsigned) (end - buf), WINR.val_len - WONR.str_off);
+            memcpy(DTE_VALUE(WINR.entry) + WINR.val_off, buf, size);
+            WINR.val_off += size;
+            buf += size;
+            if (WINR.val_off == WINR.val_len)
+            {
+                WINR.entry->dte_val_len = WINR.val_off;
+                WINR.entry->dte_refcnt = 1;
+                memcpy(DTE_NAME(WINR.entry), WINR.name, WINR.name_len);
+                if (WINR.reffed_entry)
+                {
+                    qdec_decref_entry(WINR.reffed_entry);
+                    WINR.reffed_entry = NULL;
+                }
+                r = lsqpack_dec_push_entry(dec, WINR.entry);
+                if (0 == r)
+                {
+                    dec->qpd_enc_state.resume = 0;
+                    WINR.entry = NULL;
+                    break;
+                }
+                qdec_decref_entry(WINR.entry);
+                WINR.entry = NULL;
+                return -1;
+            }
+            break;
         case DEI_WONR_READ_NAME_LEN:
   dei_wonr_read_name_idx:
             r = lsqpack_dec_int_r(&buf, end, prefix_bits, &WONR.str_len,
