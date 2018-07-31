@@ -7168,7 +7168,10 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 WONR.nread = 0;
                 WONR.str_off = 0;
                 if (WONR.is_huffman)
+                {
                     dec->qpd_enc_state.resume = DEI_WONR_READ_NAME_HUFFMAN;
+                    WONR.dec_huff_state.resume = 0;
+                }
                 else
                     dec->qpd_enc_state.resume = DEI_WONR_READ_NAME_PLAIN;
                 break;
