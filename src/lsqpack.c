@@ -6701,8 +6701,22 @@ enum
     HPACK_HUFFMAN_FLAG_FAIL = 0x04,
 };
 
+
 static struct lsqpack_dec_table_entry *
-qdec_get_table_entry (struct lsqpack_dec *dec, lsqpack_abs_id_t id);
+qdec_get_table_entry (struct lsqpack_dec *dec, lsqpack_abs_id_t relative_idx)
+{
+    uintptr_t val;
+    unsigned id;
+
+    if (relative_idx < lsqpack_arr_count(&dec->qpd_dyn_table))
+    {
+        id = lsqpack_arr_count(&dec->qpd_dyn_table) - 1 - relative_idx;
+        val = lsqpack_arr_get(&dec->qpd_dyn_table, id);
+        return (struct lsqpack_dec_table_entry *) val;
+    }
+    else
+        return NULL;
+}
 
 
 void
@@ -7329,166 +7343,5 @@ qdec_dec_str (unsigned char *dst, size_t dst_len, const unsigned char **src,
     }
 
     return ret;
-}
-#endif
-
-
-static struct lsqpack_dec_table_entry *
-qdec_get_table_entry (struct lsqpack_dec *dec, lsqpack_abs_id_t id)
-{
-    uintptr_t val;
-
-    if (id <= dec->qpd_del_count || id > dec->qpd_ins_count)
-        return NULL;
-
-    id = dec->qpd_ins_count - id;
-    val = lsqpack_arr_get(&dec->qpd_dyn_table, id);
-    return (struct lsqpack_dec_table_entry *) val;
-}
-
-
-#if 0
-int
-lsqpack_dec_decode (struct lsqpack_dec *dec,
-    const unsigned char **src, const unsigned char *src_end,
-    char *dst, char *const dst_end, uint16_t *name_len, uint16_t *val_len)
-{
-    struct lsqpack_dec_table_entry *entry;
-    uint32_t index, new_capacity;
-    int indexed_type, len;
-
-    if ((*src) == src_end)
-        return -1;
-
-    while ((*(*src) & 0xe0) == 0x20)    //001 xxxxx
-    {
-        if (0 != lsqpack_dec_dec_int(src, src_end, 5, &new_capacity))
-            return -1;
-        if (new_capacity > dec->hpd_max_capacity)
-            return -1;
-        qdec_update_max_capacity(dec, new_capacity);
-        if (*src == src_end)
-            return -1;
-    }
-
-    /* lsqpack_dec_dec_int() sets `index' and advances `src'.  If we do not
-     * call it, we set `index' and advance `src' ourselves:
-     */
-    if (*(*src) & 0x80) //1 xxxxxxx
-    {
-        if (0 != lsqpack_dec_dec_int(src, src_end, 7, &index))
-            return -1;
-
-        indexed_type = 3; //need to parse value
-    }
-    else if (*(*src) > 0x40) //01 xxxxxx
-    {
-        if (0 != lsqpack_dec_dec_int(src, src_end, 6, &index))
-            return -1;
-
-        indexed_type = 0;
-    }
-    else if (*(*src) == 0x40) //custmized //0100 0000
-    {
-        indexed_type = 0;
-        index = 0;
-        ++(*src);
-    }
-
-    //Never indexed
-    else if (*(*src) == 0x10)  //00010000
-    {
-        indexed_type = 2;
-        index = 0;
-        ++(*src);
-    }
-    else if ((*(*src) & 0xf0) == 0x10)  //0001 xxxx
-    {
-        if (0 != lsqpack_dec_dec_int(src, src_end, 4, &index))
-            return -1;
-
-        indexed_type = 2;
-    }
-
-    //without indexed
-    else if (*(*src) == 0x00)  //0000 0000
-    {
-        indexed_type = 1;
-        index = 0;
-        ++(*src);
-    }
-    else // 0000 xxxx
-    {
-        if (0 != lsqpack_dec_dec_int(src, src_end, 4, &index))
-            return -1;
-
-        indexed_type = 1;
-    }
-
-    char *const name = dst;
-    if (index > 0)
-    {
-        if (index <= QPACK_STATIC_TABLE_SIZE) //static table
-        {
-            if (static_table[index - 1].name_len > dst_end - dst)
-                return -1;
-            *name_len = static_table[index - 1].name_len;
-            memcpy(name, static_table[index - 1].name, *name_len);
-            if (indexed_type == 3)
-            {
-                if (static_table[index - 1].name_len +
-                    static_table[index - 1].val_len > dst_end - dst)
-                    return -1;
-                *val_len = static_table[index - 1].val_len;
-                memcpy(name + *name_len, static_table[index - 1].val, *val_len);
-                return 0;
-            }
-        }
-        else
-        {
-            entry = qdec_get_table_entry(dec, index);
-            if (entry == NULL)
-                return -1;
-            if (entry->dte_name_len > dst_end - dst)
-                return -1;
-
-            *name_len = entry->dte_name_len;
-            memcpy(name, DTE_NAME(entry), *name_len);
-            if (indexed_type == 3)
-            {
-                if (entry->dte_name_len + entry->dte_val_len > dst_end - dst)
-                    return -1;
-                *val_len = entry->dte_val_len;
-                memcpy(name + *name_len, DTE_VALUE(entry), *val_len);
-                return 0;
-            }
-        }
-    }
-    else
-    {
-        len = qdec_dec_str((unsigned char *)name, dst_end - dst, src, src_end);
-        if (len < 0)
-            return len; //error
-        if (len > UINT16_MAX)
-            return -2;
-        *name_len = len;
-    }
-
-    len = qdec_dec_str((unsigned char *)name + *name_len,
-                                    dst_end - dst - *name_len, src, src_end);
-    if (len < 0)
-        return len; //error
-    if (len > UINT16_MAX)
-        return -2;
-    *val_len = len;
-
-    if (indexed_type == 0)
-    {
-        if (0 != lsqpack_dec_push_entry(dec, name, *name_len,
-                                            name + *name_len, *val_len))
-            return -1;  //error
-    }
-
-    return 0;
 }
 #endif
