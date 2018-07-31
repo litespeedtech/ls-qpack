@@ -3,7 +3,7 @@
 
 int
 lsqpack_enc_enc_str (unsigned prefix_bits, unsigned char *const dst,
-    size_t dst_len, const unsigned char *str, lsqpack_strlen_t str_len);
+    size_t dst_len, const unsigned char *str, unsigned str_len);
 
 int
 lsqpack_dec_int (const unsigned char **src, const unsigned char *src_end,

@@ -12,7 +12,7 @@ struct str_test
     int                      strt_lineno;
     unsigned                 strt_prefix_bits;
     const unsigned char     *strt_in_str;
-    lsqpack_strlen_t         strt_in_len;
+    unsigned                 strt_in_len;
     const unsigned char     *strt_out_buf;
     int                      strt_retval;
 };

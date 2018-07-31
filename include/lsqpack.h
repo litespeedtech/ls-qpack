@@ -35,18 +35,10 @@ extern "C" {
 
 #include <stdint.h>
 
-/**
- * Strings up to 65535 characters in length are supported.
- */
-typedef uint16_t lsqpack_strlen_t;
-
 /** Let's start with four billion for now */
 typedef unsigned lsqpack_abs_id_t;
 
 #define LSQPACK_MAX_ABS_ID (~((lsqpack_abs_id_t) 0))
-
-/** Maximum length is defined for convenience */
-#define LSQPACK_MAX_STRLEN UINT16_MAX
 
 #define LSQPACK_DEF_DYN_TABLE_SIZE  4096
 #define LSQPACK_DEF_MAX_RISKED_STREAMS 100
@@ -92,8 +84,8 @@ enum lsqpack_enc_status
 lsqpack_enc_encode (struct lsqpack_enc *,
     unsigned char *enc_buf, size_t *enc_sz,
     unsigned char *header_buf, size_t *header_sz,
-    const char *name, lsqpack_strlen_t name_sz,
-    const char *value, lsqpack_strlen_t value_sz,
+    const char *name, unsigned name_sz,
+    const char *value, unsigned value_sz,
     enum lsqpack_enc_flags);
 
 /**
@@ -127,8 +119,8 @@ struct lsqpack_header
 {
     const char         *qh_name;
     const char         *qh_value;
-    lsqpack_strlen_t    qh_name_len;
-    lsqpack_strlen_t    qh_value_len;
+    unsigned            qh_name_len;
+    unsigned            qh_value_len;
     uintptr_t           qh_opaque;
 };
 

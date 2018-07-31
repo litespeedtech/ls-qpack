@@ -50,14 +50,14 @@ SOFTWARE.
 
 #define MAX_QUIC_STREAM_ID ((1ull << 62) - 1)
 
-#define NAME_VAL(a, b) sizeof(a) - 1, sizeof(b) - 1, (a), (b)
+#define NAME_VAL(a, b) (a), (b), sizeof(a) - 1, sizeof(b) - 1,
 
 static const struct
 {
-    lsqpack_strlen_t  name_len;
-    lsqpack_strlen_t  val_len;
     const char       *name;
     const char       *val;
+    unsigned          name_len;
+    unsigned          val_len;
 }
 static_table[QPACK_STATIC_TABLE_SIZE] =
 {
@@ -5353,8 +5353,8 @@ struct lsqpack_enc_table_entry
     unsigned                        ete_n_reffd;
     unsigned                        ete_nameval_hash;
     unsigned                        ete_name_hash;
-    lsqpack_strlen_t                ete_name_len;
-    lsqpack_strlen_t                ete_val_len;
+    unsigned                        ete_name_len;
+    unsigned                        ete_val_len;
     char                            ete_buf[0];
 };
 
@@ -5422,8 +5422,8 @@ lsqpack_enc_cleanup (struct lsqpack_enc *enc)
 static
 #endif
        unsigned
-lsqpack_enc_get_stx_tab_id (const char *name, lsqpack_strlen_t name_len,
-                const char *val, lsqpack_strlen_t val_len, int *val_matched)
+lsqpack_enc_get_stx_tab_id (const char *name, unsigned name_len,
+                const char *val, unsigned val_len, int *val_matched)
 {
     if (name_len < 3)
         return 0;
@@ -5770,8 +5770,8 @@ struct enc_found
 
 
 static struct enc_found
-qenc_find_entry_in_static_table (const char *name, lsqpack_strlen_t name_len,
-                                 const char *value, lsqpack_strlen_t value_len)
+qenc_find_entry_in_static_table (const char *name, unsigned name_len,
+                                 const char *value, unsigned value_len)
 {
     unsigned static_table_id;
     int val_matched;
@@ -5787,8 +5787,8 @@ qenc_find_entry_in_static_table (const char *name, lsqpack_strlen_t name_len,
 
 static struct enc_found
 qenc_find_entry_in_either_table (struct lsqpack_enc *enc, int risk,
-        const char *name, lsqpack_strlen_t name_len, const char *value,
-        lsqpack_strlen_t value_len)
+        const char *name, unsigned name_len, const char *value,
+        unsigned value_len)
 {
     struct lsqpack_enc_table_entry *entry;
     unsigned name_hash, nameval_hash, buckno, static_table_id;
@@ -5853,8 +5853,8 @@ qenc_find_entry_in_either_table (struct lsqpack_enc *enc, int risk,
 
 static struct enc_found
 qenc_find_entry (struct lsqpack_enc *enc, int risk, const char *name,
-        lsqpack_strlen_t name_len, const char *value,
-        lsqpack_strlen_t value_len)
+        unsigned name_len, const char *value,
+        unsigned value_len)
 {
     if (enc->qpe_cur_header.use_dynamic_table)
         return qenc_find_entry_in_either_table(enc, risk, name, name_len, value,
@@ -5948,12 +5948,12 @@ static
 #endif
        int
 lsqpack_enc_enc_str (unsigned prefix_bits, unsigned char *const dst,
-        size_t dst_len, const unsigned char *str, lsqpack_strlen_t str_len)
+        size_t dst_len, const unsigned char *str, unsigned str_len)
 {
     unsigned char *const end = dst + dst_len;
     unsigned char *p;
-    unsigned i;
-    int rc, enc_size_bits, enc_size_bytes;
+    unsigned i, enc_size_bits, enc_size_bytes;
+    int rc;
 
     enc_size_bits = 0;
     for (i = 0; i < str_len; ++i)
@@ -6069,8 +6069,8 @@ static
 #endif
        struct lsqpack_enc_table_entry *
 lsqpack_enc_push_entry (struct lsqpack_enc *enc, const char *name,
-                        lsqpack_strlen_t name_len, const char *value,
-                        lsqpack_strlen_t value_len)
+                        unsigned name_len, const char *value,
+                        unsigned value_len)
 {
     unsigned name_hash, nameval_hash, buckno;
     struct lsqpack_enc_table_entry *entry;
@@ -6331,8 +6331,8 @@ enum lsqpack_enc_status
 lsqpack_enc_encode (struct lsqpack_enc *enc,
         unsigned char *enc_buf, size_t *enc_sz_p,
         unsigned char *hea_buf, size_t *hea_sz_p,
-        const char *name, lsqpack_strlen_t name_len,
-        const char *value, lsqpack_strlen_t value_len,
+        const char *name, unsigned name_len,
+        const char *value, unsigned value_len,
         enum lsqpack_enc_flags flags)
 {
     unsigned char *const enc_buf_end = enc_buf + *enc_sz_p;
