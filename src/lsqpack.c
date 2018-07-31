@@ -7083,6 +7083,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                     return -1;
                 WINR.entry->dte_name_len = WINR.name_len;
                 WINR.nread = 0;
+                WINR.val_off = 0;
                 if (WINR.is_huffman)
                 {
                     dec->qpd_enc_state.resume = DEI_WINR_READ_VALUE_HUFFMAN;
