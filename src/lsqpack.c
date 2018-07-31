@@ -6376,10 +6376,17 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     {
     case EEA_INS_NAMEREF:
         dst = enc_buf;
-        *dst = 0x80
-               | ((TT_STATIC == ef.ef_table_type) << 6)
-               ;
-        dst = lsqpack_enc_int(dst, enc_buf_end, ef.ef_entry_id, 6);
+        if (TT_STATIC == ef.ef_table_type)
+        {
+            *dst = 0x80 | 0x40;
+            id = ef.ef_entry_id;
+        }
+        else
+        {
+            *dst = 0x80 | 0x40;
+            id = enc->qpe_ins_count - ef.ef_entry_id;
+        }
+        dst = lsqpack_enc_int(dst, enc_buf_end, id, 6);
         if (dst <= enc_buf)
             return LQES_NOBUF_ENC;
         r = lsqpack_enc_enc_str(7, dst, enc_buf_end - dst,
