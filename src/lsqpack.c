@@ -7144,7 +7144,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 else
                     return -1;
             }
-            size = MIN((unsigned) (end - buf), WINR.val_len - WONR.str_off);
+            size = MIN((unsigned) (end - buf), WINR.val_len - WINR.val_off);
             memcpy(DTE_VALUE(WINR.entry) + WINR.val_off, buf, size);
             WINR.val_off += size;
             buf += size;
@@ -7223,7 +7223,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                                                         + WONR.alloced_len);
                 if (!entry)
                     return -1;
-                WINR.entry = entry;
+                WONR.entry = entry;
                 buf += hdr.n_src;
                 WONR.nread += hdr.n_src;
                 WONR.str_off += hdr.n_dst;
