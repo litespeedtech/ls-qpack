@@ -7272,6 +7272,37 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 return -1;
             }
             break;
+        case DEI_WONR_READ_VALUE_PLAIN:
+            if (WONR.alloced_len < WONR.entry->dte_name_len + WONR.str_len)
+            {
+                WONR.alloced_len = WONR.entry->dte_name_len + WONR.str_len;
+                entry = realloc(WONR.entry, sizeof(*WONR.entry)
+                                                        + WONR.alloced_len);
+                if (entry)
+                    WONR.entry = entry;
+                else
+                    return -1;
+            }
+            size = MIN((unsigned) (end - buf), WONR.str_len - WONR.str_off);
+            memcpy(DTE_VALUE(WONR.entry) + WONR.str_off, buf, size);
+            WONR.str_off += size;
+            buf += size;
+            if (WONR.str_off == WONR.str_len)
+            {
+                WONR.entry->dte_val_len = WONR.str_off;
+                WONR.entry->dte_refcnt = 1;
+                r = lsqpack_dec_push_entry(dec, WONR.entry);
+                if (0 == r)
+                {
+                    dec->qpd_enc_state.resume = 0;
+                    WONR.entry = NULL;
+                    break;
+                }
+                qdec_decref_entry(WONR.entry);
+                WONR.entry = NULL;
+                return -1;
+            }
+            break;
         case DEI_DUP_READ_IDX:
   dei_dup_read_idx:
             r = lsqpack_dec_int_r(&buf, end, prefix_bits, &DUPL.index,
