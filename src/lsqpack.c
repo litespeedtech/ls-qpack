@@ -7507,3 +7507,27 @@ lsqpack_huff_decode_r (const unsigned char *src, int src_len,
         };
     }
 }
+
+
+void
+lsqpack_dec_print_table (const struct lsqpack_dec *dec, FILE *out)
+{
+    const struct lsqpack_dec_table_entry *entry;
+    uintptr_t val;
+    unsigned n;
+
+    fprintf(out, "Printing decoder table state.\n");
+    fprintf(out, "Insertions: %u; deletions: %u.\n", dec->qpd_ins_count,
+                                                        dec->qpd_del_count);
+    fprintf(out, "Max capacity: %u; current capacity: %u\n",
+        dec->qpd_cur_max_capacity, dec->qpd_cur_capacity);
+    for (n = 0; n < lsqpack_arr_count(&dec->qpd_dyn_table); ++n)
+    {
+        val = lsqpack_arr_get(&dec->qpd_dyn_table, n);
+        entry = (void *) val;
+        fprintf(out, "%u) %.*s: %.*s\n", dec->qpd_del_count + 1 + n,
+            entry->dte_name_len, DTE_NAME(entry),
+            entry->dte_val_len, DTE_VALUE(entry));
+    }
+    fprintf(out, "\n");
+}

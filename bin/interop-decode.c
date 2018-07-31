@@ -125,6 +125,7 @@ main (int argc, char **argv)
                 fprintf(stderr, "encoder in error\n");
                 exit(EXIT_FAILURE);
             }
+            lsqpack_dec_print_table(&decoder, stderr);
         }
     }
 

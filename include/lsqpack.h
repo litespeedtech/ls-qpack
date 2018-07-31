@@ -34,6 +34,7 @@ extern "C" {
 #endif
 
 #include <stdint.h>
+#include <stdio.h>
 
 /** Let's start with four billion for now */
 typedef unsigned lsqpack_abs_id_t;
@@ -172,6 +173,12 @@ lsqpack_dec_release_header_set (struct lsqpack_dec *,
  */
 void
 lsqpack_dec_cleanup (struct lsqpack_dec *);
+
+/**
+ * Print human-readable decoder table.
+ */
+void
+lsqpack_dec_print_table (const struct lsqpack_dec *, FILE *out);
 
 /*
  * Internals follow.  The internals are subject to change without notice.
