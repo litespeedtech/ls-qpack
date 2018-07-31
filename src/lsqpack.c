@@ -6887,6 +6887,7 @@ qdec_drop_oldest_entry (struct lsqpack_dec *dec)
     entry = (void *) lsqpack_arr_shift(&dec->qpd_dyn_table);
     dec->qpd_cur_capacity -= DTE_SIZE(entry);
     qdec_decref_entry(entry);
+    ++dec->qpd_del_count;
 }
 
 
@@ -6917,6 +6918,7 @@ lsqpack_dec_push_entry (struct lsqpack_dec *dec,
     {
         dec->qpd_cur_capacity += DTE_SIZE(entry);
         ++dec->qpd_ins_count;
+        qdec_remove_overflow_entries(dec);
         return 0;
     }
     else
