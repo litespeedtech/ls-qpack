@@ -6724,6 +6724,25 @@ qdec_decref_entry (struct lsqpack_dec_table_entry *entry)
 }
 
 
+enum {
+    DEI_NEXT_INST,
+    DEI_WINR_READ_NAME_IDX,
+    DEI_WINR_BEGIN_READ_VAL_LEN,
+    DEI_WINR_READ_VAL_LEN,
+    DEI_WINR_READ_VALUE_PLAIN,
+    DEI_WINR_READ_VALUE_HUFFMAN,
+    DEI_DUP_READ_IDX,
+    DEI_SIZE_UPD_READ_IDX,
+    DEI_WONR_READ_NAME_LEN,
+    DEI_WONR_READ_NAME_HUFFMAN,
+    DEI_WONR_READ_NAME_PLAIN,
+    DEI_WONR_BEGIN_READ_VAL_LEN,
+    DEI_WONR_READ_VAL_LEN,
+    DEI_WONR_READ_VALUE_HUFFMAN,
+    DEI_WONR_READ_VALUE_PLAIN,
+};
+
+
 void
 lsqpack_dec_cleanup (struct lsqpack_dec *dec)
 {
@@ -6732,6 +6751,19 @@ lsqpack_dec_cleanup (struct lsqpack_dec *dec)
     /* TODO: free blocked streams */
 
     /* TODO: mark unreturned header sets */
+
+    if (dec->qpd_enc_state.resume >= DEI_WINR_READ_NAME_IDX
+            && dec->qpd_enc_state.resume <= DEI_WINR_READ_VALUE_HUFFMAN)
+    {
+        if (dec->qpd_enc_state.ctx_u.with_namref.entry)
+            free(dec->qpd_enc_state.ctx_u.with_namref.entry);
+    }
+    else if (dec->qpd_enc_state.resume >= DEI_WONR_READ_NAME_LEN
+            && dec->qpd_enc_state.resume <= DEI_WONR_READ_VALUE_PLAIN)
+    {
+        if (dec->qpd_enc_state.ctx_u.wo_namref.entry)
+            free(dec->qpd_enc_state.ctx_u.wo_namref.entry);
+    }
 
     while (lsqpack_arr_count(&dec->qpd_dyn_table) > 0)
     {
@@ -6926,24 +6958,6 @@ lsqpack_dec_push_entry (struct lsqpack_dec *dec,
 }
 
 
-enum {
-    DEI_NEXT_INST,
-    DEI_WINR_READ_NAME_IDX,
-    DEI_WINR_BEGIN_READ_VAL_LEN,
-    DEI_WINR_READ_VAL_LEN,
-    DEI_WINR_READ_VALUE_PLAIN,
-    DEI_WINR_READ_VALUE_HUFFMAN,
-    DEI_DUP_READ_IDX,
-    DEI_SIZE_UPD_READ_IDX,
-    DEI_WONR_READ_NAME_LEN,
-    DEI_WONR_READ_NAME_HUFFMAN,
-    DEI_WONR_READ_NAME_PLAIN,
-    DEI_WONR_BEGIN_READ_VAL_LEN,
-    DEI_WONR_READ_VAL_LEN,
-    DEI_WONR_READ_VALUE_HUFFMAN,
-    DEI_WONR_READ_VALUE_PLAIN,
-};
-
 int
 lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                                                                 size_t buf_sz)
@@ -6969,6 +6983,8 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             {
                 WINR.is_static = (buf[0] & 0x40) > 0;
                 WINR.dec_int_state.resume = 0;
+                WINR.reffed_entry = NULL;
+                WINR.entry = NULL;
                 dec->qpd_enc_state.resume = DEI_WINR_READ_NAME_IDX;
                 prefix_bits = 6;
                 goto dei_winr_read_name_idx;
@@ -6977,6 +6993,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             {
                 WONR.is_huffman = (buf[0] & 0x20) > 0;
                 WONR.dec_int_state.resume = 0;
+                WONR.entry = NULL;
                 dec->qpd_enc_state.resume = DEI_WONR_READ_NAME_LEN;
                 prefix_bits = 5;
                 goto dei_wonr_read_name_idx;
