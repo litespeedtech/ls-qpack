@@ -7203,6 +7203,27 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 return -1;
             }
             break;
+        case DEI_WONR_READ_NAME_PLAIN:
+            if (WONR.alloced_len < WONR.str_len)
+            {
+                WONR.alloced_len = WONR.str_len * 2;
+                entry = realloc(WONR.entry, sizeof(*WONR.entry)
+                                                        + WONR.alloced_len);
+                if (entry)
+                    WONR.entry = entry;
+                else
+                    return -1;
+            }
+            size = MIN((unsigned) (end - buf), WONR.str_len - WONR.str_off);
+            memcpy(DTE_NAME(WONR.entry) + WONR.str_off, buf, size);
+            WONR.str_off += size;
+            buf += size;
+            if (WONR.str_off == WONR.str_len)
+            {
+                WONR.entry->dte_name_len = WONR.str_off;
+                dec->qpd_enc_state.resume = DEI_WONR_BEGIN_READ_VAL_LEN;
+            }
+            break;
         case DEI_WONR_BEGIN_READ_VAL_LEN:
             WONR.is_huffman = (buf[0] & 0x80) > 0;
             WONR.dec_int_state.resume = 0;

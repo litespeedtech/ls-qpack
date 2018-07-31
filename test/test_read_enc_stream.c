@@ -88,6 +88,24 @@ static const struct test_read_encoder_stream tests[] =
         },
     },
 
+    {   __LINE__,
+        "\x43\x7a\x7a\x7a\x88\xcc\x6a\x0d\x48\xea\xe8\x3b\x0f",
+        13,
+        1,
+        {
+            { "zzz", "Kilimanjaro", },
+        },
+    },
+
+    {   __LINE__,
+        "\x43\x7a\x7a\x7a\x03\x61\x61\x7a",
+        8,
+        1,
+        {
+            { "zzz", "aaz", },
+        },
+    },
+
 };
 
 
