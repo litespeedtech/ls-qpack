@@ -35,6 +35,37 @@ usage (const char *name)
 }
 
 
+struct stream
+{
+    uint64_t                 stream_id;
+    const unsigned char     *buf;
+    size_t                   size;
+    size_t                   off;
+    int                      wantread;
+};
+
+
+static ssize_t
+read_header_block (void *stream_p, const unsigned char **buf, size_t size)
+{
+    struct stream *stream = stream_p;
+    size_t avail = stream->size - stream->off;
+    if (size > avail)
+        size = avail;
+    *buf = stream->buf + stream->off;
+    stream->off += size;
+    return size;
+}
+
+
+static void
+wantread_header_block (void *stream_p, int wantread)
+{
+    struct stream *stream = stream_p;
+    stream->wantread = wantread;
+}
+
+
 int
 main (int argc, char **argv)
 {
@@ -46,9 +77,10 @@ main (int argc, char **argv)
     struct lsqpack_dec decoder;
     ssize_t nr;
     int r;
-    unsigned char buf[0x1000];
     uint64_t stream_id;
     uint32_t size;
+    struct stream stream;
+    unsigned char buf[0x1000];
 
     while (-1 != (opt = getopt(argc, argv, "i:o:s:t:h")))
     {
@@ -93,7 +125,7 @@ main (int argc, char **argv)
     }
 
     lsqpack_dec_init(&decoder, dyn_table_size, max_risked_streams,
-                     NULL, NULL, NULL, NULL);
+                 NULL, NULL, read_header_block, wantread_header_block, NULL);
 
     while (1)
     {
@@ -126,6 +158,25 @@ main (int argc, char **argv)
                 exit(EXIT_FAILURE);
             }
             lsqpack_dec_print_table(&decoder, stderr);
+        }
+        else
+        {
+            stream = (struct stream) { stream_id, buf, size, 0, 0, };
+            r = lsqpack_dec_header_in(&decoder, &stream, size);
+            if (r != 0)
+            {
+                fprintf(stderr, "header_in error\n");
+                exit(EXIT_FAILURE);
+            }
+            while (stream.off < stream.size)
+            {
+                r = lsqpack_dec_header_read(&decoder, &stream);
+                if (r != 0)
+                {
+                    fprintf(stderr, "header_read error\n");
+                    exit(EXIT_FAILURE);
+                }
+            }
         }
     }
 

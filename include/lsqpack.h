@@ -50,8 +50,9 @@ typedef unsigned lsqpack_abs_id_t;
 struct lsqpack_enc;
 struct lsqpack_dec;
 
-typedef ssize_t (*lsqpack_stream_read_f)(void *stream, void *buf, size_t sz);
+typedef ssize_t (*lsqpack_stream_read_f)(void *stream, const unsigned char **buf, size_t sz);
 typedef ssize_t (*lsqpack_stream_write_f)(void *stream, void *buf, size_t sz);
+typedef void (*lsqpack_stream_wantread_f)(void *stream, int wantread);
 
 int
 lsqpack_enc_init (struct lsqpack_enc *, unsigned dyn_table_size,
@@ -145,6 +146,7 @@ lsqpack_dec_init (struct lsqpack_dec *, unsigned dyn_table_size,
     unsigned max_risked_streams,
     lsqpack_stream_write_f write_decoder, void *decoder_stream,
     lsqpack_stream_read_f read_header_block,
+    lsqpack_stream_wantread_f wantread_header_block,
     void (*header_block_done)(void *header_block_stream,
                                         const struct lsqpack_header_set *));
 
@@ -159,6 +161,16 @@ int
 lsqpack_dec_header_in (struct lsqpack_dec *,
                         void *header_block_stream, size_t header_block_size);
 
+/**
+ * More stream data is available -- have the decoder read it.
+ */
+int
+lsqpack_dec_header_read (struct lsqpack_dec *dec, void *stream);
+
+/**
+ * Feed encoder stream data to the decoder.  Zero is returned on success,
+ * negative value on error.
+ */
 int
 lsqpack_dec_enc_in (struct lsqpack_dec *, const unsigned char *, size_t);
 
@@ -316,6 +328,8 @@ struct lsqpack_dec
     lsqpack_abs_id_t        qpd_del_count;
     void                   *qpd_dec_stream;
     lsqpack_stream_write_f  qpd_write_dec;
+    lsqpack_stream_wantread_f
+                            qpd_wantread_header_block;
     lsqpack_stream_read_f   qpd_read_header_block;
     void                  (*qpd_header_block_done)(void *header_block_stream,
                                 const struct lsqpack_header_set *);
@@ -326,6 +340,9 @@ struct lsqpack_dec
 
     /** This is the dynamic table */
     struct lsqpack_arr      qpd_dyn_table;
+
+    TAILQ_HEAD(, header_block_read_ctx)
+                            qpd_hbrcs;
 
     /** Blocked headers are kept in a min-heap */
     struct lsqpack_header_block
