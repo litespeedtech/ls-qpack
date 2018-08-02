@@ -6223,6 +6223,7 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
     {
         end = buf + sz;
 
+        *buf = 0;
         dst = lsqpack_enc_int(buf, end, enc->qpe_cur_header.hinfo.qhi_max_id, 8);
         if (dst <= buf)
             return 0;
