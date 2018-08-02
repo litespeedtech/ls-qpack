@@ -5867,18 +5867,18 @@ qenc_find_entry (struct lsqpack_enc *enc, int risk, const char *name,
 static unsigned
 lsqpack_val2len (uint64_t value, unsigned prefix_bits)
 {
-    uint64_t mask = 1ULL << prefix_bits;
+    uint64_t mask = (1ULL << prefix_bits) - 1;
     return 1
-         + (value >                 mask )
-         + (value > ((1ULL <<  7) + mask))
-         + (value > ((1ULL << 14) + mask))
-         + (value > ((1ULL << 21) + mask))
-         + (value > ((1ULL << 28) + mask))
-         + (value > ((1ULL << 35) + mask))
-         + (value > ((1ULL << 42) + mask))
-         + (value > ((1ULL << 49) + mask))
-         + (value > ((1ULL << 56) + mask))
-         + (value > ((1ULL << 63) + mask))
+         + (value >=                  mask )
+         + (value >=  ((1ULL <<  7) + mask))
+         + (value >=  ((1ULL << 14) + mask))
+         + (value >=  ((1ULL << 21) + mask))
+         + (value >=  ((1ULL << 28) + mask))
+         + (value >=  ((1ULL << 35) + mask))
+         + (value >=  ((1ULL << 42) + mask))
+         + (value >=  ((1ULL << 49) + mask))
+         + (value >=  ((1ULL << 56) + mask))
+         + (value >=  ((1ULL << 63) + mask))
          ;
 }
 
@@ -5919,35 +5919,49 @@ lsqpack_enc_int (unsigned char *dst, unsigned char *const end, uint64_t value,
 }
 
 
+static unsigned char *
+lsqpack_enc_int_nocheck (unsigned char *dst, uint64_t value,
+                                                        unsigned prefix_bits)
+{
+    if (value < (1u << prefix_bits) - 1)
+        *dst++ |= value;
+    else
+    {
+        *dst++ |= (1 << prefix_bits) - 1;
+        value -= (1 << prefix_bits) - 1;
+        while (value >= 128)
+        {
+            *dst++ = (0x80 | value);
+            value >>= 7;
+        }
+        *dst++ = value;
+    }
+    return dst;
+}
+
+
 #if !LS_QPACK_EMIT_TEST_CODE
 static
 #endif
-       int
+       unsigned char *
 qenc_huffman_enc (const unsigned char *src, const unsigned char *const src_end,
-                                            unsigned char *dst, int dst_len)
+                                                                unsigned char *dst)
 {
-    const unsigned char *p_src = src;
-    unsigned char *p_dst = dst;
-    unsigned char *dst_end = p_dst + dst_len;
     uint64_t bits = 0;
     int bits_left = 40;
     struct encode_el cur_enc_code;
 
-    assert(dst_len > 0);
-
-    while (p_src != src_end)
+    while (src != src_end)
     {
-        cur_enc_code = encode_table[(int) *p_src++];
+        cur_enc_code = encode_table[(int) *src++];
         assert(bits_left >= cur_enc_code.bits); //  (possible negative shift, undefined behavior)
         bits |= (uint64_t)cur_enc_code.code << (bits_left - cur_enc_code.bits);
         bits_left -= cur_enc_code.bits;
         while (bits_left <= 32)
         {
-            *p_dst++ = bits >> 32;
+            *dst++ = bits >> 32;
             bits <<= 8;
             bits_left += 8;
-            if (p_dst == dst_end)
-                return -1;  //dst does not have enough space
         }
     }
 
@@ -5955,10 +5969,10 @@ qenc_huffman_enc (const unsigned char *src, const unsigned char *const src_end,
     {
         assert(bits_left < 40 && bits_left > 0);
         bits |= ((uint64_t)1 << bits_left) - 1;
-        *p_dst++ = bits >> 32;
+        *dst++ = bits >> 32;
     }
 
-    return p_dst - dst;
+    return dst;
 }
 
 
@@ -5971,31 +5985,32 @@ lsqpack_enc_enc_str (unsigned prefix_bits, unsigned char *const dst,
 {
     unsigned char *const end = dst + dst_len;
     unsigned char *p;
-    unsigned i, enc_size_bits, enc_size_bytes;
-    int rc;
+    unsigned i, enc_size_bits, enc_size_bytes, len_size;
 
     enc_size_bits = 0;
     for (i = 0; i < str_len; ++i)
         enc_size_bits += encode_table[ str[i] ].bits;
     enc_size_bytes = enc_size_bits / 8 + ((enc_size_bits & 7) != 0);
 
-    *dst &= ~((1 << (prefix_bits + 1)) - 1);
     if (enc_size_bytes < str_len)
     {
+        len_size = lsqpack_val2len(enc_size_bytes, prefix_bits);
+        if (len_size + enc_size_bytes > dst_len)
+            return -1;
+        *dst &= ~((1 << (prefix_bits + 1)) - 1);
         *dst |= 1 << prefix_bits;
-        p = lsqpack_enc_int(dst, end, enc_size_bytes, prefix_bits);
-        if (p == dst)
-            return -1;
-        rc = qenc_huffman_enc(str, str + str_len, p, end - p);
-        if (rc < 0)
-            return -1;
-        return p - dst + rc;
+        p = lsqpack_enc_int_nocheck(dst, enc_size_bytes, prefix_bits);
+        p = qenc_huffman_enc(str, str + str_len, p);
+        assert(p - dst == len_size + enc_size_bytes);
+        return p - dst;
     }
     else
     {
-        p = lsqpack_enc_int(dst, end, str_len, prefix_bits);
-        if (p == dst)
+        len_size = lsqpack_val2len(str_len, prefix_bits);
+        if (len_size + str_len > dst_len)
             return -1;
+        *dst &= ~((1 << (prefix_bits + 1)) - 1);
+        p = lsqpack_enc_int_nocheck(dst, str_len, prefix_bits);
         if (str_len <= end - p)
         {
             memcpy(p, str, str_len);
