@@ -115,7 +115,7 @@ void
 lsqpack_enc_cleanup (struct lsqpack_enc *);
 
 /**
- * The header is a single name/value pair.  The strings are NUL-terminated.
+ * The header is a single name/value pair.  The strings are not NUL-terminated.
  */
 struct lsqpack_header
 {
@@ -123,7 +123,6 @@ struct lsqpack_header
     const char         *qh_value;
     unsigned            qh_name_len;
     unsigned            qh_value_len;
-    uintptr_t           qh_opaque;
 };
 
 /**
@@ -199,7 +198,7 @@ lsqpack_dec_print_table (const struct lsqpack_dec *, FILE *out);
 #include <sys/queue.h>
 
 /* It takes 11 bytes to encode UINT64_MAX as HPACK integer */
-#define LSQPACK_UINT64_ENC_SZ 11
+#define LSQPACK_UINT64_ENC_SZ 11u
 
 struct lsqpack_enc_table_entry;
 
