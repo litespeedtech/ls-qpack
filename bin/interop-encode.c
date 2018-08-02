@@ -85,6 +85,7 @@ main (int argc, char **argv)
     ssize_t pref_sz;
     enum lsqpack_enc_status st;
     size_t enc_sz, hea_sz, enc_off, hea_off;
+    int header_opened;
     char line_buf[0x1000];
     unsigned char enc_buf[0x1000], hea_buf[0x1000], pref_buf[0x20];
 
@@ -140,6 +141,7 @@ main (int argc, char **argv)
     stream_id = 0;
     enc_off = 0;
     hea_off = 0;
+    header_opened = 0;
 
     while ((line = fgets(line_buf, sizeof(line_buf), in)))
     {
@@ -152,33 +154,22 @@ main (int argc, char **argv)
         }
         *end = '\0';
 
-        if (lineno == 1)
+        if (end == line)
         {
-            ++stream_id;
-            if (0 != lsqpack_enc_start_header(&encoder, stream_id, 0))
+            if (header_opened)
             {
-                fprintf(stderr, "start_header failed: %s\n", strerror(errno));
-                exit(EXIT_FAILURE);
-            }
-        }
-        else if (end == line)
-        {
-            pref_sz = lsqpack_enc_end_header(&encoder, pref_buf,
-                                                            sizeof(pref_buf));
-            if (pref_sz < 0)
-            {
-                fprintf(stderr, "end_header failed: %s", strerror(errno));
-                exit(EXIT_FAILURE);
-            }
-            write_enc_and_header_streams(out, stream_id, enc_buf, enc_off,
-                                         pref_buf, pref_sz, hea_buf, hea_off);
-            enc_off = 0;
-            hea_off = 0;
-            ++stream_id;
-            if (0 != lsqpack_enc_start_header(&encoder, stream_id, 0))
-            {
-                fprintf(stderr, "start_header failed: %s\n", strerror(errno));
-                exit(EXIT_FAILURE);
+                pref_sz = lsqpack_enc_end_header(&encoder, pref_buf,
+                                                                sizeof(pref_buf));
+                if (pref_sz < 0)
+                {
+                    fprintf(stderr, "end_header failed: %s", strerror(errno));
+                    exit(EXIT_FAILURE);
+                }
+                write_enc_and_header_streams(out, stream_id, enc_buf, enc_off,
+                                             pref_buf, pref_sz, hea_buf, hea_off);
+                enc_off = 0;
+                hea_off = 0;
+                header_opened = 0;
             }
             continue;
         }
@@ -191,6 +182,17 @@ main (int argc, char **argv)
         {
             fprintf(stderr, "no TAB on line %u\n", lineno);
             exit(EXIT_FAILURE);
+        }
+
+        if (!header_opened)
+        {
+            ++stream_id;
+            if (0 != lsqpack_enc_start_header(&encoder, stream_id, 0))
+            {
+                fprintf(stderr, "start_header failed: %s\n", strerror(errno));
+                exit(EXIT_FAILURE);
+            }
+            header_opened = 1;
         }
 
         enc_sz = sizeof(enc_buf) - enc_off;
@@ -214,7 +216,7 @@ main (int argc, char **argv)
 
     (void) fclose(in);
 
-    if (lineno > 0)
+    if (header_opened)
     {
         pref_sz = lsqpack_enc_end_header(&encoder, pref_buf, sizeof(pref_buf));
         if (pref_sz < 0)
@@ -224,8 +226,6 @@ main (int argc, char **argv)
         }
         write_enc_and_header_streams(out, stream_id, enc_buf, enc_off, pref_buf,
                                      pref_sz, hea_buf, hea_off);
-        enc_off = 0;
-        hea_off = 0;
     }
 
     lsqpack_enc_cleanup(&encoder);
