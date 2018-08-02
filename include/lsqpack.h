@@ -147,7 +147,7 @@ lsqpack_dec_init (struct lsqpack_dec *, unsigned dyn_table_size,
     lsqpack_stream_read_f read_header_block,
     lsqpack_stream_wantread_f wantread_header_block,
     void (*header_block_done)(void *header_block_stream,
-                                        const struct lsqpack_header_set *));
+                                        struct lsqpack_header_set *));
 
 /* The decoder will attempt to read exactly `header_block_size' byte from
  * the stream using the read_header_block specified during initialization.
@@ -173,10 +173,11 @@ lsqpack_dec_header_read (struct lsqpack_dec *dec, void *stream);
 int
 lsqpack_dec_enc_in (struct lsqpack_dec *, const unsigned char *, size_t);
 
-/* Return the header set structure to the decoder */
+/**
+ * Destroy the header set returned by the header_block_done() callback.
+ */
 void
-lsqpack_dec_release_header_set (struct lsqpack_dec *,
-                                        const struct lsqpack_header_set *);
+lsqpack_dec_destroy_header_set (struct lsqpack_header_set *);
 
 /* Clean up the decoder.  If any there are any blocked header blocks,
  * `header_block_done' will be called for each of them with the second
@@ -331,7 +332,7 @@ struct lsqpack_dec
                             qpd_wantread_header_block;
     lsqpack_stream_read_f   qpd_read_header_block;
     void                  (*qpd_header_block_done)(void *header_block_stream,
-                                const struct lsqpack_header_set *);
+                                        struct lsqpack_header_set *);
 
     /** Outstanding header sets */
     struct lsqpack_header_sets

@@ -6756,7 +6756,7 @@ lsqpack_dec_init (struct lsqpack_dec *dec, unsigned dyn_table_size,
     lsqpack_stream_write_f write_decoder, void *decoder_stream,
     lsqpack_stream_read_f read_header_block,
     lsqpack_stream_wantread_f wantread_header_block,
-    void (*header_block_done)(void *, const struct lsqpack_header_set *))
+    void (*header_block_done)(void *, struct lsqpack_header_set *))
 {
     memset(dec, 0, sizeof(*dec));
     dec->qpd_max_capacity = dyn_table_size;
@@ -7044,12 +7044,12 @@ struct header_block_read_ctx
 
 struct header_internal
 {
+    struct lsqpack_header            hi_uhead;
     struct lsqpack_dec_table_entry  *hi_entry;
     enum {
         HI_OWN_NAME     = 1 << 0,
         HI_OWN_VALUE    = 1 << 1,
     }                                hi_flags;
-    struct lsqpack_header            hi_uhead;
 };
 
 
@@ -7171,10 +7171,12 @@ parse_header_data (struct lsqpack_dec *dec,
             /* Literal Header Field With Name Reference */
             else if (buf[0] & 0x40)
             {
+                assert(0);  /* TODO */
             }
             /* Literal Header Field Without Name Reference */
             else if (buf[0] & 0x20)
             {
+                assert(0);  /* TODO */
             }
             /* Indexed Header Field With Post-Base Index */
             else if (buf[0] & 0x10)
@@ -7188,6 +7190,7 @@ parse_header_data (struct lsqpack_dec *dec,
             /* Literal Header Field With Post-Base Name Reference */
             else
             {
+                assert(0);  /* TODO */
             }
         case DATA_STATE_READ_IHF_IDX:
   data_state_read_ihf_idx:
@@ -7436,6 +7439,8 @@ lsqpack_dec_header_read (struct lsqpack_dec *dec, void *stream)
         switch (st)
         {
         case RHS_DONE:
+            dec->qpd_header_block_done(read_ctx->hbrc_stream,
+                                                read_ctx->hbrc_header_set);
             destroy_header_block_read_ctx(dec, read_ctx);
             return 0;
         case RHS_NEED:
@@ -7470,6 +7475,7 @@ lsqpack_dec_header_in (struct lsqpack_dec *dec, void *stream,
     switch (st)
     {
     case RHS_DONE:
+        dec->qpd_header_block_done(stream, read_ctx_buf.hbrc_header_set);
         return 0;
     case RHS_NEED:
     case RHS_BLOCKED:
@@ -8131,4 +8137,26 @@ lsqpack_dec_print_table (const struct lsqpack_dec *dec, FILE *out)
             entry->dte_val_len, DTE_VALUE(entry));
     }
     fprintf(out, "\n");
+}
+
+
+void
+lsqpack_dec_destroy_header_set (struct lsqpack_header_set *set)
+{
+    struct header_internal *hint;
+    unsigned n;
+
+    for (n = 0; n < set->qhs_count; ++n)
+    {
+        hint = (struct header_internal *) set->qhs_headers[n];
+        if (hint->hi_entry)
+            qdec_decref_entry(hint->hi_entry);
+        if (hint->hi_flags & HI_OWN_NAME)
+            free((char *) hint->hi_uhead.qh_name);
+        if (hint->hi_flags & HI_OWN_VALUE)
+            free((char *) hint->hi_uhead.qh_value);
+        free(hint);
+    }
+    free(set->qhs_headers);
+    free(set);
 }

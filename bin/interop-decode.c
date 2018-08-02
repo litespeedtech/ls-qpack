@@ -6,6 +6,7 @@
 
 #include <byteswap.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -63,6 +64,22 @@ wantread_header_block (void *stream_p, int wantread)
 {
     struct stream *stream = stream_p;
     stream->wantread = wantread;
+}
+
+
+static void
+header_block_done (void *stream_p, struct lsqpack_header_set *set)
+{
+    struct stream *stream = stream_p;
+    unsigned n;
+
+    fprintf(stderr, "Have headers for stream %"PRIu64":\n", stream->stream_id);
+    for (n = 0; n < set->qhs_count; ++n)
+        fprintf(stderr, "  %.*s: %.*s\n",
+            set->qhs_headers[n]->qh_name_len, set->qhs_headers[n]->qh_name,
+            set->qhs_headers[n]->qh_value_len, set->qhs_headers[n]->qh_value);
+    fprintf(stderr, "\n");
+    lsqpack_dec_destroy_header_set(set);
 }
 
 
@@ -125,7 +142,8 @@ main (int argc, char **argv)
     }
 
     lsqpack_dec_init(&decoder, dyn_table_size, max_risked_streams,
-                 NULL, NULL, read_header_block, wantread_header_block, NULL);
+                 NULL, NULL, read_header_block, wantread_header_block,
+                 header_block_done);
 
     while (1)
     {
