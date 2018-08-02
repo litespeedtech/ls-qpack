@@ -6713,7 +6713,8 @@ enum
 
 
 static struct lsqpack_dec_table_entry *
-qdec_get_table_entry (struct lsqpack_dec *dec, lsqpack_abs_id_t relative_idx)
+qdec_get_table_entry_rel (const struct lsqpack_dec *dec,
+                                            lsqpack_abs_id_t relative_idx)
 {
     uintptr_t val;
     unsigned id;
@@ -6721,6 +6722,25 @@ qdec_get_table_entry (struct lsqpack_dec *dec, lsqpack_abs_id_t relative_idx)
     if (relative_idx < lsqpack_arr_count(&dec->qpd_dyn_table))
     {
         id = lsqpack_arr_count(&dec->qpd_dyn_table) - 1 - relative_idx;
+        val = lsqpack_arr_get(&dec->qpd_dyn_table, id);
+        return (struct lsqpack_dec_table_entry *) val;
+    }
+    else
+        return NULL;
+}
+
+
+static struct lsqpack_dec_table_entry *
+qdec_get_table_entry_abs (const struct lsqpack_dec *dec,
+                                                lsqpack_abs_id_t abs_idx)
+{
+    uintptr_t val;
+    unsigned id;
+
+    if (abs_idx > dec->qpd_del_count && abs_idx <= dec->qpd_ins_count)
+    {
+        id = abs_idx - dec->qpd_del_count - 1;
+        assert(id < lsqpack_arr_count(&dec->qpd_dyn_table));
         val = lsqpack_arr_get(&dec->qpd_dyn_table, id);
         return (struct lsqpack_dec_table_entry *) val;
     }
@@ -6998,6 +7018,7 @@ struct header_block_read_ctx
             enum {
                 DATA_STATE_NEXT_INSTRUCTION,
                 DATA_STATE_READ_IHF_IDX,
+                DATA_STATE_READ_IPBI_IDX,
             }                                               state;
 
             union
@@ -7008,6 +7029,12 @@ struct header_block_read_ctx
                     uint64_t                        value;
                     int                             is_static;
                 }                                           ihf;
+
+                /* Indexed Header Field With Post-Base Index */
+                struct {
+                    struct lsqpack_dec_int_state    dec_int_state;
+                    uint64_t                        value;
+                }                                           ipbi;
             }                                               u;
         }                                       data;
     }                                   hbrc_parse_ctx_u;
@@ -7087,7 +7114,21 @@ static int
 hset_add_dynamic_entry (struct lsqpack_dec *dec,
                     struct header_block_read_ctx *read_ctx, uint64_t idx)
 {
-    return -1;  /* TODO */
+    struct lsqpack_dec_table_entry *entry;
+    struct header_internal *hint;
+
+    if ((entry = qdec_get_table_entry_abs(dec, idx))
+                                    && (hint = allocate_hint(read_ctx)))
+    {
+        hint->hi_uhead.qh_name      = DTE_NAME(entry);
+        hint->hi_uhead.qh_value     = DTE_VALUE(entry);
+        hint->hi_uhead.qh_name_len  = entry->dte_name_len;
+        hint->hi_uhead.qh_value_len = entry->dte_val_len;
+        ++entry->dte_refcnt;
+        return 0;
+    }
+    else
+        return -1;
 }
 
 
@@ -7110,6 +7151,7 @@ parse_header_data (struct lsqpack_dec *dec,
     int r;
 
 #define IHF read_ctx->hbrc_parse_ctx_u.data.u.ihf
+#define IPBI read_ctx->hbrc_parse_ctx_u.data.u.ipbi
 
     while (buf < end)
     {
@@ -7120,15 +7162,34 @@ parse_header_data (struct lsqpack_dec *dec,
             {
                 prefix_bits = 6;
                 IHF.is_static = buf[0] & 0x40;
+                IHF.dec_int_state.resume = 0;
                 read_ctx->hbrc_parse_ctx_u.data.state
                                                 = DATA_STATE_READ_IHF_IDX;
                 goto data_state_read_ihf_idx;
             }
+            /* Literal Header Field With Name Reference */
+            else if (buf[0] & 0x40)
+            {
+            }
+            /* Literal Header Field Without Name Reference */
+            else if (buf[0] & 0x20)
+            {
+            }
+            /* Indexed Header Field With Post-Base Index */
+            else if (buf[0] & 0x10)
+            {
+                prefix_bits = 4;
+                IPBI.dec_int_state.resume = 0;
+                read_ctx->hbrc_parse_ctx_u.data.state
+                                                = DATA_STATE_READ_IPBI_IDX;
+                goto data_state_read_ipbi_idx;
+            }
+            /* Literal Header Field With Post-Base Name Reference */
             else
             {
             }
-  data_state_read_ihf_idx:
         case DATA_STATE_READ_IHF_IDX:
+  data_state_read_ihf_idx:
             r = lsqpack_dec_int_r(&buf, end, prefix_bits, &IHF.value,
                                                         &IHF.dec_int_state);
             if (r == 0)
@@ -7150,6 +7211,32 @@ parse_header_data (struct lsqpack_dec *dec,
                 return RHS_NEED;
             else
                 return RHS_ERROR;
+#undef IHF
+        case DATA_STATE_READ_IPBI_IDX:
+  data_state_read_ipbi_idx:
+            r = lsqpack_dec_int_r(&buf, end, prefix_bits, &IPBI.value,
+                                                        &IPBI.dec_int_state);
+            if (r == 0)
+            {
+                r = hset_add_dynamic_entry(dec, read_ctx,
+                                        IPBI.value + read_ctx->hbrc_base_index);
+                if (r == 0)
+                {
+                    read_ctx->hbrc_parse_ctx_u.data.state
+                                            = DATA_STATE_NEXT_INSTRUCTION;
+                    break;
+                }
+                else
+                    return RHS_ERROR;
+            }
+            else if (r == -1)
+                return RHS_NEED;
+            else
+                return RHS_ERROR;
+#undef IPBI
+        default:
+            assert(0);
+            return RHS_ERROR;
         }
     }
 
@@ -7157,6 +7244,7 @@ parse_header_data (struct lsqpack_dec *dec,
         return RHS_DONE;
     else
         return RHS_ERROR;
+
 }
 
 
@@ -7517,7 +7605,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 }
                 else
                 {
-                    WINR.reffed_entry = qdec_get_table_entry(dec,
+                    WINR.reffed_entry = qdec_get_table_entry_rel(dec,
                                                                 WINR.name_idx);
                     if (!WINR.reffed_entry)
                         return -1;
@@ -7848,7 +7936,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                                                         &DUPL.dec_int_state);
             if (r == 0)
             {
-                entry = qdec_get_table_entry(dec, DUPL.index);
+                entry = qdec_get_table_entry_rel(dec, DUPL.index);
                 if (!entry)
                     return -1;
                 size = sizeof(*new_entry) + entry->dte_name_len
