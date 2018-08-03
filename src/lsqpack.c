@@ -1756,6 +1756,13 @@ struct header_block_read_ctx
                 DATA_STATE_READ_LFINR_VAL_LEN,
                 DATA_STATE_LFINR_READ_VAL_HUFFMAN,
                 DATA_STATE_LFINR_READ_VAL_PLAIN,
+                DATA_STATE_READ_LFONR_NAME_LEN,
+                DATA_STATE_READ_LFONR_NAME_HUFFMAN,
+                DATA_STATE_READ_LFONR_NAME_PLAIN,
+                DATA_STATE_BEGIN_READ_LFONR_VAL_LEN,
+                DATA_STATE_READ_LFONR_VAL_LEN,
+                DATA_STATE_READ_LFONR_VAL_HUFFMAN,
+                DATA_STATE_READ_LFONR_VAL_PLAIN,
             }                                               state;
 
             union
@@ -1785,6 +1792,23 @@ struct header_block_read_ctx
                     int                             is_never;
                     int                             is_huffman;
                 }                                           lfinr;
+
+                /* Literal Header Field Without Name Reference */
+                struct {
+                    struct lsqpack_dec_int_state    dec_int_state;
+                    struct lsqpack_huff_decode_state
+                                                    dec_huff_state;
+                    /* name holds both name and value */
+                    char                           *name;
+                    unsigned                        nalloc;
+                    unsigned                        name_len;
+                    unsigned                        value_len;
+                    unsigned                        str_off;
+                    unsigned                        str_len;
+                    unsigned                        nread;
+                    int                             is_never;
+                    int                             is_huffman;
+                }                                           lfonr;
 
                 /* Indexed Header Field With Post-Base Index */
                 struct {
@@ -1944,6 +1968,30 @@ hset_add_dynamic_nameref_entry (struct header_block_read_ctx *read_ctx,
 }
 
 
+static int
+hset_add_literal_entry (struct header_block_read_ctx *read_ctx,
+        char *nameandval, unsigned name_len, unsigned val_len, int is_never)
+{
+    struct header_internal *hint;
+
+    if ((hint = allocate_hint(read_ctx)))
+    {
+        hint->hi_uhead.qh_name      = nameandval;
+        hint->hi_uhead.qh_name_len  = name_len;
+        hint->hi_uhead.qh_value     = nameandval + name_len;
+        hint->hi_uhead.qh_value_len = val_len;
+        if (is_never)
+            hint->hi_uhead.qh_flags = QH_NEVER;
+        else
+            hint->hi_uhead.qh_flags = 0;
+        hint->hi_flags = HI_OWN_NAME;
+        return 0;
+    }
+    else
+        return -1;
+}
+
+
 struct decode_el
 {
     uint8_t state;
@@ -2083,6 +2131,7 @@ parse_header_data (struct lsqpack_dec *dec,
 #define IHF read_ctx->hbrc_parse_ctx_u.data.u.ihf
 #define IPBI read_ctx->hbrc_parse_ctx_u.data.u.ipbi
 #define LFINR read_ctx->hbrc_parse_ctx_u.data.u.lfinr
+#define LFONR read_ctx->hbrc_parse_ctx_u.data.u.lfonr
 
     while (buf < end)
     {
@@ -2114,7 +2163,14 @@ parse_header_data (struct lsqpack_dec *dec,
             /* Literal Header Field Without Name Reference */
             else if (buf[0] & 0x20)
             {
-                assert(0);  /* TODO */
+                prefix_bits = 3;
+                LFONR.is_never = buf[0] & 0x10;
+                LFONR.is_huffman = buf[0] & 0x04;
+                LFONR.dec_int_state.resume = 0;
+                LFONR.name = NULL;
+                read_ctx->hbrc_parse_ctx_u.data.state
+                                            = DATA_STATE_READ_LFONR_NAME_LEN;
+                goto data_state_read_lfonr_name_len;
             }
             /* Indexed Header Field With Post-Base Index */
             else if (buf[0] & 0x10)
@@ -2275,6 +2331,173 @@ parse_header_data (struct lsqpack_dec *dec,
             }
             break;
 #undef LFINR
+        case DATA_STATE_READ_LFONR_NAME_LEN:
+  data_state_read_lfonr_name_len:
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &value,
+                                                        &LFONR.dec_int_state);
+            if (r == 0)
+            {
+                LFONR.nread = 0;
+                LFONR.str_off = 0;
+                LFONR.str_len = value;
+                LFONR.nalloc = value * 2;
+                if (LFONR.is_huffman)
+                {
+                    LFONR.dec_huff_state.resume = 0;
+                    read_ctx->hbrc_parse_ctx_u.data.state
+                                        = DATA_STATE_READ_LFONR_NAME_HUFFMAN;
+                }
+                else
+                    read_ctx->hbrc_parse_ctx_u.data.state
+                                        = DATA_STATE_READ_LFONR_NAME_PLAIN;
+                LFONR.name = malloc(LFONR.nalloc);
+                if (LFONR.name)
+                    break;
+                else
+                    return RHS_ERROR;
+            }
+            else if (r == -1)
+                return RHS_NEED;
+            else
+                return RHS_ERROR;
+        case DATA_STATE_READ_LFONR_NAME_HUFFMAN:
+            size = MIN((unsigned) (end - buf), LFONR.str_len - LFONR.nread);
+            hdr = lsqpack_huff_decode(buf, size,
+                    (unsigned char *) LFONR.name + LFONR.str_off,
+                    LFONR.nalloc - LFONR.str_off,
+                    &LFONR.dec_huff_state, LFONR.nread + size == LFONR.str_len);
+            switch (hdr.status)
+            {
+            case HUFF_DEC_OK:
+                buf += hdr.n_src;
+                LFONR.name_len = LFONR.str_off + hdr.n_dst;
+                read_ctx->hbrc_parse_ctx_u.data.state
+                                    = DATA_STATE_BEGIN_READ_LFONR_VAL_LEN;
+                break;
+            case HUFF_DEC_END_SRC:
+                buf += hdr.n_src;
+                LFONR.nread += hdr.n_src;
+                LFONR.str_off += hdr.n_dst;
+                break;
+            case HUFF_DEC_END_DST:
+                LFONR.nalloc *= 2;
+                str = realloc(LFONR.name, LFONR.nalloc);
+                if (!str)
+                    return RHS_ERROR;
+                LFONR.name = str;
+                buf += hdr.n_src;
+                LFONR.nread += hdr.n_src;
+                LFONR.str_off += hdr.n_dst;
+                break;
+            default:
+                return RHS_ERROR;
+            }
+            break;
+        case DATA_STATE_BEGIN_READ_LFONR_VAL_LEN:
+            LFONR.is_huffman = buf[0] & 0x80;
+            prefix_bits = 7;
+            LFONR.dec_int_state.resume = 0;
+            read_ctx->hbrc_parse_ctx_u.data.state
+                                            = DATA_STATE_READ_LFONR_VAL_LEN;
+            /* Fall-through */
+        case DATA_STATE_READ_LFONR_VAL_LEN:
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &value,
+                                                        &LFONR.dec_int_state);
+            if (r == 0)
+            {
+                if (LFONR.is_huffman)
+                {
+                    LFONR.dec_huff_state.resume = 0;
+                    read_ctx->hbrc_parse_ctx_u.data.state
+                                        = DATA_STATE_READ_LFONR_VAL_HUFFMAN;
+                }
+                else
+                {
+                    read_ctx->hbrc_parse_ctx_u.data.state
+                                        = DATA_STATE_READ_LFONR_VAL_PLAIN;
+                }
+                LFONR.nread = 0;
+                LFONR.str_off = 0;
+                LFONR.str_len = value;
+                break;
+            }
+            else if (r == -1)
+                return RHS_NEED;
+            else
+                return RHS_ERROR;
+        case DATA_STATE_READ_LFONR_VAL_HUFFMAN:
+            size = MIN((unsigned) (end - buf), LFONR.str_len - LFONR.nread);
+            hdr = lsqpack_huff_decode(buf, size,
+                    (unsigned char *) LFONR.name + LFONR.name_len
+                                                            + LFONR.str_off,
+                    LFONR.nalloc - LFONR.name_len - LFONR.str_off,
+                    &LFONR.dec_huff_state, LFONR.nread + size == LFONR.str_len);
+            switch (hdr.status)
+            {
+            case HUFF_DEC_OK:
+                buf += hdr.n_src;
+                read_ctx->hbrc_parse_ctx_u.data.state
+                                    = DATA_STATE_NEXT_INSTRUCTION;
+                r = hset_add_literal_entry(read_ctx,
+                        LFONR.name, LFONR.name_len, LFONR.str_off + hdr.n_dst,
+                        LFONR.is_never);
+                if (r == 0)
+                {
+                    LFONR.name = NULL;
+                    break;
+                }
+                else
+                    return RHS_ERROR;
+            case HUFF_DEC_END_SRC:
+                buf += hdr.n_src;
+                LFONR.nread += hdr.n_src;
+                LFONR.str_off += hdr.n_dst;
+                break;
+            case HUFF_DEC_END_DST:
+                LFONR.nalloc *= 2;
+                str = realloc(LFONR.name, LFONR.nalloc);
+                if (!str)
+                    return RHS_ERROR;
+                LFONR.name = str;
+                buf += hdr.n_src;
+                LFONR.nread += hdr.n_src;
+                LFONR.str_off += hdr.n_dst;
+                break;
+            default:
+                return RHS_ERROR;
+            }
+            break;
+        case DATA_STATE_READ_LFONR_VAL_PLAIN:
+            if (LFONR.nalloc < LFONR.name_len + LFONR.str_len)
+            {
+                LFONR.nalloc = LFONR.name_len + LFONR.str_len;
+                str = realloc(LFONR.name, LFONR.nalloc);
+                if (str)
+                    LFONR.name = str;
+                else
+                    return RHS_ERROR;
+            }
+            size = MIN((unsigned) (end - buf), LFONR.str_len - LFONR.str_off);
+            memcpy(LFONR.name + LFONR.name_len + LFONR.str_off, buf, size);
+            LFONR.str_off += size;
+            buf += size;
+            if (LFONR.str_off == LFONR.str_len)
+            {
+                read_ctx->hbrc_parse_ctx_u.data.state
+                                    = DATA_STATE_NEXT_INSTRUCTION;
+                r = hset_add_literal_entry(read_ctx,
+                        LFONR.name, LFONR.name_len, LFONR.str_off,
+                        LFONR.is_never);
+                if (0 == r)
+                {
+                    LFONR.name = NULL;
+                    break;
+                }
+                else
+                    return RHS_ERROR;
+            }
+            break;
+#undef LFONR
         case DATA_STATE_READ_IPBI_IDX:
   data_state_read_ipbi_idx:
             r = lsqpack_dec_int(&buf, end, prefix_bits, &IPBI.value,
