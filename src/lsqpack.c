@@ -5908,7 +5908,7 @@ lsqpack_enc_int (unsigned char *dst, unsigned char *const end, uint64_t value,
 }
 
 
-static unsigned char *
+static void
 lsqpack_enc_int_nocheck (unsigned char *dst, uint64_t value,
                                                         unsigned prefix_bits)
 {
@@ -5925,7 +5925,6 @@ lsqpack_enc_int_nocheck (unsigned char *dst, uint64_t value,
         }
         *dst++ = value;
     }
-    return dst;
 }
 
 
@@ -5972,7 +5971,6 @@ static
 lsqpack_enc_enc_str (unsigned prefix_bits, unsigned char *const dst,
         size_t dst_len, const unsigned char *str, unsigned str_len)
 {
-    unsigned char *const end = dst + dst_len;
     unsigned char *p;
     unsigned i, enc_size_bits, enc_size_bytes, len_size;
 
@@ -5984,26 +5982,27 @@ lsqpack_enc_enc_str (unsigned prefix_bits, unsigned char *const dst,
     if (enc_size_bytes < str_len)
     {
         len_size = lsqpack_val2len(enc_size_bytes, prefix_bits);
-        if (len_size + enc_size_bytes > dst_len)
+        if (len_size + enc_size_bytes <= dst_len)
+        {
+            *dst &= ~((1 << (prefix_bits + 1)) - 1);
+            *dst |= 1 << prefix_bits;
+            lsqpack_enc_int_nocheck(dst, enc_size_bytes, prefix_bits);
+            p = qenc_huffman_enc(str, str + str_len, dst + len_size);
+            assert(p - dst == len_size + enc_size_bytes);
+            return p - dst;
+        }
+        else
             return -1;
-        *dst &= ~((1 << (prefix_bits + 1)) - 1);
-        *dst |= 1 << prefix_bits;
-        p = lsqpack_enc_int_nocheck(dst, enc_size_bytes, prefix_bits);
-        p = qenc_huffman_enc(str, str + str_len, p);
-        assert(p - dst == len_size + enc_size_bytes);
-        return p - dst;
     }
     else
     {
         len_size = lsqpack_val2len(str_len, prefix_bits);
-        if (len_size + str_len > dst_len)
-            return -1;
-        *dst &= ~((1 << (prefix_bits + 1)) - 1);
-        p = lsqpack_enc_int_nocheck(dst, str_len, prefix_bits);
-        if (str_len <= end - p)
+        if (len_size + str_len <= dst_len)
         {
-            memcpy(p, str, str_len);
-            return p - dst + str_len;
+            *dst &= ~((1 << (prefix_bits + 1)) - 1);
+            lsqpack_enc_int_nocheck(dst, str_len, prefix_bits);
+            memcpy(dst + len_size, str, str_len);
+            return len_size + str_len;
         }
         else
             return -1;
