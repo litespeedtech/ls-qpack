@@ -7125,6 +7125,7 @@ hset_add_dynamic_entry (struct lsqpack_dec *dec,
         hint->hi_uhead.qh_value     = DTE_VALUE(entry);
         hint->hi_uhead.qh_name_len  = entry->dte_name_len;
         hint->hi_uhead.qh_value_len = entry->dte_val_len;
+        hint->hi_entry = entry;
         ++entry->dte_refcnt;
         return 0;
     }
