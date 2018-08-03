@@ -1,4 +1,7 @@
 /*
+ * lsqpack.c -- LiteSpeed QPACK Compression Library: encoder and decoder.
+ */
+/*
 MIT License
 
 Copyright (c) 2018 LiteSpeed Technologies Inc
@@ -47,16 +50,3059 @@ SOFTWARE.
 
 #define MAX_QUIC_STREAM_ID ((1ull << 62) - 1)
 
-#define NAME_VAL(a, b) (a), (b), sizeof(a) - 1, sizeof(b) - 1,
+struct lsqpack_double_enc_head
+{
+    struct lsqpack_enc_head by_name;
+    struct lsqpack_enc_head by_nameval;
+};
 
-static const struct
+struct lsqpack_enc_table_entry
+{
+    /* An entry always lives on all three lists */
+    STAILQ_ENTRY(lsqpack_enc_table_entry)
+                                    ete_next_nameval,
+                                    ete_next_name,
+                                    ete_next_all;
+    lsqpack_abs_id_t                ete_id;
+    unsigned                        ete_n_reffd;
+    unsigned                        ete_nameval_hash;
+    unsigned                        ete_name_hash;
+    unsigned                        ete_name_len;
+    unsigned                        ete_val_len;
+    char                            ete_buf[0];
+};
+
+#define ETE_NAME(ete) ((ete)->ete_buf)
+#define ETE_VALUE(ete) (&(ete)->ete_buf[(ete)->ete_name_len])
+#define ENTRY_COST(name_len, value_len) (DYNAMIC_ENTRY_OVERHEAD + \
+                                                        name_len + value_len)
+#define ETE_SIZE(ete) ENTRY_COST((ete)->ete_name_len, (ete)->ete_val_len)
+
+
+#define N_BUCKETS(n_bits) (1U << (n_bits))
+#define BUCKNO(n_bits, hash) ((hash) & (N_BUCKETS(n_bits) - 1))
+
+int
+lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
+    unsigned max_risked_streams)
+{
+    struct lsqpack_double_enc_head *buckets;
+    unsigned nbits = 2;
+    unsigned i;
+
+    if (dyn_table_size > LSQPACK_MAX_DYN_TABLE_SIZE ||
+        max_risked_streams > LSQPACK_MAX_MAX_RISKED_STREAMS)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    buckets = malloc(sizeof(buckets[0]) * N_BUCKETS(nbits));
+    if (!buckets)
+        return -1;
+
+    for (i = 0; i < N_BUCKETS(nbits); ++i)
+    {
+        STAILQ_INIT(&buckets[i].by_name);
+        STAILQ_INIT(&buckets[i].by_nameval);
+    }
+
+    memset(enc, 0, sizeof(*enc));
+    STAILQ_INIT(&enc->qpe_all_entries);
+    enc->qpe_max_capacity = dyn_table_size;
+    enc->qpe_max_risked_streams = max_risked_streams;
+    enc->qpe_buckets      = buckets;
+    enc->qpe_nbits        = nbits;
+    return 0;
+}
+
+
+void
+lsqpack_enc_cleanup (struct lsqpack_enc *enc)
+{
+    struct lsqpack_enc_table_entry *entry, *next;
+    for (entry = STAILQ_FIRST(&enc->qpe_all_entries); entry; entry = next)
+    {
+        next = STAILQ_NEXT(entry, ete_next_all);
+        free(entry);
+    }
+    free(enc->qpe_buckets);
+    free(enc->qpe_hinfos_arr);
+}
+
+
+struct static_table_entry
 {
     const char       *name;
     const char       *val;
     unsigned          name_len;
     unsigned          val_len;
+};
+
+static const struct static_table_entry static_table[QPACK_STATIC_TABLE_SIZE];
+
+//not find return 0, otherwise return the index
+static unsigned
+lsqpack_enc_get_stx_tab_id (const char *name, unsigned name_len,
+                const char *val, unsigned val_len, int *val_matched)
+{
+    if (name_len < 3)
+        return 0;
+
+    *val_matched = 0;
+
+    //check value first
+    int i = -1;
+    switch (*val)
+    {
+        case 'G':
+            i = 1;
+            break;
+        case 'P':
+            i = 2;
+            break;
+        case '/':
+            if (val_len == 1)
+                i = 3;
+            else if (val_len == 11)
+                i = 4;
+            break;
+        case 'h':
+            if (val_len == 4)
+                i = 5;
+            else if (val_len == 5)
+                i = 6;
+            break;
+        case '2':
+            if (val_len == 3)
+            {
+                switch (*(val + 2))
+                {
+                    case '0':
+                        i = 7;
+                        break;
+                    case '4':
+                        i = 8;
+                        break;
+                    case '6':
+                        i = 9;
+                        break;
+                    default:
+                        break;
+                }
+            }
+            break;
+        case '3':
+            i = 10;
+            break;
+        case '4':
+            if (val_len == 3)
+            {
+                switch (*(val + 2))
+                {
+                    case '0':
+                        i = 11;
+                        break;
+                    case '4':
+                        i = 12;
+                    default:
+                        break;
+                }
+            }
+            break;
+        case '5':
+            i = 13;
+            break;
+        case 'g':
+            i = 15;
+            break;
+        default:
+            break;
+    }
+
+    if (i > 0 && static_table[i].val_len == val_len
+            && static_table[i].name_len == name_len
+            && memcmp(val, static_table[i].val, val_len) == 0
+            && memcmp(name, static_table[i].name, name_len) == 0)
+    {
+        *val_matched = 1;
+        return i + 1;
+    }
+
+    //macth name only checking
+    i = -1;
+    switch (*name)
+    {
+        case ':':
+            switch (*(name + 1))
+            {
+                case 'a':
+                    i = 0;
+                    break;
+                case 'm':
+                    i = 1;
+                    break;
+                case 'p':
+                    i = 3;
+                    break;
+                case 's':
+                    if (*(name + 2) == 'c') //:scheme
+                        i = 5;
+                    else
+                        i = 7;
+                    break;
+                default:
+                    break;
+            }
+            break;
+        case 'a':
+            switch (name_len)
+            {
+                case 3:
+                    i = 20; //age
+                    break;
+                case 5:
+                    i = 21; //allow
+                    break;
+                case 6:
+                    i = 18; //accept
+                    break;
+                case 13:
+                    if (*(name + 1) == 'u')
+                        i = 22; //authorization
+                    else
+                        i = 17; //accept-ranges
+                    break;
+                case 14:
+                    i  = 14; //accept-charset
+                    break;
+                case 15:
+                    if (*(name + 7) == 'l')
+                        i = 16; //accept-language,
+                    else
+                        i = 15;// accept-encoding
+                    break;
+                case 27:
+                    i = 19;//access-control-allow-origin
+                    break;
+                default:
+                    break;
+            }
+            break;
+        case 'c':
+            switch (name_len)
+            {
+                case 6:
+                    i = 31; //cookie
+                    break;
+                case 12:
+                    i = 30; //content-type
+                    break;
+                case 13:
+                    if (*(name + 1) == 'a')
+                        i = 23; //cache-control
+                    else
+                        i = 29; //content-range
+                    break;
+                case 14:
+                    i = 27; //content-length
+                    break;
+                case 16:
+                    switch (*(name + 9))
+                    {
+                        case 'n':
+                            i = 25 ;//content-encoding
+                            break;
+                        case 'a':
+                            i = 26; //content-language
+                            break;
+                        case 'o':
+                            i = 28; //content-location
+                        default:
+                            break;
+                    }
+                    break;
+                case 19:
+                    i = 24; //content-disposition
+                    break;
+            }
+            break;
+        case 'd':
+            i = 32 ;//date
+            break;
+        case 'e':
+            switch (name_len)
+            {
+                case 4:
+                    i = 33; //etag
+                    break;
+                case 6:
+                    i = 34;
+                    break;
+                case 7:
+                    i = 35;
+                    break;
+                default:
+                    break;
+            }
+            break;
+        case 'f':
+            i = 36; //from
+            break;
+        case 'h':
+            i = 37; //host
+            break;
+        case 'i':
+            switch (name_len)
+            {
+                case 8:
+                    if (*(name + 3) == 'm')
+                        i = 38; //if-match
+                    else
+                        i = 41; //if-range
+                    break;
+                case 13:
+                    i = 40; //if-none-match
+                    break;
+                case 17:
+                    i = 39; //if-modified-since
+                    break;
+                case 19:
+                    i = 42; //if-unmodified-since
+                    break;
+                default:
+                    break;
+            }
+            break;
+        case 'l':
+            switch (name_len)
+            {
+                case 4:
+                    i = 44; //link
+                    break;
+                case 8:
+                    i = 45; //location
+                    break;
+                case 13:
+                    i = 43; //last-modified
+                    break;
+                default:
+                    break;
+            }
+            break;
+        case 'm':
+            i = 46; //max-forwards
+            break;
+        case 'p':
+            if (name_len == 18)
+                i = 47; //proxy-authenticate
+            else
+                i = 48; //proxy-authorization
+            break;
+        case 'r':
+            if (name_len >= 5)
+            {
+                switch (*(name + 4))
+                {
+                    case 'e':
+                        if (name_len == 5)
+                            i = 49; //range
+                        else
+                            i = 51; //refresh
+                        break;
+                    case 'r':
+                        i = 50; //referer
+                        break;
+                    case 'y':
+                        i = 52; //retry-after
+                        break;
+                    default:
+                        break;
+                }
+            }
+            break;
+        case 's':
+            switch (name_len)
+            {
+                case 6:
+                    i = 53; //server
+                    break;
+                case 10:
+                    i = 54; //set-cookie
+                    break;
+                case 25:
+                    i = 55; //strict-transport-security
+                    break;
+                default:
+                    break;
+            }
+            break;
+        case 't':
+            i = 56;//transfer-encoding
+            break;
+        case 'u':
+            i = 57; //user-agent
+            break;
+        case 'v':
+            if (name_len == 4)
+                i = 58;
+            else
+                i = 59;
+            break;
+        case 'w':
+            i = 60;
+            break;
+        default:
+            break;
+    }
+
+    if (i >= 0
+            && static_table[i].name_len == name_len
+            && memcmp(name, static_table[i].name, name_len) == 0)
+        return i + 1;
+
+    return 0;
 }
-static_table[QPACK_STATIC_TABLE_SIZE] =
+
+
+enum table_type {
+    TT_STATIC = 0,
+    TT_DYNAMIC = 1,
+};
+
+
+struct enc_found
+{
+    int                 ef_found;
+    enum table_type     ef_table_type;
+    lsqpack_abs_id_t    ef_entry_id;
+    int                 ef_value_match;
+    struct lsqpack_enc_table_entry
+                       *ef_entry;
+};
+
+
+static struct enc_found
+qenc_find_entry_in_static_table (const char *name, unsigned name_len,
+                                 const char *value, unsigned value_len)
+{
+    unsigned static_table_id;
+    int val_matched;
+
+    static_table_id = lsqpack_enc_get_stx_tab_id(name, name_len, value,
+                                                    value_len, &val_matched);
+    if (static_table_id > 0)
+        return (struct enc_found) { 1, TT_STATIC, static_table_id, val_matched, NULL, };
+    else
+        return (struct enc_found) { 0, 0, 0, 0, NULL, };
+}
+
+
+static struct enc_found
+qenc_find_entry_in_either_table (struct lsqpack_enc *enc, int risk,
+        const char *name, unsigned name_len, const char *value,
+        unsigned value_len)
+{
+    struct lsqpack_enc_table_entry *entry;
+    unsigned name_hash, nameval_hash, buckno, static_table_id;
+    XXH32_state_t hash_state;
+    int val_matched;
+
+    /* First, look for a match in the static table: */
+    static_table_id = lsqpack_enc_get_stx_tab_id(name, name_len, value,
+                                                    value_len, &val_matched);
+    if (static_table_id > 0 && val_matched)
+        return (struct enc_found) { 1, TT_STATIC, static_table_id, 1, NULL, };
+
+    /* Search by name and value: */
+    XXH32_reset(&hash_state, (uintptr_t) enc);
+    XXH32_update(&hash_state, &name_len, sizeof(name_len));
+    XXH32_update(&hash_state, name, name_len);
+    name_hash = XXH32_digest(&hash_state);
+    XXH32_update(&hash_state,  &value_len, sizeof(value_len));
+    XXH32_update(&hash_state,  value, value_len);
+    nameval_hash = XXH32_digest(&hash_state);
+    buckno = BUCKNO(enc->qpe_nbits, nameval_hash);
+    /* TODO there could be several matching entries.  We want to pick one
+     * that's not too old (eviction blocking) and also not too young
+     * (header blocking).
+     */
+    STAILQ_FOREACH(entry, &enc->qpe_buckets[buckno].by_nameval,
+                                                        ete_next_nameval)
+        if (nameval_hash == entry->ete_nameval_hash &&
+            name_len == entry->ete_name_len &&
+            value_len == entry->ete_val_len &&
+            (risk || entry->ete_id <= enc->qpe_max_acked_id) &&
+            (enc->qpe_cur_header.search_cutoff == 0
+                || entry->ete_id > enc->qpe_cur_header.search_cutoff) &&
+            0 == memcmp(name, ETE_NAME(entry), name_len) &&
+            0 == memcmp(value, ETE_VALUE(entry), value_len))
+        {
+            return (struct enc_found) { 1, TT_DYNAMIC, entry->ete_id, 1, entry, };
+        }
+
+    /* Name/value match is not found, but if the caller found a matching
+     * static table entry, no need to continue to search:
+     */
+    if (static_table_id > 0)
+        return (struct enc_found) { 1, TT_STATIC, static_table_id, 0, NULL, };
+
+    /* Search by name only: */
+    buckno = BUCKNO(enc->qpe_nbits, name_hash);
+    STAILQ_FOREACH(entry, &enc->qpe_buckets[buckno].by_name, ete_next_name)
+        if (name_hash == entry->ete_name_hash &&
+            name_len == entry->ete_name_len &&
+            (risk || entry->ete_id <= enc->qpe_max_acked_id) &&
+            (enc->qpe_cur_header.search_cutoff == 0
+                || entry->ete_id > enc->qpe_cur_header.search_cutoff) &&
+            0 == memcmp(name, ETE_NAME(entry), name_len))
+        {
+            return (struct enc_found) { 1, TT_DYNAMIC, entry->ete_id, 0, entry, };
+        }
+
+    return (struct enc_found) { 0, 0, 0, 0, NULL, };
+}
+
+
+static struct enc_found
+qenc_find_entry (struct lsqpack_enc *enc, int risk, const char *name,
+        unsigned name_len, const char *value,
+        unsigned value_len)
+{
+    if (enc->qpe_cur_header.use_dynamic_table)
+        return qenc_find_entry_in_either_table(enc, risk, name, name_len, value,
+                                                                    value_len);
+    else
+        return qenc_find_entry_in_static_table(name, name_len, value, value_len);
+}
+
+
+static unsigned
+lsqpack_val2len (uint64_t value, unsigned prefix_bits)
+{
+    uint64_t mask = (1ULL << prefix_bits) - 1;
+    return 1
+         + (value >=                  mask )
+         + (value >=  ((1ULL <<  7) + mask))
+         + (value >=  ((1ULL << 14) + mask))
+         + (value >=  ((1ULL << 21) + mask))
+         + (value >=  ((1ULL << 28) + mask))
+         + (value >=  ((1ULL << 35) + mask))
+         + (value >=  ((1ULL << 42) + mask))
+         + (value >=  ((1ULL << 49) + mask))
+         + (value >=  ((1ULL << 56) + mask))
+         + (value >=  ((1ULL << 63) + mask))
+         ;
+}
+
+
+unsigned char *
+lsqpack_enc_int (unsigned char *dst, unsigned char *const end, uint64_t value,
+                                                        unsigned prefix_bits)
+{
+    unsigned char *const dst_orig = dst;
+
+    /* This function assumes that at least one byte is available */
+    assert(dst < end);
+    if (value < (1u << prefix_bits) - 1)
+        *dst++ |= value;
+    else
+    {
+        *dst++ |= (1 << prefix_bits) - 1;
+        value -= (1 << prefix_bits) - 1;
+        while (value >= 128)
+        {
+            if (dst < end)
+            {
+                *dst++ = (0x80 | value);
+                value >>= 7;
+            }
+            else
+                return dst_orig;
+        }
+        if (dst < end)
+            *dst++ = value;
+        else
+            return dst_orig;
+    }
+    return dst;
+}
+
+
+static void
+lsqpack_enc_int_nocheck (unsigned char *dst, uint64_t value,
+                                                        unsigned prefix_bits)
+{
+    if (value < (1u << prefix_bits) - 1)
+        *dst++ |= value;
+    else
+    {
+        *dst++ |= (1 << prefix_bits) - 1;
+        value -= (1 << prefix_bits) - 1;
+        while (value >= 128)
+        {
+            *dst++ = (0x80 | value);
+            value >>= 7;
+        }
+        *dst++ = value;
+    }
+}
+
+
+struct encode_el
+{
+    uint32_t code;
+    int      bits;
+};
+
+
+static const struct encode_el encode_table[257];
+
+
+static unsigned char *
+qenc_huffman_enc (const unsigned char *src, const unsigned char *const src_end,
+                                                                unsigned char *dst)
+{
+    uint64_t bits = 0;
+    int bits_left = 40;
+    struct encode_el cur_enc_code;
+
+    while (src != src_end)
+    {
+        cur_enc_code = encode_table[(int) *src++];
+        assert(bits_left >= cur_enc_code.bits); //  (possible negative shift, undefined behavior)
+        bits |= (uint64_t)cur_enc_code.code << (bits_left - cur_enc_code.bits);
+        bits_left -= cur_enc_code.bits;
+        while (bits_left <= 32)
+        {
+            *dst++ = bits >> 32;
+            bits <<= 8;
+            bits_left += 8;
+        }
+    }
+
+    if (bits_left != 40)
+    {
+        assert(bits_left < 40 && bits_left > 0);
+        bits |= ((uint64_t)1 << bits_left) - 1;
+        *dst++ = bits >> 32;
+    }
+
+    return dst;
+}
+
+
+int
+lsqpack_enc_enc_str (unsigned prefix_bits, unsigned char *const dst,
+        size_t dst_len, const unsigned char *str, unsigned str_len)
+{
+    unsigned char *p;
+    unsigned i, enc_size_bits, enc_size_bytes, len_size;
+
+    enc_size_bits = 0;
+    for (i = 0; i < str_len; ++i)
+        enc_size_bits += encode_table[ str[i] ].bits;
+    enc_size_bytes = enc_size_bits / 8 + ((enc_size_bits & 7) != 0);
+
+    if (enc_size_bytes < str_len)
+    {
+        len_size = lsqpack_val2len(enc_size_bytes, prefix_bits);
+        if (len_size + enc_size_bytes <= dst_len)
+        {
+            *dst &= ~((1 << (prefix_bits + 1)) - 1);
+            *dst |= 1 << prefix_bits;
+            lsqpack_enc_int_nocheck(dst, enc_size_bytes, prefix_bits);
+            p = qenc_huffman_enc(str, str + str_len, dst + len_size);
+            assert(p - dst == len_size + enc_size_bytes);
+            return p - dst;
+        }
+        else
+            return -1;
+    }
+    else
+    {
+        len_size = lsqpack_val2len(str_len, prefix_bits);
+        if (len_size + str_len <= dst_len)
+        {
+            *dst &= ~((1 << (prefix_bits + 1)) - 1);
+            lsqpack_enc_int_nocheck(dst, str_len, prefix_bits);
+            memcpy(dst + len_size, str, str_len);
+            return len_size + str_len;
+        }
+        else
+            return -1;
+    }
+}
+
+
+static void
+qenc_drop_oldest_entry (struct lsqpack_enc *enc)
+{
+    struct lsqpack_enc_table_entry *entry;
+    unsigned buckno;
+
+    entry = STAILQ_FIRST(&enc->qpe_all_entries);
+    assert(entry);
+    STAILQ_REMOVE_HEAD(&enc->qpe_all_entries, ete_next_all);
+    buckno = BUCKNO(enc->qpe_nbits, entry->ete_nameval_hash);
+    assert(entry == STAILQ_FIRST(&enc->qpe_buckets[buckno].by_nameval));
+    STAILQ_REMOVE_HEAD(&enc->qpe_buckets[buckno].by_nameval, ete_next_nameval);
+    buckno = BUCKNO(enc->qpe_nbits, entry->ete_name_hash);
+    assert(entry == STAILQ_FIRST(&enc->qpe_buckets[buckno].by_name));
+    STAILQ_REMOVE_HEAD(&enc->qpe_buckets[buckno].by_name, ete_next_name);
+
+    enc->qpe_cur_capacity -= ETE_SIZE(entry);
+    --enc->qpe_nelem;
+    free(entry);
+}
+
+
+static void
+qenc_remove_overflow_entries (struct lsqpack_enc *enc)
+{
+    while (enc->qpe_cur_capacity > enc->qpe_max_capacity)
+        qenc_drop_oldest_entry(enc);
+}
+
+
+static int
+qenc_grow_tables (struct lsqpack_enc *enc)
+{
+    struct lsqpack_double_enc_head *new_buckets, *new[2];
+    struct lsqpack_enc_table_entry *entry;
+    unsigned n, old_nbits;
+    int idx;
+
+    old_nbits = enc->qpe_nbits;
+    new_buckets = malloc(sizeof(enc->qpe_buckets[0])
+                                                * N_BUCKETS(old_nbits + 1));
+    if (!new_buckets)
+        return -1;
+
+    for (n = 0; n < N_BUCKETS(old_nbits); ++n)
+    {
+        new[0] = &new_buckets[n];
+        new[1] = &new_buckets[n + N_BUCKETS(old_nbits)];
+        STAILQ_INIT(&new[0]->by_name);
+        STAILQ_INIT(&new[1]->by_name);
+        STAILQ_INIT(&new[0]->by_nameval);
+        STAILQ_INIT(&new[1]->by_nameval);
+        while ((entry = STAILQ_FIRST(&enc->qpe_buckets[n].by_name)))
+        {
+            STAILQ_REMOVE_HEAD(&enc->qpe_buckets[n].by_name, ete_next_name);
+            idx = (BUCKNO(old_nbits + 1, entry->ete_name_hash)
+                                                        >> old_nbits) & 1;
+            STAILQ_INSERT_TAIL(&new[idx]->by_name, entry, ete_next_name);
+        }
+        while ((entry = STAILQ_FIRST(&enc->qpe_buckets[n].by_nameval)))
+        {
+            STAILQ_REMOVE_HEAD(&enc->qpe_buckets[n].by_nameval,
+                                                        ete_next_nameval);
+            idx = (BUCKNO(old_nbits + 1, entry->ete_nameval_hash)
+                                                        >> old_nbits) & 1;
+            STAILQ_INSERT_TAIL(&new[idx]->by_nameval, entry,
+                                                        ete_next_nameval);
+        }
+    }
+
+    free(enc->qpe_buckets);
+    enc->qpe_nbits   = old_nbits + 1;
+    enc->qpe_buckets = new_buckets;
+    return 0;
+}
+
+
+static struct lsqpack_enc_table_entry *
+lsqpack_enc_push_entry (struct lsqpack_enc *enc, const char *name,
+                        unsigned name_len, const char *value,
+                        unsigned value_len)
+{
+    unsigned name_hash, nameval_hash, buckno;
+    struct lsqpack_enc_table_entry *entry;
+    XXH32_state_t hash_state;
+    size_t size;
+
+    if (enc->qpe_nelem >= N_BUCKETS(enc->qpe_nbits) / 2 &&
+                                                0 != qenc_grow_tables(enc))
+        return NULL;
+
+    size = sizeof(*entry) + name_len + value_len;
+    entry = malloc(size);
+    if (!entry)
+        return NULL;
+
+    XXH32_reset(&hash_state, (uintptr_t) enc);
+    XXH32_update(&hash_state, &name_len, sizeof(name_len));
+    XXH32_update(&hash_state, name, name_len);
+    name_hash = XXH32_digest(&hash_state);
+    XXH32_update(&hash_state,  &value_len, sizeof(value_len));
+    XXH32_update(&hash_state,  value, value_len);
+    nameval_hash = XXH32_digest(&hash_state);
+
+    entry->ete_name_hash = name_hash;
+    entry->ete_nameval_hash = nameval_hash;
+    entry->ete_name_len = name_len;
+    entry->ete_val_len = value_len;
+    entry->ete_id = 1 + enc->qpe_ins_count++;
+    memcpy(ETE_NAME(entry), name, name_len);
+    memcpy(ETE_VALUE(entry), value, value_len);
+
+    STAILQ_INSERT_TAIL(&enc->qpe_all_entries, entry, ete_next_all);
+    buckno = BUCKNO(enc->qpe_nbits, nameval_hash);
+    STAILQ_INSERT_TAIL(&enc->qpe_buckets[buckno].by_nameval, entry,
+                                                        ete_next_nameval);
+    buckno = BUCKNO(enc->qpe_nbits, name_hash);
+    STAILQ_INSERT_TAIL(&enc->qpe_buckets[buckno].by_name, entry,
+                                                        ete_next_name);
+
+    enc->qpe_cur_capacity += ENTRY_COST(name_len, value_len);
+    ++enc->qpe_nelem;
+    qenc_remove_overflow_entries(enc);
+    return entry;
+}
+
+
+int
+lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
+                            unsigned seqno)
+{
+    struct lsqpack_header_info *hinfos_arr;
+    unsigned at_risk, nalloc, i;
+
+    if (enc->qpe_flags & LSQPACK_ENC_HEADER)
+        return -1;
+
+    enc->qpe_cur_header.hinfo = (struct lsqpack_header_info)
+                        { .qhi_stream_id = stream_id, .qhi_seqno = seqno, };
+    enc->qpe_cur_header.n_risked = 0;
+    enc->qpe_cur_header.base_idx = enc->qpe_ins_count;
+    enc->qpe_cur_header.search_cutoff = 0;
+    enc->qpe_cur_header.use_dynamic_table = 1;
+
+    if (enc->qpe_hinfos_count == enc->qpe_hinfos_nalloc)
+    {
+        if (enc->qpe_hinfos_nalloc)
+            nalloc = enc->qpe_hinfos_nalloc * 2;
+        else
+            nalloc = 4;
+        hinfos_arr = realloc(enc->qpe_hinfos_arr,
+                                    sizeof(enc->qpe_hinfos_arr[0]) * 2);
+        if (hinfos_arr)
+        {
+            free(enc->qpe_hinfos_arr);
+            enc->qpe_hinfos_arr = hinfos_arr;
+            enc->qpe_hinfos_nalloc = nalloc;
+        }
+        else
+            enc->qpe_cur_header.use_dynamic_table = 0;
+    }
+
+    /* Check if there are other header blocks with the same stream ID that
+     * are at risk.
+     */
+    if (seqno)
+    {
+        for (i = 0; i < enc->qpe_hinfos_count; ++i)
+            if (enc->qpe_hinfos_arr[i].qhi_stream_id == stream_id
+                                && enc->qpe_hinfos_arr[i].qhi_at_risk)
+                break;
+        at_risk = i < enc->qpe_hinfos_count;
+    }
+    else
+        at_risk = 0;
+
+    enc->qpe_cur_header.others_at_risk = at_risk > 0;
+    enc->qpe_flags |= LSQPACK_ENC_HEADER;
+
+    return 0;
+}
+
+
+ssize_t
+lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
+{
+    unsigned char *dst, *end;
+    lsqpack_abs_id_t diff;
+    unsigned sign;
+
+    if (!(enc->qpe_flags & LSQPACK_ENC_HEADER))
+        return -1;
+
+    if (enc->qpe_cur_header.hinfo.qhi_max_id)
+    {
+        end = buf + sz;
+
+        *buf = 0;
+        dst = lsqpack_enc_int(buf, end, enc->qpe_cur_header.hinfo.qhi_max_id, 8);
+        if (dst <= buf)
+            return 0;
+
+        if (dst >= end)
+            return 0;
+
+        buf = dst;
+        if (enc->qpe_cur_header.base_idx
+                                    >= enc->qpe_cur_header.hinfo.qhi_max_id)
+        {
+            sign = 0;
+            diff = enc->qpe_cur_header.base_idx
+                                    - enc->qpe_cur_header.hinfo.qhi_max_id;
+        }
+        else
+        {
+            sign = 1;
+            diff = enc->qpe_cur_header.hinfo.qhi_max_id
+                                    - enc->qpe_cur_header.base_idx;
+        }
+        *buf = sign << 7;
+        dst = lsqpack_enc_int(buf, end, diff, 7);
+        if (dst <= buf)
+            return 0;
+
+        enc->qpe_flags &= ~LSQPACK_ENC_HEADER;
+        return dst - end + sz;
+    }
+    else if (sz >= 2)
+    {
+        memset(buf, 0, 2);
+        enc->qpe_flags &= ~LSQPACK_ENC_HEADER;
+        return 2;
+    }
+    else
+        return 0;
+}
+
+
+struct encode_program
+{
+    enum {
+        EEA_NONE,
+        EEA_INS_NAMEREF,
+        EEA_INS_LIT,
+    }           ep_enc_action;
+    enum {
+        EHA_INDEXED_NEW,
+        EHA_INDEXED_STAT,
+        EHA_INDEXED_DYN,
+        EHA_LIT_WITH_NAME_STAT,
+        EHA_LIT_WITH_NAME_DYN,
+        EHA_LIT_WITH_NAME_NEW,
+        EHA_LIT,
+    }           ep_hea_action;
+    enum {
+        ETA_NOOP,
+        ETA_NEW,
+    }           ep_tab_action;
+    enum {
+        EPF_REF_FOUND   = 1 << 1,
+        EPF_REF_NEW     = 1 << 2,
+    }           ep_flags;
+};
+
+/* Factors at play:
+ *
+ *      - Found or not found
+ *      - Table: static or dynamic
+ *      - Value matched or not
+ *      - Index: yes/no
+ *      - Risk blocking: yes/no
+ *
+ * Effects:
+ *
+ *      - Output to encoder stream (if index=yes)
+ *      - Insert new dynamic entry into the table (if index=yes)
+ *      - Output to header stream.  This always happens, but the output
+ *        depends on the value of "risk blocking".
+ */
+static const struct encode_program encode_programs[2][2][2][2][2] =
+{
+/* "A" is for "Any" (this makes the table narrower) */
+#define A 0 ... 1
+ /*
+  *  ,--------------- Found or not found (bool)
+  *  |  ,------------ Static or dynamic (0 or 1, respectively)
+  *  |  |  ,--------- Value matched or not (bool)
+  *  |  |  |  ,------ To index or not to index (bool)
+  *  |  |  |  |  ,--- To risk blocking or not to risk (bool)
+  *  |  |  |  |  |
+  *  |  |  |  |  |
+  *  V  V  V  V  V
+  */
+    [0][A][A][0][A] = { EEA_NONE,        EHA_LIT,                ETA_NOOP, 0, },
+    [0][A][A][1][0] = { EEA_INS_LIT,     EHA_LIT,                ETA_NEW,  0, },
+    [0][A][A][1][1] = { EEA_INS_LIT,     EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
+    [1][0][0][0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
+    [1][0][0][1][0] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME_STAT, ETA_NEW,  0, },
+    [1][0][0][1][1] = { EEA_INS_NAMEREF, EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
+    [1][0][1][A][A] = { EEA_NONE,        EHA_INDEXED_STAT,       ETA_NOOP, 0, },
+    [1][1][0][0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME_DYN,  ETA_NOOP, EPF_REF_FOUND, },
+    [1][1][0][1][A] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME_NEW,  ETA_NEW,  EPF_REF_NEW|EPF_REF_FOUND, },
+    [1][1][1][A][A] = { EEA_NONE,        EHA_INDEXED_DYN,        ETA_NOOP, EPF_REF_FOUND, },
+#undef A
+};
+
+
+static int
+enc_has_or_can_evict_at_least (struct lsqpack_enc *enc, size_t new_entry_size)
+{
+    const struct lsqpack_enc_table_entry *entry;
+    lsqpack_abs_id_t min_id;
+    size_t avail;
+
+    avail = enc->qpe_max_capacity - enc->qpe_cur_capacity;
+    if (avail >= new_entry_size)
+        return 1;
+
+    min_id = 0; /* TODO */
+    STAILQ_FOREACH(entry, &enc->qpe_all_entries, ete_next_all)
+        if (entry->ete_id < min_id)
+        {
+            avail += ETE_SIZE(entry);
+            if (avail >= new_entry_size)
+            {
+                enc->qpe_cur_header.search_cutoff = entry->ete_id;
+                return 1;
+            }
+        }
+        else
+            return 0;
+
+    return 0;
+}
+
+
+enum lsqpack_enc_status
+lsqpack_enc_encode (struct lsqpack_enc *enc,
+        unsigned char *enc_buf, size_t *enc_sz_p,
+        unsigned char *hea_buf, size_t *hea_sz_p,
+        const char *name, unsigned name_len,
+        const char *value, unsigned value_len,
+        enum lsqpack_enc_flags flags)
+{
+    unsigned char *const enc_buf_end = enc_buf + *enc_sz_p;
+    unsigned char *const hea_buf_end = hea_buf + *hea_sz_p;
+    struct lsqpack_enc_table_entry *new_entry;
+    struct encode_program prog;
+    struct enc_found ef;
+    int index, risk;
+
+    size_t enc_sz, hea_sz;
+    unsigned char *dst;
+    lsqpack_abs_id_t id;
+    int r;
+
+    /* Encoding always outputs at least a byte to the header block.  If
+     * no bytes are available, encoding cannot proceed.
+     */
+    if (hea_buf == hea_buf_end)
+        return LQES_NOBUF_HEAD;
+
+    index = !(flags & LQEF_NO_INDEX)
+        && enc->qpe_cur_header.use_dynamic_table
+        && enc->qpe_ins_count < LSQPACK_MAX_ABS_ID
+        && enc_has_or_can_evict_at_least(enc, ENTRY_COST(name_len, value_len));
+
+  restart:
+    risk = enc->qpe_cur_header.n_risked > 0
+        || enc->qpe_cur_header.others_at_risk
+        || enc->qpe_cur_streams_at_risk < enc->qpe_max_risked_streams;
+
+    ef = qenc_find_entry(enc, risk, name, name_len, value, value_len);
+
+    prog = encode_programs
+                [ef.ef_found]
+                [ef.ef_table_type]
+                [ef.ef_value_match]
+                [index]
+                [risk];
+
+    switch (prog.ep_enc_action)
+    {
+    case EEA_INS_NAMEREF:
+        dst = enc_buf;
+        if (TT_STATIC == ef.ef_table_type)
+        {
+            *dst = 0x80 | 0x40;
+            id = ef.ef_entry_id;
+        }
+        else
+        {
+            *dst = 0x80 | 0x40;
+            id = enc->qpe_ins_count - ef.ef_entry_id;
+        }
+        dst = lsqpack_enc_int(dst, enc_buf_end, id, 6);
+        if (dst <= enc_buf)
+            return LQES_NOBUF_ENC;
+        r = lsqpack_enc_enc_str(7, dst, enc_buf_end - dst,
+                                    (const unsigned char *) value, value_len);
+        if (r < 0)
+            return LQES_NOBUF_ENC;
+        dst += (unsigned) r;
+        enc_sz = dst - enc_buf;
+        break;
+    case EEA_INS_LIT:
+        dst = enc_buf;
+        *dst = 0x40;
+        r = lsqpack_enc_enc_str(5, dst, enc_buf_end - dst,
+                                (const unsigned char *) name, name_len);
+        if (r < 0)
+            return LQES_NOBUF_ENC;
+        dst += r;
+        r = lsqpack_enc_enc_str(7, dst, enc_buf_end - dst,
+                                (const unsigned char *) value, value_len);
+        if (r < 0)
+            return LQES_NOBUF_ENC;
+        dst += r;
+        enc_sz = dst - enc_buf;
+        break;
+    default:
+        assert(EEA_NONE == prog.ep_enc_action);
+        enc_sz = 0;
+        break;
+    }
+
+    dst = hea_buf;
+    switch (prog.ep_hea_action)
+    {
+    case EHA_INDEXED_STAT:
+        *dst = 0x80 | 0x40;
+        dst = lsqpack_enc_int(dst, hea_buf_end, ef.ef_entry_id, 6);
+        if (dst <= hea_buf)
+            return LQES_NOBUF_HEAD;
+        hea_sz = dst - hea_buf;
+        break;
+    case EHA_INDEXED_NEW:
+        id = enc->qpe_ins_count + 1;
+  post_base_idx:
+        *dst = 0x10;
+        assert(id > enc->qpe_cur_header.base_idx);
+        id -= enc->qpe_cur_header.base_idx;
+        dst = lsqpack_enc_int(dst, hea_buf_end, id, 4);
+        if (dst <= hea_buf)
+            return LQES_NOBUF_HEAD;
+        hea_sz = dst - hea_buf;
+        break;
+    case EHA_INDEXED_DYN:
+        id = ef.ef_entry_id;
+        if (id > enc->qpe_cur_header.base_idx)
+            goto post_base_idx;
+        *dst = 0x80;
+        dst = lsqpack_enc_int(dst, hea_buf_end, ef.ef_entry_id, 6);
+        if (dst <= hea_buf)
+            return LQES_NOBUF_HEAD;
+        hea_sz = dst - hea_buf;
+        break;
+    case EHA_LIT:
+        *dst = 0x20
+               | (((flags & LQEF_NO_INDEX) > 0) << 4)
+               ;
+        r = lsqpack_enc_enc_str(3, dst, hea_buf_end - dst,
+                                (const unsigned char *) name, name_len);
+        if (r < 0)
+            return LQES_NOBUF_HEAD;
+        dst += r;
+        r = lsqpack_enc_enc_str(7, dst, hea_buf_end - dst,
+                                (const unsigned char *) value, value_len);
+        if (r < 0)
+            return LQES_NOBUF_HEAD;
+        dst += r;
+        hea_sz = dst - hea_buf;
+        break;
+    case EHA_LIT_WITH_NAME_NEW:
+        id = ef.ef_entry_id;
+ post_base_name_ref:
+        *dst = (((flags & LQEF_NO_INDEX) > 0) << 3);
+        assert(id > enc->qpe_cur_header.base_idx);
+        id -= enc->qpe_cur_header.base_idx;
+        dst = lsqpack_enc_int(dst, hea_buf_end, id, 3);
+        if (dst <= hea_buf)
+            return LQES_NOBUF_HEAD;
+        r = lsqpack_enc_enc_str(7, dst, hea_buf_end - dst,
+                                (const unsigned char *) value, value_len);
+        if (r < 0)
+            return LQES_NOBUF_HEAD;
+        dst += (unsigned) r;
+        hea_sz = dst - hea_buf;
+        break;
+    case EHA_LIT_WITH_NAME_DYN:
+        id = ef.ef_entry_id;
+        if (id > enc->qpe_cur_header.base_idx)
+            goto post_base_name_ref;
+        *dst = 0x40
+               | (((flags & LQEF_NO_INDEX) > 0) << 5)
+               ;
+        id = enc->qpe_cur_header.base_idx - ef.ef_entry_id;
+        dst = lsqpack_enc_int(dst, hea_buf_end, id, 4);
+        if (dst <= hea_buf)
+            return LQES_NOBUF_HEAD;
+        r = lsqpack_enc_enc_str(7, dst, hea_buf_end - dst,
+                                (const unsigned char *) value, value_len);
+        if (r < 0)
+            return LQES_NOBUF_HEAD;
+        dst += (unsigned) r;
+        hea_sz = dst - hea_buf;
+        break;
+    default:
+        assert(prog.ep_hea_action == EHA_LIT_WITH_NAME_STAT);
+        *dst = 0x40
+               | (((flags & LQEF_NO_INDEX) > 0) << 5)
+               | 0x10
+               ;
+        dst = lsqpack_enc_int(dst, hea_buf_end, ef.ef_entry_id, 4);
+        if (dst <= hea_buf)
+            return LQES_NOBUF_HEAD;
+        r = lsqpack_enc_enc_str(7, dst, hea_buf_end - dst,
+                                (const unsigned char *) value, value_len);
+        if (r < 0)
+            return LQES_NOBUF_HEAD;
+        dst += (unsigned) r;
+        hea_sz = dst - hea_buf;
+        break;
+    }
+
+    switch (prog.ep_tab_action)
+    {
+    case ETA_NEW:
+        new_entry = lsqpack_enc_push_entry(enc, name, name_len, value,
+                                                                    value_len);
+        if (!new_entry)
+        {   /* Push can only fail due to inability to allocate memory.
+             * In this case, fall back on encoding without indexing.
+             */
+            index = 0;
+            goto restart;
+        }
+        if (prog.ep_flags & EPF_REF_NEW)
+        {
+            ++new_entry->ete_n_reffd;
+            assert(new_entry->ete_id > enc->qpe_cur_header.hinfo.qhi_max_id);
+            enc->qpe_cur_header.hinfo.qhi_max_id = new_entry->ete_id;
+            ++enc->qpe_cur_header.n_risked;
+            if (enc->qpe_cur_header.hinfo.qhi_min_id == 0
+                    || enc->qpe_cur_header.hinfo.qhi_min_id > new_entry->ete_id)
+                enc->qpe_cur_header.hinfo.qhi_min_id = new_entry->ete_id;
+        }
+        break;
+    default:
+        assert(prog.ep_tab_action == ETA_NOOP);
+        break;
+    }
+
+    if (prog.ep_flags & EPF_REF_FOUND)
+    {
+        assert(ef.ef_table_type == TT_DYNAMIC);
+        ++ef.ef_entry->ete_n_reffd;
+        enc->qpe_cur_header.n_risked += enc->qpe_max_acked_id < ef.ef_entry_id;
+        if (enc->qpe_cur_header.hinfo.qhi_min_id == 0
+                || enc->qpe_cur_header.hinfo.qhi_min_id > ef.ef_entry_id)
+            enc->qpe_cur_header.hinfo.qhi_min_id = ef.ef_entry_id;
+        if (enc->qpe_cur_header.hinfo.qhi_max_id == 0
+                || enc->qpe_cur_header.hinfo.qhi_max_id < ef.ef_entry_id)
+            enc->qpe_cur_header.hinfo.qhi_max_id = ef.ef_entry_id;
+    }
+
+    *enc_sz_p = enc_sz;
+    *hea_sz_p = hea_sz;
+    return LQES_OK;
+}
+
+
+void
+lsqpack_enc_set_max_capacity (struct lsqpack_enc *enc, unsigned max_capacity)
+{
+    enc->qpe_max_capacity = max_capacity;
+    qenc_remove_overflow_entries(enc);
+}
+
+
+static int
+enc_proc_header_ack (struct lsqpack_enc *enc, uint64_t stream_id)
+{
+    if (stream_id > MAX_QUIC_STREAM_ID)
+        return -1;
+    return -1;  /* TODO */
+}
+
+
+static int
+enc_proc_table_synch (struct lsqpack_enc *enc, uint64_t abs_id)
+{
+    if (abs_id > LSQPACK_MAX_ABS_ID)
+        return -1;
+    return -1;  /* TODO */
+}
+
+
+static int
+enc_proc_stream_cancel (struct lsqpack_enc *enc, uint64_t stream_id)
+{
+    if (stream_id > MAX_QUIC_STREAM_ID)
+        return -1;
+    return -1;  /* TODO */
+}
+
+
+/* Assumption: we have at least one byte to work with */
+/* Return value:
+ *  0   OK
+ *  -1  Out of input
+ *  -2  Value cannot be represented as 64-bit integer (overflow)
+ */
+int
+lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
+                   unsigned prefix_bits, uint64_t *value_p,
+                   struct lsqpack_dec_int_state *state)
+{
+    const unsigned char *const orig_src = *src_p;
+    const unsigned char *src;
+    unsigned char prefix_max;
+    unsigned M, nread;
+    uint64_t val, B;
+
+    src = *src_p;
+
+    if (state->resume)
+    {
+        val = state->val;
+        M = state->M;
+        goto resume;
+    }
+
+    prefix_max = (1 << prefix_bits) - 1;
+    val = *src++;
+    val &= prefix_max;
+
+    if (val < prefix_max)
+    {
+        *src_p = src;
+        *value_p = val;
+        return 0;
+    }
+
+    M = 0;
+    do
+    {
+        if (src < src_end)
+        {
+  resume:   B = *src++;
+            val = val + ((B & 0x7f) << M);
+            M += 7;
+        }
+        else
+        {
+            nread = (state->resume ? state->nread : 0) + (src - orig_src);
+            if (nread < LSQPACK_UINT64_ENC_SZ)
+            {
+                state->val = val;
+                state->M = M;
+                state->nread = nread;
+                state->resume = 1;
+                return -1;
+            }
+            else
+                return -2;
+        }
+    }
+    while (B & 0x80);
+
+    if (M <= 63 || (M == 70 && src[-1] <= 1 && (val & (1ull << 63))))
+    {
+        *src_p = src;
+        *value_p = val;
+        return 0;
+    }
+    else
+        return -2;
+}
+
+
+
+
+int
+lsqpack_enc_decoder_in (struct lsqpack_enc *enc,
+                                    const unsigned char *buf, size_t buf_sz)
+{
+    const unsigned char *const end = buf + buf_sz;
+    uint64_t val;
+    int r;
+    unsigned prefix_bits = -1;  /* This can be any value in a resumed call
+                                 * to the integer decoder -- it is only
+                                 * used in the first call.
+                                 */
+
+    while (buf < end)
+    {
+        switch (enc->qpe_dec_stream_state.dec_int_state.resume)
+        {
+        case 0:
+            if (buf[0] & 0x80)              /* Header ACK */
+            {
+                prefix_bits = 7;
+                enc->qpe_dec_stream_state.handler = enc_proc_header_ack;
+            }
+            else if ((buf[0] & 0xC) == 0)   /* Table State Synchronize */
+            {
+                prefix_bits = 6;
+                enc->qpe_dec_stream_state.handler = enc_proc_table_synch;
+            }
+            else                            /* Stream Cancellation */
+            {
+                assert((buf[0] & 0xC) == 0x40);
+                prefix_bits = 6;
+                enc->qpe_dec_stream_state.handler = enc_proc_stream_cancel;
+            }
+            /* fall through */
+        case 1:
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &val,
+                                &enc->qpe_dec_stream_state.dec_int_state);
+            if (r == 0)
+            {
+                r = enc->qpe_dec_stream_state.handler(enc, val);
+                if (r != 0)
+                    return -1;
+                enc->qpe_dec_stream_state.dec_int_state.resume = 0;
+            }
+            else if (r == -1)
+            {
+                enc->qpe_dec_stream_state.dec_int_state.resume = 1;
+                return 0;
+            }
+            else
+                return -1;
+            break;
+        }
+    }
+
+    return 0;
+}
+
+
+/* Dynamic table entry: */
+struct lsqpack_dec_table_entry
+{
+    unsigned    dte_name_len;
+    unsigned    dte_val_len;
+    unsigned    dte_refcnt;
+    char        dte_buf[0];     /* Contains both name and value */
+};
+
+#define DTE_NAME(dte) ((dte)->dte_buf)
+#define DTE_VALUE(dte) (&(dte)->dte_buf[(dte)->dte_name_len])
+#define DTE_SIZE(dte) ENTRY_COST((dte)->dte_name_len, (dte)->dte_val_len)
+
+enum
+{
+    HPACK_HUFFMAN_FLAG_ACCEPTED = 0x01,
+    HPACK_HUFFMAN_FLAG_SYM = 0x02,
+    HPACK_HUFFMAN_FLAG_FAIL = 0x04,
+};
+
+#define lsqpack_arr_init(a) do {                                        \
+    memset((a), 0, sizeof(*(a)));                                       \
+} while (0)
+
+#define lsqpack_arr_cleanup(a) do {                                     \
+    free((a)->els);                                                     \
+    memset((a), 0, sizeof(*(a)));                                       \
+} while (0)
+
+#define lsqpack_arr_get(a, i) (                                         \
+    assert((i) < (a)->nelem),                                           \
+    (a)->els[(a)->off + (i)]                                            \
+)
+
+#define lsqpack_arr_shift(a) (                                          \
+    assert((a)->nelem > 0),                                             \
+    (a)->nelem -= 1,                                                    \
+    (a)->els[(a)->off++]                                                \
+)
+
+#define lsqpack_arr_pop(a) (                                            \
+    assert((a)->nelem > 0),                                             \
+    (a)->nelem -= 1,                                                    \
+    (a)->els[(a)->off + (a)->nelem]                                     \
+)
+
+#define lsqpack_arr_count(a) (+(a)->nelem)
+
+static int
+lsqpack_arr_push (struct lsqpack_arr *arr, uintptr_t val)
+{
+    uintptr_t *new_els;
+    unsigned n;
+
+    if (arr->off + arr->nelem < arr->nalloc)
+    {
+        arr->els[arr->off + arr->nelem] = val;
+        ++arr->nelem;
+        return 0;
+    }
+
+    if (arr->off > arr->nalloc / 2)
+    {
+        memmove(arr->els, arr->els + arr->off,
+                                        sizeof(arr->els[0]) * arr->nelem);
+        arr->off = 0;
+        arr->els[arr->nelem] = val;
+        ++arr->nelem;
+        return 0;
+    }
+
+    if (arr->nalloc)
+        n = arr->nalloc * 2;
+    else
+        n = 64;
+    new_els = malloc(n * sizeof(arr->els[0]));
+    if (!new_els)
+        return -1;
+    memcpy(new_els, arr->els + arr->off, sizeof(arr->els[0]) * arr->nelem);
+    free(arr->els);
+    arr->off = 0;
+    arr->els = new_els;
+    arr->nalloc = n;
+    arr->els[arr->off + arr->nelem] = val;
+    ++arr->nelem;
+    return 0;
+}
+
+
+static struct lsqpack_dec_table_entry *
+qdec_get_table_entry_rel (const struct lsqpack_dec *dec,
+                                            lsqpack_abs_id_t relative_idx)
+{
+    uintptr_t val;
+    unsigned id;
+
+    if (relative_idx < lsqpack_arr_count(&dec->qpd_dyn_table))
+    {
+        id = lsqpack_arr_count(&dec->qpd_dyn_table) - 1 - relative_idx;
+        val = lsqpack_arr_get(&dec->qpd_dyn_table, id);
+        return (struct lsqpack_dec_table_entry *) val;
+    }
+    else
+        return NULL;
+}
+
+
+static struct lsqpack_dec_table_entry *
+qdec_get_table_entry_abs (const struct lsqpack_dec *dec,
+                                                lsqpack_abs_id_t abs_idx)
+{
+    uintptr_t val;
+    unsigned id;
+
+    if (abs_idx > dec->qpd_del_count && abs_idx <= dec->qpd_ins_count)
+    {
+        id = abs_idx - dec->qpd_del_count - 1;
+        assert(id < lsqpack_arr_count(&dec->qpd_dyn_table));
+        val = lsqpack_arr_get(&dec->qpd_dyn_table, id);
+        return (struct lsqpack_dec_table_entry *) val;
+    }
+    else
+        return NULL;
+}
+
+
+void
+lsqpack_dec_init (struct lsqpack_dec *dec, unsigned dyn_table_size,
+    unsigned max_risked_streams,
+    lsqpack_stream_write_f write_decoder, void *decoder_stream,
+    lsqpack_stream_read_f read_header_block,
+    lsqpack_stream_wantread_f wantread_header_block,
+    void (*header_block_done)(void *, struct lsqpack_header_set *))
+{
+    memset(dec, 0, sizeof(*dec));
+    dec->qpd_max_capacity = dyn_table_size;
+    dec->qpd_cur_max_capacity = dyn_table_size;
+    dec->qpd_max_risked_streams = max_risked_streams;
+    dec->qpd_dec_stream = decoder_stream;
+    dec->qpd_write_dec = write_decoder;
+    dec->qpd_read_header_block = read_header_block;
+    dec->qpd_wantread_header_block = wantread_header_block;
+    dec->qpd_header_block_done = header_block_done;
+    TAILQ_INIT(&dec->qpd_header_sets);
+    lsqpack_arr_init(&dec->qpd_dyn_table);
+}
+
+
+static void
+qdec_decref_entry (struct lsqpack_dec_table_entry *entry)
+{
+    --entry->dte_refcnt;
+    if (0 == entry->dte_refcnt)
+        free(entry);
+}
+
+
+enum {
+    DEI_NEXT_INST,
+    DEI_WINR_READ_NAME_IDX,
+    DEI_WINR_BEGIN_READ_VAL_LEN,
+    DEI_WINR_READ_VAL_LEN,
+    DEI_WINR_READ_VALUE_PLAIN,
+    DEI_WINR_READ_VALUE_HUFFMAN,
+    DEI_DUP_READ_IDX,
+    DEI_SIZE_UPD_READ_IDX,
+    DEI_WONR_READ_NAME_LEN,
+    DEI_WONR_READ_NAME_HUFFMAN,
+    DEI_WONR_READ_NAME_PLAIN,
+    DEI_WONR_BEGIN_READ_VAL_LEN,
+    DEI_WONR_READ_VAL_LEN,
+    DEI_WONR_READ_VALUE_HUFFMAN,
+    DEI_WONR_READ_VALUE_PLAIN,
+};
+
+
+void
+lsqpack_dec_cleanup (struct lsqpack_dec *dec)
+{
+    uintptr_t val;
+
+    /* TODO: free blocked streams */
+
+    /* TODO: mark unreturned header sets */
+
+    if (dec->qpd_enc_state.resume >= DEI_WINR_READ_NAME_IDX
+            && dec->qpd_enc_state.resume <= DEI_WINR_READ_VALUE_HUFFMAN)
+    {
+        if (dec->qpd_enc_state.ctx_u.with_namref.entry)
+            free(dec->qpd_enc_state.ctx_u.with_namref.entry);
+    }
+    else if (dec->qpd_enc_state.resume >= DEI_WONR_READ_NAME_LEN
+            && dec->qpd_enc_state.resume <= DEI_WONR_READ_VALUE_PLAIN)
+    {
+        if (dec->qpd_enc_state.ctx_u.wo_namref.entry)
+            free(dec->qpd_enc_state.ctx_u.wo_namref.entry);
+    }
+
+    while (lsqpack_arr_count(&dec->qpd_dyn_table) > 0)
+    {
+        val = lsqpack_arr_pop(&dec->qpd_dyn_table);
+        qdec_decref_entry((struct lsqpack_dec_table_entry *) val);
+    }
+    lsqpack_arr_cleanup(&dec->qpd_dyn_table);
+}
+
+
+struct header_block_read_ctx
+{
+    TAILQ_ENTRY(header_block_read_ctx)  hbrc_next;
+    void                               *hbrc_stream;
+    size_t                              hbrc_size;
+    lsqpack_abs_id_t                    hbrc_largest_ref;   /* Parsed from prefix */
+    lsqpack_abs_id_t                    hbrc_base_index;    /* Parsed from prefix */
+
+    /* The header set that is returned to the user is built up one entry
+     * at a time.
+     */
+    struct lsqpack_header_set          *hbrc_header_set;
+    unsigned                            hbrc_nalloced_headers;
+
+    /* There are two parsing phases: reading the prefix and reading the
+     * instruction stream.
+     */
+    enum read_header_status           (*hbrc_parse) (struct lsqpack_dec *,
+            struct header_block_read_ctx *, const unsigned char *, size_t);
+
+    enum {
+        HBRC_HAVE_LARGEST_REF   = 1 << 0,
+    }                                   hbrc_flags;
+
+    /* First we read the largest reference to see whether the header block
+     * is blocked.  hbrc_lr_min_sz is the minimum number of bytes that a
+     * valid largest reference could possibly be expressed in. hbrc_lr_nread
+     * is the number of bytes read so far.
+     */
+    unsigned char                       hbrc_lr_min_sz;
+    unsigned char                       hbrc_lr_nread;
+
+    union {
+        struct {
+            enum {
+                PREFIX_STATE_BEGIN_READING_LARGEST_REF,
+                PREFIX_STATE_READ_LARGEST_REF,
+                PREFIX_STATE_BEGIN_READING_BASE_IDX,
+                PREFIX_STATE_READ_DELTA_BASE_IDX,
+            }                                               state;
+            union {
+                /* Largest reference */
+                struct {
+                    struct lsqpack_dec_int_state    dec_int_state;
+                    uint64_t                        value;
+                }                                               lar_ref;
+                /* Delta base index */
+                struct {
+                    struct lsqpack_dec_int_state    dec_int_state;
+                    uint64_t                        value;
+                    int                             sign;
+                }                                               base_idx;
+            }                                               u;
+        }                                       prefix;
+        struct {
+            enum {
+                DATA_STATE_NEXT_INSTRUCTION,
+                DATA_STATE_READ_IHF_IDX,
+                DATA_STATE_READ_IPBI_IDX,
+                DATA_STATE_READ_LFINR_IDX,
+                DATA_STATE_BEGIN_READ_LFINR_VAL_LEN,
+                DATA_STATE_READ_LFINR_VAL_LEN,
+                DATA_STATE_LFINR_READ_VAL_HUFFMAN,
+                DATA_STATE_LFINR_READ_VAL_PLAIN,
+            }                                               state;
+
+            union
+            {
+                /* Indexed Header Field */
+                struct {
+                    struct lsqpack_dec_int_state    dec_int_state;
+                    uint64_t                        value;
+                    int                             is_static;
+                }                                           ihf;
+
+                /* Literal Header Field With Name Reference */
+                struct {
+                    struct lsqpack_dec_int_state    dec_int_state;
+                    struct lsqpack_huff_decode_state
+                                                    dec_huff_state;
+                    union {
+                        unsigned                        static_idx;
+                        struct lsqpack_dec_table_entry *dyn_entry;
+                    }                               name_ref;
+                    char                           *value;
+                    unsigned                        nalloc;
+                    unsigned                        val_len;
+                    unsigned                        val_off;
+                    unsigned                        nread;
+                    int                             is_static;
+                    int                             is_never;
+                    int                             is_huffman;
+                }                                           lfinr;
+
+                /* Indexed Header Field With Post-Base Index */
+                struct {
+                    struct lsqpack_dec_int_state    dec_int_state;
+                    uint64_t                        value;
+                }                                           ipbi;
+            }                                               u;
+        }                                       data;
+    }                                   hbrc_parse_ctx_u;
+};
+
+
+struct header_internal
+{
+    struct lsqpack_header            hi_uhead;
+    struct lsqpack_dec_table_entry  *hi_entry;
+    enum {
+        HI_OWN_NAME     = 1 << 0,
+        HI_OWN_VALUE    = 1 << 1,
+    }                                hi_flags;
+};
+
+
+static struct header_internal *
+allocate_hint (struct header_block_read_ctx *read_ctx)
+{
+    struct lsqpack_header **headers;
+    struct header_internal *hint;
+    unsigned idx;
+
+    if (!read_ctx->hbrc_header_set)
+    {
+        read_ctx->hbrc_header_set
+                            = calloc(1, sizeof(*read_ctx->hbrc_header_set));
+        if (!read_ctx->hbrc_header_set)
+            return NULL;
+    }
+
+    if (read_ctx->hbrc_header_set->qhs_count >= read_ctx->hbrc_nalloced_headers)
+    {
+        if (read_ctx->hbrc_nalloced_headers)
+            read_ctx->hbrc_nalloced_headers *= 2;
+        else
+            read_ctx->hbrc_nalloced_headers = 4;
+        headers =
+            realloc(read_ctx->hbrc_header_set->qhs_headers,
+                read_ctx->hbrc_nalloced_headers
+                    * sizeof(read_ctx->hbrc_header_set->qhs_headers[0]));
+        if (headers)
+            read_ctx->hbrc_header_set->qhs_headers = headers;
+        else
+            return NULL;
+    }
+
+    hint = calloc(1, sizeof(*hint));
+    if (!hint)
+        return NULL;
+
+    idx = read_ctx->hbrc_header_set->qhs_count++;
+    read_ctx->hbrc_header_set->qhs_headers[idx] = &hint->hi_uhead;
+    return hint;
+}
+
+
+static int
+hset_add_static_entry (struct lsqpack_dec *dec,
+                    struct header_block_read_ctx *read_ctx, uint64_t idx)
+{
+    struct header_internal *hint;
+
+    if (idx > 0 && idx <= QPACK_STATIC_TABLE_SIZE
+                                    && (hint = allocate_hint(read_ctx)))
+    {
+        hint->hi_uhead.qh_name      = static_table[idx - 1].name;
+        hint->hi_uhead.qh_value     = static_table[idx - 1].val;
+        hint->hi_uhead.qh_name_len  = static_table[idx - 1].name_len;
+        hint->hi_uhead.qh_value_len = static_table[idx - 1].val_len;
+        hint->hi_uhead.qh_flags     = 0;
+        return 0;
+    }
+    else
+        return -1;
+}
+
+
+static int
+hset_add_dynamic_entry (struct lsqpack_dec *dec,
+                    struct header_block_read_ctx *read_ctx, uint64_t idx)
+{
+    struct lsqpack_dec_table_entry *entry;
+    struct header_internal *hint;
+
+    if ((entry = qdec_get_table_entry_abs(dec, idx))
+                                    && (hint = allocate_hint(read_ctx)))
+    {
+        hint->hi_uhead.qh_name      = DTE_NAME(entry);
+        hint->hi_uhead.qh_value     = DTE_VALUE(entry);
+        hint->hi_uhead.qh_name_len  = entry->dte_name_len;
+        hint->hi_uhead.qh_value_len = entry->dte_val_len;
+        hint->hi_uhead.qh_flags     = 0;
+        hint->hi_entry = entry;
+        ++entry->dte_refcnt;
+        return 0;
+    }
+    else
+        return -1;
+}
+
+
+static int
+hset_add_static_nameref_entry (struct header_block_read_ctx *read_ctx,
+                unsigned idx, char *value, unsigned val_len, int is_never)
+{
+    struct header_internal *hint;
+
+    if ((hint = allocate_hint(read_ctx)))
+    {
+        hint->hi_uhead.qh_name      = static_table[ idx - 1 ].name;
+        hint->hi_uhead.qh_name_len  = static_table[ idx - 1 ].name_len;
+        hint->hi_uhead.qh_value     = value;
+        hint->hi_uhead.qh_value_len = val_len;
+        if (is_never)
+            hint->hi_uhead.qh_flags = QH_NEVER;
+        else
+            hint->hi_uhead.qh_flags = 0;
+        hint->hi_flags = HI_OWN_VALUE;
+        return 0;
+    }
+    else
+        return -1;
+}
+
+
+static int
+hset_add_dynamic_nameref_entry (struct header_block_read_ctx *read_ctx,
+                struct lsqpack_dec_table_entry *entry, char *value,
+                unsigned val_len, int is_never)
+{
+    struct header_internal *hint;
+
+    if ((hint = allocate_hint(read_ctx)))
+    {
+        hint->hi_uhead.qh_name      = DTE_NAME(entry);
+        hint->hi_uhead.qh_name_len  = entry->dte_name_len;
+        hint->hi_uhead.qh_value     = value;
+        hint->hi_uhead.qh_value_len = val_len;
+        if (is_never)
+            hint->hi_uhead.qh_flags = QH_NEVER;
+        else
+            hint->hi_uhead.qh_flags = 0;
+        hint->hi_flags = HI_OWN_VALUE;
+        ++entry->dte_refcnt;
+        return 0;
+    }
+    else
+        return -1;
+}
+
+
+struct decode_el
+{
+    uint8_t state;
+    uint8_t flags;
+    uint8_t sym;
+};
+
+static const struct decode_el decode_tables[256][16];
+
+static unsigned char *
+qdec_huff_dec4bits (uint8_t src_4bits, unsigned char *dst,
+                                        struct lsqpack_decode_status *status)
+{
+    const struct decode_el cur_dec_code =
+        decode_tables[status->state][src_4bits];
+    if (cur_dec_code.flags & HPACK_HUFFMAN_FLAG_FAIL) {
+        return NULL; //failed
+    }
+    if (cur_dec_code.flags & HPACK_HUFFMAN_FLAG_SYM)
+    {
+        *dst = cur_dec_code.sym;
+        dst++;
+    }
+
+    status->state = cur_dec_code.state;
+    status->eos = ((cur_dec_code.flags & HPACK_HUFFMAN_FLAG_ACCEPTED) != 0);
+    return dst;
+}
+
+
+struct huff_decode_retval
+{
+    enum
+    {
+        HUFF_DEC_OK,
+        HUFF_DEC_END_SRC,
+        HUFF_DEC_END_DST,
+        HUFF_DEC_ERROR,
+    }                       status;
+    unsigned                n_dst;
+    unsigned                n_src;
+};
+
+
+struct huff_decode_retval
+lsqpack_huff_decode (const unsigned char *src, int src_len,
+            unsigned char *dst, int dst_len,
+            struct lsqpack_huff_decode_state *state, int final)
+{
+    const unsigned char *p_src = src;
+    const unsigned char *const src_end = src + src_len;
+    unsigned char *p_dst = dst;
+    unsigned char *dst_end = dst + dst_len;
+
+    switch (state->resume)
+    {
+    case 1: goto ck1;
+    case 2: goto ck2;
+    case 3: goto ck3;
+    }
+
+    state->status.state = 0;
+    state->status.eos   = 1;
+
+  ck1:
+    while (p_src != src_end)
+    {
+        if (p_dst == dst_end)
+        {
+            state->resume = 2;
+            return (struct huff_decode_retval) {
+                            .status = HUFF_DEC_END_DST,
+                            .n_dst  = dst_len,
+                            .n_src  = p_src - src,
+            };
+        }
+  ck2:
+        if ((p_dst = qdec_huff_dec4bits(*p_src >> 4, p_dst, &state->status))
+                == NULL)
+            return (struct huff_decode_retval) { .status = HUFF_DEC_ERROR, };
+        if (p_dst == dst_end)
+        {
+            state->resume = 3;
+            return (struct huff_decode_retval) {
+                            .status = HUFF_DEC_END_DST,
+                            .n_dst  = dst_len,
+                            .n_src  = p_src - src,
+            };
+        }
+  ck3:
+        if ((p_dst = qdec_huff_dec4bits(*p_src & 0xf, p_dst, &state->status))
+                == NULL)
+            return (struct huff_decode_retval) { .status = HUFF_DEC_ERROR, };
+        ++p_src;
+    }
+
+    if (final)
+        return (struct huff_decode_retval) {
+                    .status = state->status.eos ? HUFF_DEC_OK : HUFF_DEC_ERROR,
+                    .n_dst  = p_dst - dst,
+                    .n_src  = p_src - src,
+        };
+    else
+    {
+        state->resume = 1;
+        return (struct huff_decode_retval) {
+                    .status = HUFF_DEC_END_SRC,
+                    .n_dst  = p_dst - dst,
+                    .n_src  = p_src - src,
+        };
+    }
+}
+
+
+enum read_header_status
+{
+    RHS_DONE,
+    RHS_BLOCKED,
+    RHS_NEED,
+    RHS_ERROR,
+};
+
+
+static enum read_header_status
+parse_header_data (struct lsqpack_dec *dec,
+        struct header_block_read_ctx *read_ctx, const unsigned char *buf,
+                                                                size_t bufsz)
+{
+    const unsigned char *const end = buf + bufsz;
+    struct huff_decode_retval hdr;
+    uint64_t value;
+    size_t size;
+    char *str;
+    unsigned prefix_bits = -1;
+    int r;
+
+#define IHF read_ctx->hbrc_parse_ctx_u.data.u.ihf
+#define IPBI read_ctx->hbrc_parse_ctx_u.data.u.ipbi
+#define LFINR read_ctx->hbrc_parse_ctx_u.data.u.lfinr
+
+    while (buf < end)
+    {
+        switch (read_ctx->hbrc_parse_ctx_u.data.state)
+        {
+        case DATA_STATE_NEXT_INSTRUCTION:
+            if (buf[0] & 0x80)
+            {
+                prefix_bits = 6;
+                IHF.is_static = buf[0] & 0x40;
+                IHF.dec_int_state.resume = 0;
+                read_ctx->hbrc_parse_ctx_u.data.state
+                                                = DATA_STATE_READ_IHF_IDX;
+                goto data_state_read_ihf_idx;
+            }
+            /* Literal Header Field With Name Reference */
+            else if (buf[0] & 0x40)
+            {
+                prefix_bits = 4;
+                LFINR.is_never = buf[0] & 0x20;
+                LFINR.is_static = buf[0] & 0x10;
+                LFINR.dec_int_state.resume = 0;
+                LFINR.value = NULL;
+                LFINR.name_ref.dyn_entry = NULL;
+                read_ctx->hbrc_parse_ctx_u.data.state
+                                                = DATA_STATE_READ_LFINR_IDX;
+                goto data_state_read_lfinr_idx;
+            }
+            /* Literal Header Field Without Name Reference */
+            else if (buf[0] & 0x20)
+            {
+                assert(0);  /* TODO */
+            }
+            /* Indexed Header Field With Post-Base Index */
+            else if (buf[0] & 0x10)
+            {
+                prefix_bits = 4;
+                IPBI.dec_int_state.resume = 0;
+                read_ctx->hbrc_parse_ctx_u.data.state
+                                                = DATA_STATE_READ_IPBI_IDX;
+                goto data_state_read_ipbi_idx;
+            }
+            /* Literal Header Field With Post-Base Name Reference */
+            else
+            {
+                assert(0);  /* TODO */
+            }
+        case DATA_STATE_READ_IHF_IDX:
+  data_state_read_ihf_idx:
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &IHF.value,
+                                                        &IHF.dec_int_state);
+            if (r == 0)
+            {
+                if (IHF.is_static)
+                    r = hset_add_static_entry(dec, read_ctx, IHF.value);
+                else
+                    r = hset_add_dynamic_entry(dec, read_ctx, IHF.value);
+                if (r == 0)
+                {
+                    read_ctx->hbrc_parse_ctx_u.data.state
+                                            = DATA_STATE_NEXT_INSTRUCTION;
+                    break;
+                }
+                else
+                    return RHS_ERROR;
+            }
+            else if (r == -1)
+                return RHS_NEED;
+            else
+                return RHS_ERROR;
+#undef IHF
+        case DATA_STATE_READ_LFINR_IDX:
+  data_state_read_lfinr_idx:
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &value,
+                                                        &LFINR.dec_int_state);
+            if (r == 0)
+            {
+                if (LFINR.is_static)
+                {
+                    if (value > 0 && value <= QPACK_STATIC_TABLE_SIZE)
+                        LFINR.name_ref.static_idx = value;
+                    else
+                        return RHS_ERROR;
+                }
+                else
+                {
+                    LFINR.name_ref.dyn_entry
+                        = qdec_get_table_entry_abs(dec,
+                            read_ctx->hbrc_base_index - value);
+                    if (LFINR.name_ref.dyn_entry)
+                        ++LFINR.name_ref.dyn_entry->dte_refcnt;
+                    else
+                        return RHS_ERROR;
+                }
+                read_ctx->hbrc_parse_ctx_u.data.state
+                                    = DATA_STATE_BEGIN_READ_LFINR_VAL_LEN;
+                break;
+            }
+            else if (r == -1)
+                return RHS_NEED;
+            else
+                return RHS_ERROR;
+        case DATA_STATE_BEGIN_READ_LFINR_VAL_LEN:
+            LFINR.is_huffman = buf[0] & 0x80;
+            prefix_bits = 7;
+            LFINR.dec_int_state.resume = 0;
+            read_ctx->hbrc_parse_ctx_u.data.state
+                                    = DATA_STATE_BEGIN_READ_LFINR_VAL_LEN;
+            /* Fall-through */
+        case DATA_STATE_READ_LFINR_VAL_LEN:
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &value,
+                                                        &LFINR.dec_int_state);
+            if (r == 0)
+            {
+                if (LFINR.is_huffman)
+                {
+                    LFINR.nalloc = value + value / 2;
+                    LFINR.dec_huff_state.resume = 0;
+                    read_ctx->hbrc_parse_ctx_u.data.state
+                                        = DATA_STATE_LFINR_READ_VAL_HUFFMAN;
+                }
+                else
+                {
+                    LFINR.nalloc = value;
+                    read_ctx->hbrc_parse_ctx_u.data.state
+                                        = DATA_STATE_LFINR_READ_VAL_PLAIN;
+                }
+                LFINR.val_len = value;
+                LFINR.nread = 0;
+                LFINR.val_off = 0;
+                LFINR.value = malloc(LFINR.nalloc);
+                if (LFINR.value)
+                    break;
+                else
+                    return RHS_ERROR;
+            }
+            else if (r == -1)
+                return RHS_NEED;
+            else
+                return RHS_ERROR;
+        case DATA_STATE_LFINR_READ_VAL_HUFFMAN:
+            size = MIN((unsigned) (end - buf), LFINR.val_len - LFINR.nread);
+            hdr = lsqpack_huff_decode(buf, size,
+                    (unsigned char *) LFINR.value + LFINR.val_off,
+                    LFINR.nalloc - LFINR.val_off,
+                    &LFINR.dec_huff_state, LFINR.nread + size == LFINR.val_len);
+            switch (hdr.status)
+            {
+            case HUFF_DEC_OK:
+                buf += hdr.n_src;
+                LFINR.val_off += hdr.n_dst;
+                read_ctx->hbrc_parse_ctx_u.data.state
+                                    = DATA_STATE_NEXT_INSTRUCTION;
+                if (LFINR.is_static)
+                    r = hset_add_static_nameref_entry(read_ctx,
+                            LFINR.name_ref.static_idx, LFINR.value,
+                            LFINR.val_off, LFINR.is_never);
+                else
+                {
+                    r = hset_add_dynamic_nameref_entry(read_ctx,
+                            LFINR.name_ref.dyn_entry, LFINR.value,
+                            LFINR.val_off, LFINR.is_never);
+                    qdec_decref_entry(LFINR.name_ref.dyn_entry);
+                    LFINR.name_ref.dyn_entry = NULL;
+                }
+                if (r == 0)
+                {
+                    LFINR.value = NULL;
+                    break;
+                }
+                else
+                    return RHS_ERROR;
+            case HUFF_DEC_END_SRC:
+                buf += hdr.n_src;
+                LFINR.nread += hdr.n_src;
+                LFINR.val_off += hdr.n_dst;
+                break;
+            case HUFF_DEC_END_DST:
+                LFINR.nalloc *= 2;
+                str = realloc(LFINR.value, LFINR.nalloc);
+                if (!str)
+                    return RHS_ERROR;
+                LFINR.value = str;
+                buf += hdr.n_src;
+                LFINR.nread += hdr.n_src;
+                LFINR.val_off += hdr.n_dst;
+                break;
+            default:
+                return RHS_ERROR;
+            }
+            break;
+#undef LFINR
+        case DATA_STATE_READ_IPBI_IDX:
+  data_state_read_ipbi_idx:
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &IPBI.value,
+                                                        &IPBI.dec_int_state);
+            if (r == 0)
+            {
+                r = hset_add_dynamic_entry(dec, read_ctx,
+                                        IPBI.value + read_ctx->hbrc_base_index);
+                if (r == 0)
+                {
+                    read_ctx->hbrc_parse_ctx_u.data.state
+                                            = DATA_STATE_NEXT_INSTRUCTION;
+                    break;
+                }
+                else
+                    return RHS_ERROR;
+            }
+            else if (r == -1)
+                return RHS_NEED;
+            else
+                return RHS_ERROR;
+#undef IPBI
+        default:
+            assert(0);
+            return RHS_ERROR;
+        }
+    }
+
+    if (read_ctx->hbrc_size == 0)
+        return RHS_DONE;
+    else
+        return RHS_ERROR;
+
+}
+
+
+static enum read_header_status
+parse_header_prefix (struct lsqpack_dec *dec,
+        struct header_block_read_ctx *read_ctx, const unsigned char *buf,
+                                                                size_t bufsz)
+{
+    const unsigned char *const end = buf + bufsz;
+    unsigned prefix_bits = -1;
+    int r;
+
+#define LR read_ctx->hbrc_parse_ctx_u.prefix.u.lar_ref
+#define BI read_ctx->hbrc_parse_ctx_u.prefix.u.base_idx
+
+    while (buf < end)
+    {
+        switch (read_ctx->hbrc_parse_ctx_u.prefix.state)
+        {
+        case PREFIX_STATE_BEGIN_READING_LARGEST_REF:
+            prefix_bits = 8;
+            BI.dec_int_state.resume = 0;
+            read_ctx->hbrc_parse_ctx_u.prefix.state =
+                                            PREFIX_STATE_READ_LARGEST_REF;
+            /* Fall-through */
+        case PREFIX_STATE_READ_LARGEST_REF:
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &LR.value,
+                                                        &LR.dec_int_state);
+            if (r == 0)
+            {
+                read_ctx->hbrc_flags |= HBRC_HAVE_LARGEST_REF;
+                read_ctx->hbrc_largest_ref = LR.value;
+                read_ctx->hbrc_parse_ctx_u.prefix.state
+                                        = PREFIX_STATE_BEGIN_READING_BASE_IDX;
+                if (LR.value > dec->qpd_ins_count)
+                    return RHS_BLOCKED;
+                else
+                    break;
+            }
+            else if (r == -1)
+            {
+                read_ctx->hbrc_lr_nread += buf - end;
+                if (read_ctx->hbrc_lr_nread < LSQPACK_UINT64_ENC_SZ)
+                    return RHS_NEED;
+                else
+                    return RHS_ERROR;
+            }
+            else
+                return RHS_ERROR;
+        case PREFIX_STATE_BEGIN_READING_BASE_IDX:
+            BI.sign = (buf[0] & 0x80) > 0;
+            BI.dec_int_state.resume = 0;
+            prefix_bits = 7;
+            read_ctx->hbrc_parse_ctx_u.prefix.state =
+                                            PREFIX_STATE_READ_DELTA_BASE_IDX;
+            /* Fall-through */
+        case PREFIX_STATE_READ_DELTA_BASE_IDX:
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &BI.value,
+                                                        &BI.dec_int_state);
+            if (r == 0)
+            {
+                if (BI.sign)
+                    read_ctx->hbrc_base_index = read_ctx->hbrc_largest_ref
+                                                                    - BI.value;
+                else
+                    read_ctx->hbrc_base_index = read_ctx->hbrc_largest_ref
+                                                                    + BI.value;
+                read_ctx->hbrc_parse = parse_header_data;
+                read_ctx->hbrc_parse_ctx_u.data.state
+                                                = DATA_STATE_NEXT_INSTRUCTION;
+                if (end - buf)
+                    return parse_header_data(dec, read_ctx, buf, end - buf);
+                else
+                    return RHS_NEED;
+            }
+            else if (r == -1)
+            {
+                return RHS_NEED;
+            }
+            else
+                return RHS_ERROR;
+        default:
+            assert(0);
+            return RHS_ERROR;
+        }
+    }
+
+#undef LR
+#undef BI
+
+    if (read_ctx->hbrc_size > 0)
+        return RHS_NEED;
+    else
+        return RHS_ERROR;
+}
+
+
+static size_t
+max_to_read (const struct header_block_read_ctx *read_ctx)
+{
+    size_t sz;
+
+    if (read_ctx->hbrc_flags & HBRC_HAVE_LARGEST_REF)
+        return read_ctx->hbrc_size;
+    else
+    {
+        if (read_ctx->hbrc_lr_min_sz > read_ctx->hbrc_lr_nread)
+            sz = read_ctx->hbrc_lr_min_sz - read_ctx->hbrc_lr_nread;
+        else
+            sz = 1;
+        return MIN(sz, read_ctx->hbrc_size);
+    }
+}
+
+
+static enum read_header_status
+qdec_read_header (struct lsqpack_dec *dec,
+                                    struct header_block_read_ctx *read_ctx)
+{
+    const unsigned char *buf;
+    enum read_header_status st;
+    size_t n_to_read;
+    ssize_t buf_sz;
+
+    while (read_ctx->hbrc_size > 0)
+    {
+        n_to_read = max_to_read(read_ctx);
+        buf_sz = dec->qpd_read_header_block(read_ctx->hbrc_stream, &buf,
+                                                                    n_to_read);
+        if (buf_sz > 0)
+        {
+            read_ctx->hbrc_size -= buf_sz;
+            st = read_ctx->hbrc_parse(dec, read_ctx, buf, buf_sz);
+            if (st != RHS_NEED)
+                return st;
+        }
+        else if (buf_sz == 0)
+            return RHS_NEED;
+        else
+            return RHS_ERROR;
+    }
+
+    return RHS_DONE;
+}
+
+
+static void
+destroy_header_block_read_ctx (struct lsqpack_dec *dec,
+                        struct header_block_read_ctx *read_ctx)
+{
+    TAILQ_REMOVE(&dec->qpd_hbrcs, read_ctx, hbrc_next);
+    free(read_ctx);
+}
+
+
+static int
+save_header_block_read_ctx (struct lsqpack_dec *dec,
+                        struct header_block_read_ctx *read_ctx, int blocked)
+{
+    TAILQ_INSERT_TAIL(&dec->qpd_hbrcs, read_ctx, hbrc_next);
+    return 0;
+}
+
+
+static struct header_block_read_ctx *
+find_header_block_read_ctx (struct lsqpack_dec *dec, void *stream)
+{
+    struct header_block_read_ctx *read_ctx;
+
+    TAILQ_FOREACH(read_ctx, &dec->qpd_hbrcs, hbrc_next)
+        if (read_ctx->hbrc_stream == stream)
+            return read_ctx;
+
+    return NULL;
+}
+
+
+int
+lsqpack_dec_header_read (struct lsqpack_dec *dec, void *stream)
+{
+    struct header_block_read_ctx *read_ctx;
+    enum read_header_status st;
+
+    read_ctx = find_header_block_read_ctx(dec, stream);
+    if (read_ctx)
+    {
+        st = qdec_read_header(dec, read_ctx);
+        switch (st)
+        {
+        case RHS_DONE:
+            dec->qpd_header_block_done(read_ctx->hbrc_stream,
+                                                read_ctx->hbrc_header_set);
+            destroy_header_block_read_ctx(dec, read_ctx);
+            return 0;
+        case RHS_NEED:
+        case RHS_BLOCKED:
+            dec->qpd_wantread_header_block(read_ctx->hbrc_stream,
+                                                        st == RHS_NEED);
+            return 0;
+        default:
+            assert(st == RHS_ERROR);
+            return -1;
+        }
+    }
+    else
+        return -1;
+}
+
+
+int
+lsqpack_dec_header_in (struct lsqpack_dec *dec, void *stream,
+                                                        size_t header_size)
+{
+    enum read_header_status st;
+    struct header_block_read_ctx *read_ctx;
+    struct header_block_read_ctx read_ctx_buf = {
+        .hbrc_stream    = stream,
+        .hbrc_size      = header_size,
+        .hbrc_parse     = parse_header_prefix,
+        .hbrc_lr_min_sz = lsqpack_val2len(dec->qpd_del_count, 8),
+    };
+
+    st = qdec_read_header(dec, &read_ctx_buf);
+    switch (st)
+    {
+    case RHS_DONE:
+        dec->qpd_header_block_done(stream, read_ctx_buf.hbrc_header_set);
+        return 0;
+    case RHS_NEED:
+    case RHS_BLOCKED:
+        read_ctx = malloc(sizeof(*read_ctx));
+        if (!read_ctx)
+            return -1;
+        memcpy(read_ctx, &read_ctx_buf, sizeof(*read_ctx));
+        if (0 != save_header_block_read_ctx(dec, read_ctx, st == RHS_BLOCKED))
+        {
+            free(read_ctx);
+            return -1;
+        }
+        dec->qpd_wantread_header_block(stream, st == RHS_NEED);
+        return 0;
+    default:
+        assert(st == RHS_ERROR);
+        return -1;
+    }
+}
+
+
+static void
+qdec_drop_oldest_entry (struct lsqpack_dec *dec)
+{
+    struct lsqpack_dec_table_entry *entry;
+    entry = (void *) lsqpack_arr_shift(&dec->qpd_dyn_table);
+    dec->qpd_cur_capacity -= DTE_SIZE(entry);
+    qdec_decref_entry(entry);
+    ++dec->qpd_del_count;
+}
+
+
+static void
+qdec_remove_overflow_entries (struct lsqpack_dec *dec)
+{
+    while (dec->qpd_cur_capacity > dec->qpd_cur_max_capacity)
+        qdec_drop_oldest_entry(dec);
+}
+
+
+static void
+qdec_update_max_capacity (struct lsqpack_dec *dec, unsigned new_capacity)
+{
+    dec->qpd_cur_max_capacity = new_capacity;
+    qdec_remove_overflow_entries(dec);
+}
+
+
+static int
+lsqpack_dec_push_entry (struct lsqpack_dec *dec,
+                                        struct lsqpack_dec_table_entry *entry)
+{
+    if (0 == lsqpack_arr_push(&dec->qpd_dyn_table, (uintptr_t) entry))
+    {
+        dec->qpd_cur_capacity += DTE_SIZE(entry);
+        ++dec->qpd_ins_count;
+        qdec_remove_overflow_entries(dec);
+        return 0;
+    }
+    else
+        return -1;
+}
+
+
+int
+lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
+                                                                size_t buf_sz)
+{
+    const unsigned char *const end = buf + buf_sz;
+    struct lsqpack_dec_table_entry *entry, *new_entry;
+    struct huff_decode_retval hdr;
+    unsigned prefix_bits = -1;
+    size_t size;
+    int r;
+
+#define WINR dec->qpd_enc_state.ctx_u.with_namref
+#define WONR dec->qpd_enc_state.ctx_u.wo_namref
+#define DUPL dec->qpd_enc_state.ctx_u.duplicate
+#define TBSZ dec->qpd_enc_state.ctx_u.size_update
+
+    while (buf < end)
+    {
+        switch (dec->qpd_enc_state.resume)
+        {
+        case DEI_NEXT_INST:
+            if (buf[0] & 0x80)
+            {
+                WINR.is_static = (buf[0] & 0x40) > 0;
+                WINR.dec_int_state.resume = 0;
+                WINR.reffed_entry = NULL;
+                WINR.entry = NULL;
+                dec->qpd_enc_state.resume = DEI_WINR_READ_NAME_IDX;
+                prefix_bits = 6;
+                goto dei_winr_read_name_idx;
+            }
+            else if (buf[0] & 0x40)
+            {
+                WONR.is_huffman = (buf[0] & 0x20) > 0;
+                WONR.dec_int_state.resume = 0;
+                WONR.entry = NULL;
+                dec->qpd_enc_state.resume = DEI_WONR_READ_NAME_LEN;
+                prefix_bits = 5;
+                goto dei_wonr_read_name_idx;
+            }
+            else if (buf[0] & 0x20)
+            {
+                TBSZ.dec_int_state.resume = 0;
+                dec->qpd_enc_state.resume = DEI_SIZE_UPD_READ_IDX;
+                prefix_bits = 5;
+                goto dei_size_upd_read_idx;
+            }
+            else
+            {
+                DUPL.dec_int_state.resume = 0;
+                dec->qpd_enc_state.resume = DEI_DUP_READ_IDX;
+                prefix_bits = 5;
+                goto dei_dup_read_idx;
+            }
+        case DEI_WINR_READ_NAME_IDX:
+  dei_winr_read_name_idx:
+            r = lsqpack_dec_int(&buf, end, prefix_bits,
+                                    &WINR.name_idx, &WINR.dec_int_state);
+            if (r == 0)
+            {
+                if (WINR.is_static)
+                {
+                    if (WINR.name_idx < 1
+                                || WINR.name_idx > QPACK_STATIC_TABLE_SIZE)
+                        return -1;
+                    WINR.reffed_entry = NULL;
+                }
+                else
+                {
+                    WINR.reffed_entry = qdec_get_table_entry_rel(dec,
+                                                                WINR.name_idx);
+                    if (!WINR.reffed_entry)
+                        return -1;
+                    ++WINR.reffed_entry->dte_refcnt;
+                }
+                dec->qpd_enc_state.resume = DEI_WINR_BEGIN_READ_VAL_LEN;
+                break;
+            }
+            else if (r == -1)
+                return 0;
+            else
+                return -1;
+        case DEI_WINR_BEGIN_READ_VAL_LEN:
+            WINR.is_huffman = (buf[0] & 0x80) > 0;
+            WINR.dec_int_state.resume = 0;
+            dec->qpd_enc_state.resume = DEI_WINR_READ_VAL_LEN;
+            prefix_bits = 7;
+            /* fall-through */
+        case DEI_WINR_READ_VAL_LEN:
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &WINR.val_len,
+                                                        &WINR.dec_int_state);
+            if (r == 0)
+            {
+                if (WINR.is_static)
+                {
+                    WINR.name_len = static_table[WINR.name_idx - 1].name_len;
+                    WINR.name = static_table[WINR.name_idx - 1].name;
+                }
+                else
+                {
+                    WINR.name_len = WINR.reffed_entry->dte_name_len;
+                    WINR.name = DTE_NAME(WINR.reffed_entry);
+                }
+                if (WINR.is_huffman)
+                    WINR.alloced_val_len = WINR.val_len + WINR.val_len / 4;
+                else
+                    WINR.alloced_val_len = WINR.val_len;
+                WINR.entry = malloc(sizeof(*WINR.entry) + WINR.name_len
+                                                    + WINR.alloced_val_len);
+                if (!WINR.entry)
+                    return -1;
+                WINR.entry->dte_name_len = WINR.name_len;
+                WINR.nread = 0;
+                WINR.val_off = 0;
+                if (WINR.is_huffman)
+                {
+                    dec->qpd_enc_state.resume = DEI_WINR_READ_VALUE_HUFFMAN;
+                    WINR.dec_huff_state.resume = 0;
+                }
+                else
+                    dec->qpd_enc_state.resume = DEI_WINR_READ_VALUE_PLAIN;
+            }
+            else if (r == -1)
+                return 0;
+            else
+                return -1;
+            break;
+        case DEI_WINR_READ_VALUE_HUFFMAN:
+            size = MIN((unsigned) (end - buf), WINR.val_len - WINR.nread);
+            hdr = lsqpack_huff_decode(buf, size,
+                    (unsigned char *) DTE_VALUE(WINR.entry) + WINR.val_off,
+                    WINR.alloced_val_len - WINR.val_off,
+                    &WINR.dec_huff_state, WINR.nread + size == WINR.val_len);
+            switch (hdr.status)
+            {
+            case HUFF_DEC_OK:
+                buf += hdr.n_src;
+                WINR.entry->dte_val_len = WINR.val_off + hdr.n_dst;
+                WINR.entry->dte_refcnt = 1;
+                memcpy(DTE_NAME(WINR.entry), WINR.name, WINR.name_len);
+                if (WINR.reffed_entry)
+                {
+                    qdec_decref_entry(WINR.reffed_entry);
+                    WINR.reffed_entry = NULL;
+                }
+                r = lsqpack_dec_push_entry(dec, WINR.entry);
+                if (0 == r)
+                {
+                    dec->qpd_enc_state.resume = 0;
+                    WINR.entry = NULL;
+                    break;
+                }
+                qdec_decref_entry(WINR.entry);
+                WINR.entry = NULL;
+                return -1;
+            case HUFF_DEC_END_SRC:
+                buf += hdr.n_src;
+                WINR.nread += hdr.n_src;
+                WINR.val_off += hdr.n_dst;
+                break;
+            case HUFF_DEC_END_DST:
+                WINR.alloced_val_len *= 2;
+                entry = realloc(WINR.entry, sizeof(*WINR.entry)
+                                        + WINR.name_len + WINR.alloced_val_len);
+                if (!entry)
+                    return -1;
+                WINR.entry = entry;
+                buf += hdr.n_src;
+                WINR.nread += hdr.n_src;
+                WINR.val_off += hdr.n_dst;
+                break;
+            default:
+                return -1;
+            }
+            break;
+        case DEI_WINR_READ_VALUE_PLAIN:
+            if (WINR.alloced_val_len < WINR.val_len)
+            {
+                WINR.alloced_val_len = WINR.val_len;
+                entry = realloc(WINR.entry, sizeof(*WINR.entry)
+                                                        + WINR.alloced_val_len);
+                if (entry)
+                    WINR.entry = entry;
+                else
+                    return -1;
+            }
+            size = MIN((unsigned) (end - buf), WINR.val_len - WINR.val_off);
+            memcpy(DTE_VALUE(WINR.entry) + WINR.val_off, buf, size);
+            WINR.val_off += size;
+            buf += size;
+            if (WINR.val_off == WINR.val_len)
+            {
+                WINR.entry->dte_val_len = WINR.val_off;
+                WINR.entry->dte_refcnt = 1;
+                memcpy(DTE_NAME(WINR.entry), WINR.name, WINR.name_len);
+                if (WINR.reffed_entry)
+                {
+                    qdec_decref_entry(WINR.reffed_entry);
+                    WINR.reffed_entry = NULL;
+                }
+                r = lsqpack_dec_push_entry(dec, WINR.entry);
+                if (0 == r)
+                {
+                    dec->qpd_enc_state.resume = 0;
+                    WINR.entry = NULL;
+                    break;
+                }
+                qdec_decref_entry(WINR.entry);
+                WINR.entry = NULL;
+                return -1;
+            }
+            break;
+        case DEI_WONR_READ_NAME_LEN:
+  dei_wonr_read_name_idx:
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &WONR.str_len,
+                                                        &DUPL.dec_int_state);
+            if (r == 0)
+            {
+                /* TODO: Check that the name is not larger than the max dynamic
+                 * table capacity, for example.
+                 */
+                WONR.alloced_len = WONR.str_len * 2;
+                size = sizeof(*new_entry) + WONR.alloced_len;
+                WONR.entry = malloc(size);
+                if (!WONR.entry)
+                    return -1;
+                WONR.nread = 0;
+                WONR.str_off = 0;
+                if (WONR.is_huffman)
+                {
+                    dec->qpd_enc_state.resume = DEI_WONR_READ_NAME_HUFFMAN;
+                    WONR.dec_huff_state.resume = 0;
+                }
+                else
+                    dec->qpd_enc_state.resume = DEI_WONR_READ_NAME_PLAIN;
+                break;
+            }
+            else if (r == -1)
+                return 0;
+            else
+                return -1;
+        case DEI_WONR_READ_NAME_HUFFMAN:
+            size = MIN((unsigned) (end - buf), WONR.str_len - WONR.nread);
+            hdr = lsqpack_huff_decode(buf, size,
+                    (unsigned char *) DTE_NAME(WONR.entry) + WONR.str_off,
+                    WONR.alloced_len - WONR.str_off,
+                    &WONR.dec_huff_state, WONR.nread + size == WONR.str_len);
+            switch (hdr.status)
+            {
+            case HUFF_DEC_OK:
+                buf += hdr.n_src;
+                WONR.entry->dte_name_len = WONR.str_off + hdr.n_dst;
+                dec->qpd_enc_state.resume = DEI_WONR_BEGIN_READ_VAL_LEN;
+                break;
+            case HUFF_DEC_END_SRC:
+                buf += hdr.n_src;
+                WONR.nread += hdr.n_src;
+                WONR.str_off += hdr.n_dst;
+                break;
+            case HUFF_DEC_END_DST:
+                WONR.alloced_len *= 2;
+                entry = realloc(WONR.entry, sizeof(*WONR.entry)
+                                                        + WONR.alloced_len);
+                if (!entry)
+                    return -1;
+                WONR.entry = entry;
+                buf += hdr.n_src;
+                WONR.nread += hdr.n_src;
+                WONR.str_off += hdr.n_dst;
+                break;
+            default:
+                return -1;
+            }
+            break;
+        case DEI_WONR_READ_NAME_PLAIN:
+            if (WONR.alloced_len < WONR.str_len)
+            {
+                WONR.alloced_len = WONR.str_len * 2;
+                entry = realloc(WONR.entry, sizeof(*WONR.entry)
+                                                        + WONR.alloced_len);
+                if (entry)
+                    WONR.entry = entry;
+                else
+                    return -1;
+            }
+            size = MIN((unsigned) (end - buf), WONR.str_len - WONR.str_off);
+            memcpy(DTE_NAME(WONR.entry) + WONR.str_off, buf, size);
+            WONR.str_off += size;
+            buf += size;
+            if (WONR.str_off == WONR.str_len)
+            {
+                WONR.entry->dte_name_len = WONR.str_off;
+                dec->qpd_enc_state.resume = DEI_WONR_BEGIN_READ_VAL_LEN;
+            }
+            break;
+        case DEI_WONR_BEGIN_READ_VAL_LEN:
+            WONR.is_huffman = (buf[0] & 0x80) > 0;
+            WONR.dec_int_state.resume = 0;
+            dec->qpd_enc_state.resume = DEI_WONR_READ_VAL_LEN;
+            prefix_bits = 7;
+            /* fall-through */
+        case DEI_WONR_READ_VAL_LEN:
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &WONR.str_len,
+                                                        &WONR.dec_int_state);
+            if (r == 0)
+            {
+                WONR.nread = 0;
+                WONR.str_off = 0;
+                if (WONR.is_huffman)
+                {
+                    dec->qpd_enc_state.resume = DEI_WONR_READ_VALUE_HUFFMAN;
+                    WONR.dec_huff_state.resume = 0;
+                }
+                else
+                    dec->qpd_enc_state.resume = DEI_WONR_READ_VALUE_PLAIN;
+            }
+            else if (r == -1)
+                return 0;
+            else
+                return -1;
+            break;
+        case DEI_WONR_READ_VALUE_HUFFMAN:
+            size = MIN((unsigned) (end - buf), WONR.str_len - WONR.nread);
+            hdr = lsqpack_huff_decode(buf, size,
+                    (unsigned char *) DTE_VALUE(WONR.entry) + WONR.str_off,
+                    WONR.alloced_len - WONR.entry->dte_name_len - WONR.str_off,
+                    &WONR.dec_huff_state, WONR.nread + size == WONR.str_len);
+            switch (hdr.status)
+            {
+            case HUFF_DEC_OK:
+                buf += hdr.n_src;
+                WONR.entry->dte_val_len = WONR.str_off + hdr.n_dst;
+                WONR.entry->dte_refcnt = 1;
+                r = lsqpack_dec_push_entry(dec, WONR.entry);
+                if (0 == r)
+                {
+                    dec->qpd_enc_state.resume = 0;
+                    WONR.entry = NULL;
+                    break;
+                }
+                qdec_decref_entry(WONR.entry);
+                WONR.entry = NULL;
+                return -1;
+            case HUFF_DEC_END_SRC:
+                buf += hdr.n_src;
+                WONR.nread += hdr.n_src;
+                WONR.str_off += hdr.n_dst;
+                break;
+            case HUFF_DEC_END_DST:
+                WONR.alloced_len *= 2;
+                entry = realloc(WONR.entry, sizeof(*WONR.entry)
+                                                        + WONR.alloced_len);
+                if (!entry)
+                    return -1;
+                WONR.entry = entry;
+                buf += hdr.n_src;
+                WONR.nread += hdr.n_src;
+                WONR.str_off += hdr.n_dst;
+                break;
+            default:
+                return -1;
+            }
+            break;
+        case DEI_WONR_READ_VALUE_PLAIN:
+            if (WONR.alloced_len < WONR.entry->dte_name_len + WONR.str_len)
+            {
+                WONR.alloced_len = WONR.entry->dte_name_len + WONR.str_len;
+                entry = realloc(WONR.entry, sizeof(*WONR.entry)
+                                                        + WONR.alloced_len);
+                if (entry)
+                    WONR.entry = entry;
+                else
+                    return -1;
+            }
+            size = MIN((unsigned) (end - buf), WONR.str_len - WONR.str_off);
+            memcpy(DTE_VALUE(WONR.entry) + WONR.str_off, buf, size);
+            WONR.str_off += size;
+            buf += size;
+            if (WONR.str_off == WONR.str_len)
+            {
+                WONR.entry->dte_val_len = WONR.str_off;
+                WONR.entry->dte_refcnt = 1;
+                r = lsqpack_dec_push_entry(dec, WONR.entry);
+                if (0 == r)
+                {
+                    dec->qpd_enc_state.resume = 0;
+                    WONR.entry = NULL;
+                    break;
+                }
+                qdec_decref_entry(WONR.entry);
+                WONR.entry = NULL;
+                return -1;
+            }
+            break;
+        case DEI_DUP_READ_IDX:
+  dei_dup_read_idx:
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &DUPL.index,
+                                                        &DUPL.dec_int_state);
+            if (r == 0)
+            {
+                entry = qdec_get_table_entry_rel(dec, DUPL.index);
+                if (!entry)
+                    return -1;
+                size = sizeof(*new_entry) + entry->dte_name_len
+                                                        + entry->dte_val_len;
+                new_entry = malloc(size);
+                if (!new_entry)
+                    return -1;
+                memcpy(new_entry, entry, size);
+                new_entry->dte_refcnt = 1;
+                if (0 == lsqpack_dec_push_entry(dec, new_entry))
+                {
+                    dec->qpd_enc_state.resume = 0;
+                    break;
+                }
+                qdec_decref_entry(new_entry);
+                return -1;
+            }
+            else if (r == -1)
+                return 0;
+            else
+                return -1;
+        case DEI_SIZE_UPD_READ_IDX:
+  dei_size_upd_read_idx:
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &TBSZ.new_size,
+                                                        &TBSZ.dec_int_state);
+            if (r == 0)
+            {
+                if (TBSZ.new_size <= dec->qpd_max_capacity)
+                {
+                    dec->qpd_enc_state.resume = 0;
+                    qdec_update_max_capacity(dec, TBSZ.new_size);
+                    break;
+                }
+                else
+                    return -1;
+            }
+            else if (r == -1)
+                return 0;
+            else
+                return -1;
+        default:
+            assert(0);
+        }
+    }
+
+#undef WINR
+#undef WONR
+#undef DUPL
+#undef TBSZ
+
+    return 0;
+}
+
+
+void
+lsqpack_dec_set_max_capacity (struct lsqpack_dec *dec, unsigned max_capacity)
+{
+    dec->qpd_max_capacity = max_capacity;
+    qdec_update_max_capacity(dec, max_capacity);
+}
+
+
+void
+lsqpack_dec_print_table (const struct lsqpack_dec *dec, FILE *out)
+{
+    const struct lsqpack_dec_table_entry *entry;
+    uintptr_t val;
+    unsigned n;
+
+    fprintf(out, "Printing decoder table state.\n");
+    fprintf(out, "Insertions: %u; deletions: %u.\n", dec->qpd_ins_count,
+                                                        dec->qpd_del_count);
+    fprintf(out, "Max capacity: %u; current capacity: %u\n",
+        dec->qpd_cur_max_capacity, dec->qpd_cur_capacity);
+    for (n = 0; n < lsqpack_arr_count(&dec->qpd_dyn_table); ++n)
+    {
+        val = lsqpack_arr_get(&dec->qpd_dyn_table, n);
+        entry = (void *) val;
+        fprintf(out, "%u) %.*s: %.*s\n", dec->qpd_del_count + 1 + n,
+            entry->dte_name_len, DTE_NAME(entry),
+            entry->dte_val_len, DTE_VALUE(entry));
+    }
+    fprintf(out, "\n");
+}
+
+
+void
+lsqpack_dec_destroy_header_set (struct lsqpack_header_set *set)
+{
+    struct header_internal *hint;
+    unsigned n;
+
+    for (n = 0; n < set->qhs_count; ++n)
+    {
+        hint = (struct header_internal *) set->qhs_headers[n];
+        if (hint->hi_entry)
+            qdec_decref_entry(hint->hi_entry);
+        if (hint->hi_flags & HI_OWN_NAME)
+            free((char *) hint->hi_uhead.qh_name);
+        if (hint->hi_flags & HI_OWN_VALUE)
+            free((char *) hint->hi_uhead.qh_value);
+        free(hint);
+    }
+    free(set->qhs_headers);
+    free(set);
+}
+
+
+#define NAME_VAL(a, b) (a), (b), sizeof(a) - 1, sizeof(b) - 1,
+
+static const struct static_table_entry static_table[QPACK_STATIC_TABLE_SIZE] =
 {
     { NAME_VAL(":authority",                    "") },
     { NAME_VAL(":method",                       "GET") },
@@ -121,12 +3167,6 @@ static_table[QPACK_STATIC_TABLE_SIZE] =
     { NAME_VAL("www-authenticate",              "") }
 };
 
-
-struct encode_el
-{
-    uint32_t code;
-    int      bits;
-};
 
 static const struct encode_el encode_table[257] =
 {
@@ -389,13 +3429,6 @@ static const struct encode_el encode_table[257] =
     { 0x3fffffff,    30}    //    EOS (256)
 };
 
-
-struct decode_el
-{
-    uint8_t state;
-    uint8_t flags;
-    uint8_t sym;
-};
 
 static const struct decode_el decode_tables[256][16] =
 {
@@ -5264,3046 +8297,3 @@ static const struct decode_el decode_tables[256][16] =
         { 0, 0x04, 0 },
     },
 };
-
-#define lsqpack_arr_init(a) do {                                        \
-    memset((a), 0, sizeof(*(a)));                                       \
-} while (0)
-
-#define lsqpack_arr_cleanup(a) do {                                     \
-    free((a)->els);                                                     \
-    memset((a), 0, sizeof(*(a)));                                       \
-} while (0)
-
-#define lsqpack_arr_get(a, i) (                                         \
-    assert((i) < (a)->nelem),                                           \
-    (a)->els[(a)->off + (i)]                                            \
-)
-
-#define lsqpack_arr_shift(a) (                                          \
-    assert((a)->nelem > 0),                                             \
-    (a)->nelem -= 1,                                                    \
-    (a)->els[(a)->off++]                                                \
-)
-
-#define lsqpack_arr_pop(a) (                                            \
-    assert((a)->nelem > 0),                                             \
-    (a)->nelem -= 1,                                                    \
-    (a)->els[(a)->off + (a)->nelem]                                     \
-)
-
-#define lsqpack_arr_count(a) (+(a)->nelem)
-
-static int
-lsqpack_arr_push (struct lsqpack_arr *arr, uintptr_t val)
-{
-    uintptr_t *new_els;
-    unsigned n;
-
-    if (arr->off + arr->nelem < arr->nalloc)
-    {
-        arr->els[arr->off + arr->nelem] = val;
-        ++arr->nelem;
-        return 0;
-    }
-
-    if (arr->off > arr->nalloc / 2)
-    {
-        memmove(arr->els, arr->els + arr->off,
-                                        sizeof(arr->els[0]) * arr->nelem);
-        arr->off = 0;
-        arr->els[arr->nelem] = val;
-        ++arr->nelem;
-        return 0;
-    }
-
-    if (arr->nalloc)
-        n = arr->nalloc * 2;
-    else
-        n = 64;
-    new_els = malloc(n * sizeof(arr->els[0]));
-    if (!new_els)
-        return -1;
-    memcpy(new_els, arr->els + arr->off, sizeof(arr->els[0]) * arr->nelem);
-    free(arr->els);
-    arr->off = 0;
-    arr->els = new_els;
-    arr->nalloc = n;
-    arr->els[arr->off + arr->nelem] = val;
-    ++arr->nelem;
-    return 0;
-}
-
-struct lsqpack_double_enc_head
-{
-    struct lsqpack_enc_head by_name;
-    struct lsqpack_enc_head by_nameval;
-};
-
-struct lsqpack_enc_table_entry
-{
-    /* An entry always lives on all three lists */
-    STAILQ_ENTRY(lsqpack_enc_table_entry)
-                                    ete_next_nameval,
-                                    ete_next_name,
-                                    ete_next_all;
-    lsqpack_abs_id_t                ete_id;
-    unsigned                        ete_n_reffd;
-    unsigned                        ete_nameval_hash;
-    unsigned                        ete_name_hash;
-    unsigned                        ete_name_len;
-    unsigned                        ete_val_len;
-    char                            ete_buf[0];
-};
-
-#define ETE_NAME(ete) ((ete)->ete_buf)
-#define ETE_VALUE(ete) (&(ete)->ete_buf[(ete)->ete_name_len])
-#define ENTRY_COST(name_len, value_len) (DYNAMIC_ENTRY_OVERHEAD + \
-                                                        name_len + value_len)
-#define ETE_SIZE(ete) ENTRY_COST((ete)->ete_name_len, (ete)->ete_val_len)
-
-
-#define N_BUCKETS(n_bits) (1U << (n_bits))
-#define BUCKNO(n_bits, hash) ((hash) & (N_BUCKETS(n_bits) - 1))
-
-int
-lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
-    unsigned max_risked_streams)
-{
-    struct lsqpack_double_enc_head *buckets;
-    unsigned nbits = 2;
-    unsigned i;
-
-    if (dyn_table_size > LSQPACK_MAX_DYN_TABLE_SIZE ||
-        max_risked_streams > LSQPACK_MAX_MAX_RISKED_STREAMS)
-    {
-        errno = EINVAL;
-        return -1;
-    }
-
-    buckets = malloc(sizeof(buckets[0]) * N_BUCKETS(nbits));
-    if (!buckets)
-        return -1;
-
-    for (i = 0; i < N_BUCKETS(nbits); ++i)
-    {
-        STAILQ_INIT(&buckets[i].by_name);
-        STAILQ_INIT(&buckets[i].by_nameval);
-    }
-
-    memset(enc, 0, sizeof(*enc));
-    STAILQ_INIT(&enc->qpe_all_entries);
-    enc->qpe_max_capacity = dyn_table_size;
-    enc->qpe_max_risked_streams = max_risked_streams;
-    enc->qpe_buckets      = buckets;
-    enc->qpe_nbits        = nbits;
-    return 0;
-}
-
-
-void
-lsqpack_enc_cleanup (struct lsqpack_enc *enc)
-{
-    struct lsqpack_enc_table_entry *entry, *next;
-    for (entry = STAILQ_FIRST(&enc->qpe_all_entries); entry; entry = next)
-    {
-        next = STAILQ_NEXT(entry, ete_next_all);
-        free(entry);
-    }
-    free(enc->qpe_buckets);
-    free(enc->qpe_hinfos_arr);
-}
-
-
-//not find return 0, otherwise return the index
-#if !LS_QPACK_EMIT_TEST_CODE
-static
-#endif
-       unsigned
-lsqpack_enc_get_stx_tab_id (const char *name, unsigned name_len,
-                const char *val, unsigned val_len, int *val_matched)
-{
-    if (name_len < 3)
-        return 0;
-
-    *val_matched = 0;
-
-    //check value first
-    int i = -1;
-    switch (*val)
-    {
-        case 'G':
-            i = 1;
-            break;
-        case 'P':
-            i = 2;
-            break;
-        case '/':
-            if (val_len == 1)
-                i = 3;
-            else if (val_len == 11)
-                i = 4;
-            break;
-        case 'h':
-            if (val_len == 4)
-                i = 5;
-            else if (val_len == 5)
-                i = 6;
-            break;
-        case '2':
-            if (val_len == 3)
-            {
-                switch (*(val + 2))
-                {
-                    case '0':
-                        i = 7;
-                        break;
-                    case '4':
-                        i = 8;
-                        break;
-                    case '6':
-                        i = 9;
-                        break;
-                    default:
-                        break;
-                }
-            }
-            break;
-        case '3':
-            i = 10;
-            break;
-        case '4':
-            if (val_len == 3)
-            {
-                switch (*(val + 2))
-                {
-                    case '0':
-                        i = 11;
-                        break;
-                    case '4':
-                        i = 12;
-                    default:
-                        break;
-                }
-            }
-            break;
-        case '5':
-            i = 13;
-            break;
-        case 'g':
-            i = 15;
-            break;
-        default:
-            break;
-    }
-
-    if (i > 0 && static_table[i].val_len == val_len
-            && static_table[i].name_len == name_len
-            && memcmp(val, static_table[i].val, val_len) == 0
-            && memcmp(name, static_table[i].name, name_len) == 0)
-    {
-        *val_matched = 1;
-        return i + 1;
-    }
-
-    //macth name only checking
-    i = -1;
-    switch (*name)
-    {
-        case ':':
-            switch (*(name + 1))
-            {
-                case 'a':
-                    i = 0;
-                    break;
-                case 'm':
-                    i = 1;
-                    break;
-                case 'p':
-                    i = 3;
-                    break;
-                case 's':
-                    if (*(name + 2) == 'c') //:scheme
-                        i = 5;
-                    else
-                        i = 7;
-                    break;
-                default:
-                    break;
-            }
-            break;
-        case 'a':
-            switch (name_len)
-            {
-                case 3:
-                    i = 20; //age
-                    break;
-                case 5:
-                    i = 21; //allow
-                    break;
-                case 6:
-                    i = 18; //accept
-                    break;
-                case 13:
-                    if (*(name + 1) == 'u')
-                        i = 22; //authorization
-                    else
-                        i = 17; //accept-ranges
-                    break;
-                case 14:
-                    i  = 14; //accept-charset
-                    break;
-                case 15:
-                    if (*(name + 7) == 'l')
-                        i = 16; //accept-language,
-                    else
-                        i = 15;// accept-encoding
-                    break;
-                case 27:
-                    i = 19;//access-control-allow-origin
-                    break;
-                default:
-                    break;
-            }
-            break;
-        case 'c':
-            switch (name_len)
-            {
-                case 6:
-                    i = 31; //cookie
-                    break;
-                case 12:
-                    i = 30; //content-type
-                    break;
-                case 13:
-                    if (*(name + 1) == 'a')
-                        i = 23; //cache-control
-                    else
-                        i = 29; //content-range
-                    break;
-                case 14:
-                    i = 27; //content-length
-                    break;
-                case 16:
-                    switch (*(name + 9))
-                    {
-                        case 'n':
-                            i = 25 ;//content-encoding
-                            break;
-                        case 'a':
-                            i = 26; //content-language
-                            break;
-                        case 'o':
-                            i = 28; //content-location
-                        default:
-                            break;
-                    }
-                    break;
-                case 19:
-                    i = 24; //content-disposition
-                    break;
-            }
-            break;
-        case 'd':
-            i = 32 ;//date
-            break;
-        case 'e':
-            switch (name_len)
-            {
-                case 4:
-                    i = 33; //etag
-                    break;
-                case 6:
-                    i = 34;
-                    break;
-                case 7:
-                    i = 35;
-                    break;
-                default:
-                    break;
-            }
-            break;
-        case 'f':
-            i = 36; //from
-            break;
-        case 'h':
-            i = 37; //host
-            break;
-        case 'i':
-            switch (name_len)
-            {
-                case 8:
-                    if (*(name + 3) == 'm')
-                        i = 38; //if-match
-                    else
-                        i = 41; //if-range
-                    break;
-                case 13:
-                    i = 40; //if-none-match
-                    break;
-                case 17:
-                    i = 39; //if-modified-since
-                    break;
-                case 19:
-                    i = 42; //if-unmodified-since
-                    break;
-                default:
-                    break;
-            }
-            break;
-        case 'l':
-            switch (name_len)
-            {
-                case 4:
-                    i = 44; //link
-                    break;
-                case 8:
-                    i = 45; //location
-                    break;
-                case 13:
-                    i = 43; //last-modified
-                    break;
-                default:
-                    break;
-            }
-            break;
-        case 'm':
-            i = 46; //max-forwards
-            break;
-        case 'p':
-            if (name_len == 18)
-                i = 47; //proxy-authenticate
-            else
-                i = 48; //proxy-authorization
-            break;
-        case 'r':
-            if (name_len >= 5)
-            {
-                switch (*(name + 4))
-                {
-                    case 'e':
-                        if (name_len == 5)
-                            i = 49; //range
-                        else
-                            i = 51; //refresh
-                        break;
-                    case 'r':
-                        i = 50; //referer
-                        break;
-                    case 'y':
-                        i = 52; //retry-after
-                        break;
-                    default:
-                        break;
-                }
-            }
-            break;
-        case 's':
-            switch (name_len)
-            {
-                case 6:
-                    i = 53; //server
-                    break;
-                case 10:
-                    i = 54; //set-cookie
-                    break;
-                case 25:
-                    i = 55; //strict-transport-security
-                    break;
-                default:
-                    break;
-            }
-            break;
-        case 't':
-            i = 56;//transfer-encoding
-            break;
-        case 'u':
-            i = 57; //user-agent
-            break;
-        case 'v':
-            if (name_len == 4)
-                i = 58;
-            else
-                i = 59;
-            break;
-        case 'w':
-            i = 60;
-            break;
-        default:
-            break;
-    }
-
-    if (i >= 0
-            && static_table[i].name_len == name_len
-            && memcmp(name, static_table[i].name, name_len) == 0)
-        return i + 1;
-
-    return 0;
-}
-
-
-enum table_type {
-    TT_STATIC = 0,
-    TT_DYNAMIC = 1,
-};
-
-
-struct enc_found
-{
-    int                 ef_found;
-    enum table_type     ef_table_type;
-    lsqpack_abs_id_t    ef_entry_id;
-    int                 ef_value_match;
-    struct lsqpack_enc_table_entry
-                       *ef_entry;
-};
-
-
-static struct enc_found
-qenc_find_entry_in_static_table (const char *name, unsigned name_len,
-                                 const char *value, unsigned value_len)
-{
-    unsigned static_table_id;
-    int val_matched;
-
-    static_table_id = lsqpack_enc_get_stx_tab_id(name, name_len, value,
-                                                    value_len, &val_matched);
-    if (static_table_id > 0)
-        return (struct enc_found) { 1, TT_STATIC, static_table_id, val_matched, NULL, };
-    else
-        return (struct enc_found) { 0, 0, 0, 0, NULL, };
-}
-
-
-static struct enc_found
-qenc_find_entry_in_either_table (struct lsqpack_enc *enc, int risk,
-        const char *name, unsigned name_len, const char *value,
-        unsigned value_len)
-{
-    struct lsqpack_enc_table_entry *entry;
-    unsigned name_hash, nameval_hash, buckno, static_table_id;
-    XXH32_state_t hash_state;
-    int val_matched;
-
-    /* First, look for a match in the static table: */
-    static_table_id = lsqpack_enc_get_stx_tab_id(name, name_len, value,
-                                                    value_len, &val_matched);
-    if (static_table_id > 0 && val_matched)
-        return (struct enc_found) { 1, TT_STATIC, static_table_id, 1, NULL, };
-
-    /* Search by name and value: */
-    XXH32_reset(&hash_state, (uintptr_t) enc);
-    XXH32_update(&hash_state, &name_len, sizeof(name_len));
-    XXH32_update(&hash_state, name, name_len);
-    name_hash = XXH32_digest(&hash_state);
-    XXH32_update(&hash_state,  &value_len, sizeof(value_len));
-    XXH32_update(&hash_state,  value, value_len);
-    nameval_hash = XXH32_digest(&hash_state);
-    buckno = BUCKNO(enc->qpe_nbits, nameval_hash);
-    /* TODO there could be several matching entries.  We want to pick one
-     * that's not too old (eviction blocking) and also not too young
-     * (header blocking).
-     */
-    STAILQ_FOREACH(entry, &enc->qpe_buckets[buckno].by_nameval,
-                                                        ete_next_nameval)
-        if (nameval_hash == entry->ete_nameval_hash &&
-            name_len == entry->ete_name_len &&
-            value_len == entry->ete_val_len &&
-            (risk || entry->ete_id <= enc->qpe_max_acked_id) &&
-            (enc->qpe_cur_header.search_cutoff == 0
-                || entry->ete_id > enc->qpe_cur_header.search_cutoff) &&
-            0 == memcmp(name, ETE_NAME(entry), name_len) &&
-            0 == memcmp(value, ETE_VALUE(entry), value_len))
-        {
-            return (struct enc_found) { 1, TT_DYNAMIC, entry->ete_id, 1, entry, };
-        }
-
-    /* Name/value match is not found, but if the caller found a matching
-     * static table entry, no need to continue to search:
-     */
-    if (static_table_id > 0)
-        return (struct enc_found) { 1, TT_STATIC, static_table_id, 0, NULL, };
-
-    /* Search by name only: */
-    buckno = BUCKNO(enc->qpe_nbits, name_hash);
-    STAILQ_FOREACH(entry, &enc->qpe_buckets[buckno].by_name, ete_next_name)
-        if (name_hash == entry->ete_name_hash &&
-            name_len == entry->ete_name_len &&
-            (risk || entry->ete_id <= enc->qpe_max_acked_id) &&
-            (enc->qpe_cur_header.search_cutoff == 0
-                || entry->ete_id > enc->qpe_cur_header.search_cutoff) &&
-            0 == memcmp(name, ETE_NAME(entry), name_len))
-        {
-            return (struct enc_found) { 1, TT_DYNAMIC, entry->ete_id, 0, entry, };
-        }
-
-    return (struct enc_found) { 0, 0, 0, 0, NULL, };
-}
-
-
-static struct enc_found
-qenc_find_entry (struct lsqpack_enc *enc, int risk, const char *name,
-        unsigned name_len, const char *value,
-        unsigned value_len)
-{
-    if (enc->qpe_cur_header.use_dynamic_table)
-        return qenc_find_entry_in_either_table(enc, risk, name, name_len, value,
-                                                                    value_len);
-    else
-        return qenc_find_entry_in_static_table(name, name_len, value, value_len);
-}
-
-
-static unsigned
-lsqpack_val2len (uint64_t value, unsigned prefix_bits)
-{
-    uint64_t mask = (1ULL << prefix_bits) - 1;
-    return 1
-         + (value >=                  mask )
-         + (value >=  ((1ULL <<  7) + mask))
-         + (value >=  ((1ULL << 14) + mask))
-         + (value >=  ((1ULL << 21) + mask))
-         + (value >=  ((1ULL << 28) + mask))
-         + (value >=  ((1ULL << 35) + mask))
-         + (value >=  ((1ULL << 42) + mask))
-         + (value >=  ((1ULL << 49) + mask))
-         + (value >=  ((1ULL << 56) + mask))
-         + (value >=  ((1ULL << 63) + mask))
-         ;
-}
-
-
-#if !LS_QPACK_EMIT_TEST_CODE
-static
-#endif
-       unsigned char *
-lsqpack_enc_int (unsigned char *dst, unsigned char *const end, uint64_t value,
-                                                        unsigned prefix_bits)
-{
-    unsigned char *const dst_orig = dst;
-
-    /* This function assumes that at least one byte is available */
-    assert(dst < end);
-    if (value < (1u << prefix_bits) - 1)
-        *dst++ |= value;
-    else
-    {
-        *dst++ |= (1 << prefix_bits) - 1;
-        value -= (1 << prefix_bits) - 1;
-        while (value >= 128)
-        {
-            if (dst < end)
-            {
-                *dst++ = (0x80 | value);
-                value >>= 7;
-            }
-            else
-                return dst_orig;
-        }
-        if (dst < end)
-            *dst++ = value;
-        else
-            return dst_orig;
-    }
-    return dst;
-}
-
-
-static void
-lsqpack_enc_int_nocheck (unsigned char *dst, uint64_t value,
-                                                        unsigned prefix_bits)
-{
-    if (value < (1u << prefix_bits) - 1)
-        *dst++ |= value;
-    else
-    {
-        *dst++ |= (1 << prefix_bits) - 1;
-        value -= (1 << prefix_bits) - 1;
-        while (value >= 128)
-        {
-            *dst++ = (0x80 | value);
-            value >>= 7;
-        }
-        *dst++ = value;
-    }
-}
-
-
-#if !LS_QPACK_EMIT_TEST_CODE
-static
-#endif
-       unsigned char *
-qenc_huffman_enc (const unsigned char *src, const unsigned char *const src_end,
-                                                                unsigned char *dst)
-{
-    uint64_t bits = 0;
-    int bits_left = 40;
-    struct encode_el cur_enc_code;
-
-    while (src != src_end)
-    {
-        cur_enc_code = encode_table[(int) *src++];
-        assert(bits_left >= cur_enc_code.bits); //  (possible negative shift, undefined behavior)
-        bits |= (uint64_t)cur_enc_code.code << (bits_left - cur_enc_code.bits);
-        bits_left -= cur_enc_code.bits;
-        while (bits_left <= 32)
-        {
-            *dst++ = bits >> 32;
-            bits <<= 8;
-            bits_left += 8;
-        }
-    }
-
-    if (bits_left != 40)
-    {
-        assert(bits_left < 40 && bits_left > 0);
-        bits |= ((uint64_t)1 << bits_left) - 1;
-        *dst++ = bits >> 32;
-    }
-
-    return dst;
-}
-
-
-#if !LS_QPACK_EMIT_TEST_CODE
-static
-#endif
-       int
-lsqpack_enc_enc_str (unsigned prefix_bits, unsigned char *const dst,
-        size_t dst_len, const unsigned char *str, unsigned str_len)
-{
-    unsigned char *p;
-    unsigned i, enc_size_bits, enc_size_bytes, len_size;
-
-    enc_size_bits = 0;
-    for (i = 0; i < str_len; ++i)
-        enc_size_bits += encode_table[ str[i] ].bits;
-    enc_size_bytes = enc_size_bits / 8 + ((enc_size_bits & 7) != 0);
-
-    if (enc_size_bytes < str_len)
-    {
-        len_size = lsqpack_val2len(enc_size_bytes, prefix_bits);
-        if (len_size + enc_size_bytes <= dst_len)
-        {
-            *dst &= ~((1 << (prefix_bits + 1)) - 1);
-            *dst |= 1 << prefix_bits;
-            lsqpack_enc_int_nocheck(dst, enc_size_bytes, prefix_bits);
-            p = qenc_huffman_enc(str, str + str_len, dst + len_size);
-            assert(p - dst == len_size + enc_size_bytes);
-            return p - dst;
-        }
-        else
-            return -1;
-    }
-    else
-    {
-        len_size = lsqpack_val2len(str_len, prefix_bits);
-        if (len_size + str_len <= dst_len)
-        {
-            *dst &= ~((1 << (prefix_bits + 1)) - 1);
-            lsqpack_enc_int_nocheck(dst, str_len, prefix_bits);
-            memcpy(dst + len_size, str, str_len);
-            return len_size + str_len;
-        }
-        else
-            return -1;
-    }
-}
-
-
-static void
-qenc_drop_oldest_entry (struct lsqpack_enc *enc)
-{
-    struct lsqpack_enc_table_entry *entry;
-    unsigned buckno;
-
-    entry = STAILQ_FIRST(&enc->qpe_all_entries);
-    assert(entry);
-    STAILQ_REMOVE_HEAD(&enc->qpe_all_entries, ete_next_all);
-    buckno = BUCKNO(enc->qpe_nbits, entry->ete_nameval_hash);
-    assert(entry == STAILQ_FIRST(&enc->qpe_buckets[buckno].by_nameval));
-    STAILQ_REMOVE_HEAD(&enc->qpe_buckets[buckno].by_nameval, ete_next_nameval);
-    buckno = BUCKNO(enc->qpe_nbits, entry->ete_name_hash);
-    assert(entry == STAILQ_FIRST(&enc->qpe_buckets[buckno].by_name));
-    STAILQ_REMOVE_HEAD(&enc->qpe_buckets[buckno].by_name, ete_next_name);
-
-    enc->qpe_cur_capacity -= ETE_SIZE(entry);
-    --enc->qpe_nelem;
-    free(entry);
-}
-
-
-static void
-qenc_remove_overflow_entries (struct lsqpack_enc *enc)
-{
-    while (enc->qpe_cur_capacity > enc->qpe_max_capacity)
-        qenc_drop_oldest_entry(enc);
-}
-
-
-static int
-qenc_grow_tables (struct lsqpack_enc *enc)
-{
-    struct lsqpack_double_enc_head *new_buckets, *new[2];
-    struct lsqpack_enc_table_entry *entry;
-    unsigned n, old_nbits;
-    int idx;
-
-    old_nbits = enc->qpe_nbits;
-    new_buckets = malloc(sizeof(enc->qpe_buckets[0])
-                                                * N_BUCKETS(old_nbits + 1));
-    if (!new_buckets)
-        return -1;
-
-    for (n = 0; n < N_BUCKETS(old_nbits); ++n)
-    {
-        new[0] = &new_buckets[n];
-        new[1] = &new_buckets[n + N_BUCKETS(old_nbits)];
-        STAILQ_INIT(&new[0]->by_name);
-        STAILQ_INIT(&new[1]->by_name);
-        STAILQ_INIT(&new[0]->by_nameval);
-        STAILQ_INIT(&new[1]->by_nameval);
-        while ((entry = STAILQ_FIRST(&enc->qpe_buckets[n].by_name)))
-        {
-            STAILQ_REMOVE_HEAD(&enc->qpe_buckets[n].by_name, ete_next_name);
-            idx = (BUCKNO(old_nbits + 1, entry->ete_name_hash)
-                                                        >> old_nbits) & 1;
-            STAILQ_INSERT_TAIL(&new[idx]->by_name, entry, ete_next_name);
-        }
-        while ((entry = STAILQ_FIRST(&enc->qpe_buckets[n].by_nameval)))
-        {
-            STAILQ_REMOVE_HEAD(&enc->qpe_buckets[n].by_nameval,
-                                                        ete_next_nameval);
-            idx = (BUCKNO(old_nbits + 1, entry->ete_nameval_hash)
-                                                        >> old_nbits) & 1;
-            STAILQ_INSERT_TAIL(&new[idx]->by_nameval, entry,
-                                                        ete_next_nameval);
-        }
-    }
-
-    free(enc->qpe_buckets);
-    enc->qpe_nbits   = old_nbits + 1;
-    enc->qpe_buckets = new_buckets;
-    return 0;
-}
-
-#if !LS_QPACK_EMIT_TEST_CODE
-static
-#endif
-       struct lsqpack_enc_table_entry *
-lsqpack_enc_push_entry (struct lsqpack_enc *enc, const char *name,
-                        unsigned name_len, const char *value,
-                        unsigned value_len)
-{
-    unsigned name_hash, nameval_hash, buckno;
-    struct lsqpack_enc_table_entry *entry;
-    XXH32_state_t hash_state;
-    size_t size;
-
-    if (enc->qpe_nelem >= N_BUCKETS(enc->qpe_nbits) / 2 &&
-                                                0 != qenc_grow_tables(enc))
-        return NULL;
-
-    size = sizeof(*entry) + name_len + value_len;
-    entry = malloc(size);
-    if (!entry)
-        return NULL;
-
-    XXH32_reset(&hash_state, (uintptr_t) enc);
-    XXH32_update(&hash_state, &name_len, sizeof(name_len));
-    XXH32_update(&hash_state, name, name_len);
-    name_hash = XXH32_digest(&hash_state);
-    XXH32_update(&hash_state,  &value_len, sizeof(value_len));
-    XXH32_update(&hash_state,  value, value_len);
-    nameval_hash = XXH32_digest(&hash_state);
-
-    entry->ete_name_hash = name_hash;
-    entry->ete_nameval_hash = nameval_hash;
-    entry->ete_name_len = name_len;
-    entry->ete_val_len = value_len;
-    entry->ete_id = 1 + enc->qpe_ins_count++;
-    memcpy(ETE_NAME(entry), name, name_len);
-    memcpy(ETE_VALUE(entry), value, value_len);
-
-    STAILQ_INSERT_TAIL(&enc->qpe_all_entries, entry, ete_next_all);
-    buckno = BUCKNO(enc->qpe_nbits, nameval_hash);
-    STAILQ_INSERT_TAIL(&enc->qpe_buckets[buckno].by_nameval, entry,
-                                                        ete_next_nameval);
-    buckno = BUCKNO(enc->qpe_nbits, name_hash);
-    STAILQ_INSERT_TAIL(&enc->qpe_buckets[buckno].by_name, entry,
-                                                        ete_next_name);
-
-    enc->qpe_cur_capacity += ENTRY_COST(name_len, value_len);
-    ++enc->qpe_nelem;
-    qenc_remove_overflow_entries(enc);
-    return entry;
-}
-
-
-int
-lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
-                            unsigned seqno)
-{
-    struct lsqpack_header_info *hinfos_arr;
-    unsigned at_risk, nalloc, i;
-
-    if (enc->qpe_flags & LSQPACK_ENC_HEADER)
-        return -1;
-
-    enc->qpe_cur_header.hinfo = (struct lsqpack_header_info)
-                        { .qhi_stream_id = stream_id, .qhi_seqno = seqno, };
-    enc->qpe_cur_header.n_risked = 0;
-    enc->qpe_cur_header.base_idx = enc->qpe_ins_count;
-    enc->qpe_cur_header.search_cutoff = 0;
-    enc->qpe_cur_header.use_dynamic_table = 1;
-
-    if (enc->qpe_hinfos_count == enc->qpe_hinfos_nalloc)
-    {
-        if (enc->qpe_hinfos_nalloc)
-            nalloc = enc->qpe_hinfos_nalloc * 2;
-        else
-            nalloc = 4;
-        hinfos_arr = realloc(enc->qpe_hinfos_arr,
-                                    sizeof(enc->qpe_hinfos_arr[0]) * 2);
-        if (hinfos_arr)
-        {
-            free(enc->qpe_hinfos_arr);
-            enc->qpe_hinfos_arr = hinfos_arr;
-            enc->qpe_hinfos_nalloc = nalloc;
-        }
-        else
-            enc->qpe_cur_header.use_dynamic_table = 0;
-    }
-
-    /* Check if there are other header blocks with the same stream ID that
-     * are at risk.
-     */
-    if (seqno)
-    {
-        for (i = 0; i < enc->qpe_hinfos_count; ++i)
-            if (enc->qpe_hinfos_arr[i].qhi_stream_id == stream_id
-                                && enc->qpe_hinfos_arr[i].qhi_at_risk)
-                break;
-        at_risk = i < enc->qpe_hinfos_count;
-    }
-    else
-        at_risk = 0;
-
-    enc->qpe_cur_header.others_at_risk = at_risk > 0;
-    enc->qpe_flags |= LSQPACK_ENC_HEADER;
-
-    return 0;
-}
-
-
-ssize_t
-lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
-{
-    unsigned char *dst, *end;
-    lsqpack_abs_id_t diff;
-    unsigned sign;
-
-    if (!(enc->qpe_flags & LSQPACK_ENC_HEADER))
-        return -1;
-
-    if (enc->qpe_cur_header.hinfo.qhi_max_id)
-    {
-        end = buf + sz;
-
-        *buf = 0;
-        dst = lsqpack_enc_int(buf, end, enc->qpe_cur_header.hinfo.qhi_max_id, 8);
-        if (dst <= buf)
-            return 0;
-
-        if (dst >= end)
-            return 0;
-
-        buf = dst;
-        if (enc->qpe_cur_header.base_idx
-                                    >= enc->qpe_cur_header.hinfo.qhi_max_id)
-        {
-            sign = 0;
-            diff = enc->qpe_cur_header.base_idx
-                                    - enc->qpe_cur_header.hinfo.qhi_max_id;
-        }
-        else
-        {
-            sign = 1;
-            diff = enc->qpe_cur_header.hinfo.qhi_max_id
-                                    - enc->qpe_cur_header.base_idx;
-        }
-        *buf = sign << 7;
-        dst = lsqpack_enc_int(buf, end, diff, 7);
-        if (dst <= buf)
-            return 0;
-
-        enc->qpe_flags &= ~LSQPACK_ENC_HEADER;
-        return dst - end + sz;
-    }
-    else if (sz >= 2)
-    {
-        memset(buf, 0, 2);
-        enc->qpe_flags &= ~LSQPACK_ENC_HEADER;
-        return 2;
-    }
-    else
-        return 0;
-}
-
-
-struct encode_program
-{
-    enum {
-        EEA_NONE,
-        EEA_INS_NAMEREF,
-        EEA_INS_LIT,
-    }           ep_enc_action;
-    enum {
-        EHA_INDEXED_NEW,
-        EHA_INDEXED_STAT,
-        EHA_INDEXED_DYN,
-        EHA_LIT_WITH_NAME_STAT,
-        EHA_LIT_WITH_NAME_DYN,
-        EHA_LIT_WITH_NAME_NEW,
-        EHA_LIT,
-    }           ep_hea_action;
-    enum {
-        ETA_NOOP,
-        ETA_NEW,
-    }           ep_tab_action;
-    enum {
-        EPF_REF_FOUND   = 1 << 1,
-        EPF_REF_NEW     = 1 << 2,
-    }           ep_flags;
-};
-
-/* Factors at play:
- *
- *      - Found or not found
- *      - Table: static or dynamic
- *      - Value matched or not
- *      - Index: yes/no
- *      - Risk blocking: yes/no
- *
- * Effects:
- *
- *      - Output to encoder stream (if index=yes)
- *      - Insert new dynamic entry into the table (if index=yes)
- *      - Output to header stream.  This always happens, but the output
- *        depends on the value of "risk blocking".
- */
-static const struct encode_program encode_programs[2][2][2][2][2] =
-{
-/* "A" is for "Any" (this makes the table narrower) */
-#define A 0 ... 1
- /*
-  *  ,--------------- Found or not found (bool)
-  *  |  ,------------ Static or dynamic (0 or 1, respectively)
-  *  |  |  ,--------- Value matched or not (bool)
-  *  |  |  |  ,------ To index or not to index (bool)
-  *  |  |  |  |  ,--- To risk blocking or not to risk (bool)
-  *  |  |  |  |  |
-  *  |  |  |  |  |
-  *  V  V  V  V  V
-  */
-    [0][A][A][0][A] = { EEA_NONE,        EHA_LIT,                ETA_NOOP, 0, },
-    [0][A][A][1][0] = { EEA_INS_LIT,     EHA_LIT,                ETA_NEW,  0, },
-    [0][A][A][1][1] = { EEA_INS_LIT,     EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
-    [1][0][0][0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
-    [1][0][0][1][0] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME_STAT, ETA_NEW,  0, },
-    [1][0][0][1][1] = { EEA_INS_NAMEREF, EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
-    [1][0][1][A][A] = { EEA_NONE,        EHA_INDEXED_STAT,       ETA_NOOP, 0, },
-    [1][1][0][0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME_DYN,  ETA_NOOP, EPF_REF_FOUND, },
-    [1][1][0][1][A] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME_NEW,  ETA_NEW,  EPF_REF_NEW|EPF_REF_FOUND, },
-    [1][1][1][A][A] = { EEA_NONE,        EHA_INDEXED_DYN,        ETA_NOOP, EPF_REF_FOUND, },
-#undef A
-};
-
-
-static int
-enc_has_or_can_evict_at_least (struct lsqpack_enc *enc, size_t new_entry_size)
-{
-    const struct lsqpack_enc_table_entry *entry;
-    lsqpack_abs_id_t min_id;
-    size_t avail;
-
-    avail = enc->qpe_max_capacity - enc->qpe_cur_capacity;
-    if (avail >= new_entry_size)
-        return 1;
-
-    min_id = 0; /* TODO */
-    STAILQ_FOREACH(entry, &enc->qpe_all_entries, ete_next_all)
-        if (entry->ete_id < min_id)
-        {
-            avail += ETE_SIZE(entry);
-            if (avail >= new_entry_size)
-            {
-                enc->qpe_cur_header.search_cutoff = entry->ete_id;
-                return 1;
-            }
-        }
-        else
-            return 0;
-
-    return 0;
-}
-
-
-enum lsqpack_enc_status
-lsqpack_enc_encode (struct lsqpack_enc *enc,
-        unsigned char *enc_buf, size_t *enc_sz_p,
-        unsigned char *hea_buf, size_t *hea_sz_p,
-        const char *name, unsigned name_len,
-        const char *value, unsigned value_len,
-        enum lsqpack_enc_flags flags)
-{
-    unsigned char *const enc_buf_end = enc_buf + *enc_sz_p;
-    unsigned char *const hea_buf_end = hea_buf + *hea_sz_p;
-    struct lsqpack_enc_table_entry *new_entry;
-    struct encode_program prog;
-    struct enc_found ef;
-    int index, risk;
-
-    size_t enc_sz, hea_sz;
-    unsigned char *dst;
-    lsqpack_abs_id_t id;
-    int r;
-
-    /* Encoding always outputs at least a byte to the header block.  If
-     * no bytes are available, encoding cannot proceed.
-     */
-    if (hea_buf == hea_buf_end)
-        return LQES_NOBUF_HEAD;
-
-    index = !(flags & LQEF_NO_INDEX)
-        && enc->qpe_cur_header.use_dynamic_table
-        && enc->qpe_ins_count < LSQPACK_MAX_ABS_ID
-        && enc_has_or_can_evict_at_least(enc, ENTRY_COST(name_len, value_len));
-
-  restart:
-    risk = enc->qpe_cur_header.n_risked > 0
-        || enc->qpe_cur_header.others_at_risk
-        || enc->qpe_cur_streams_at_risk < enc->qpe_max_risked_streams;
-
-    ef = qenc_find_entry(enc, risk, name, name_len, value, value_len);
-
-    prog = encode_programs
-                [ef.ef_found]
-                [ef.ef_table_type]
-                [ef.ef_value_match]
-                [index]
-                [risk];
-
-    switch (prog.ep_enc_action)
-    {
-    case EEA_INS_NAMEREF:
-        dst = enc_buf;
-        if (TT_STATIC == ef.ef_table_type)
-        {
-            *dst = 0x80 | 0x40;
-            id = ef.ef_entry_id;
-        }
-        else
-        {
-            *dst = 0x80 | 0x40;
-            id = enc->qpe_ins_count - ef.ef_entry_id;
-        }
-        dst = lsqpack_enc_int(dst, enc_buf_end, id, 6);
-        if (dst <= enc_buf)
-            return LQES_NOBUF_ENC;
-        r = lsqpack_enc_enc_str(7, dst, enc_buf_end - dst,
-                                    (const unsigned char *) value, value_len);
-        if (r < 0)
-            return LQES_NOBUF_ENC;
-        dst += (unsigned) r;
-        enc_sz = dst - enc_buf;
-        break;
-    case EEA_INS_LIT:
-        dst = enc_buf;
-        *dst = 0x40;
-        r = lsqpack_enc_enc_str(5, dst, enc_buf_end - dst,
-                                (const unsigned char *) name, name_len);
-        if (r < 0)
-            return LQES_NOBUF_ENC;
-        dst += r;
-        r = lsqpack_enc_enc_str(7, dst, enc_buf_end - dst,
-                                (const unsigned char *) value, value_len);
-        if (r < 0)
-            return LQES_NOBUF_ENC;
-        dst += r;
-        enc_sz = dst - enc_buf;
-        break;
-    default:
-        assert(EEA_NONE == prog.ep_enc_action);
-        enc_sz = 0;
-        break;
-    }
-
-    dst = hea_buf;
-    switch (prog.ep_hea_action)
-    {
-    case EHA_INDEXED_STAT:
-        *dst = 0x80 | 0x40;
-        dst = lsqpack_enc_int(dst, hea_buf_end, ef.ef_entry_id, 6);
-        if (dst <= hea_buf)
-            return LQES_NOBUF_HEAD;
-        hea_sz = dst - hea_buf;
-        break;
-    case EHA_INDEXED_NEW:
-        id = enc->qpe_ins_count + 1;
-  post_base_idx:
-        *dst = 0x10;
-        assert(id > enc->qpe_cur_header.base_idx);
-        id -= enc->qpe_cur_header.base_idx;
-        dst = lsqpack_enc_int(dst, hea_buf_end, id, 4);
-        if (dst <= hea_buf)
-            return LQES_NOBUF_HEAD;
-        hea_sz = dst - hea_buf;
-        break;
-    case EHA_INDEXED_DYN:
-        id = ef.ef_entry_id;
-        if (id > enc->qpe_cur_header.base_idx)
-            goto post_base_idx;
-        *dst = 0x80;
-        dst = lsqpack_enc_int(dst, hea_buf_end, ef.ef_entry_id, 6);
-        if (dst <= hea_buf)
-            return LQES_NOBUF_HEAD;
-        hea_sz = dst - hea_buf;
-        break;
-    case EHA_LIT:
-        *dst = 0x20
-               | (((flags & LQEF_NO_INDEX) > 0) << 4)
-               ;
-        r = lsqpack_enc_enc_str(3, dst, hea_buf_end - dst,
-                                (const unsigned char *) name, name_len);
-        if (r < 0)
-            return LQES_NOBUF_HEAD;
-        dst += r;
-        r = lsqpack_enc_enc_str(7, dst, hea_buf_end - dst,
-                                (const unsigned char *) value, value_len);
-        if (r < 0)
-            return LQES_NOBUF_HEAD;
-        dst += r;
-        hea_sz = dst - hea_buf;
-        break;
-    case EHA_LIT_WITH_NAME_NEW:
-        id = ef.ef_entry_id;
- post_base_name_ref:
-        *dst = (((flags & LQEF_NO_INDEX) > 0) << 3);
-        assert(id > enc->qpe_cur_header.base_idx);
-        id -= enc->qpe_cur_header.base_idx;
-        dst = lsqpack_enc_int(dst, hea_buf_end, id, 3);
-        if (dst <= hea_buf)
-            return LQES_NOBUF_HEAD;
-        r = lsqpack_enc_enc_str(7, dst, hea_buf_end - dst,
-                                (const unsigned char *) value, value_len);
-        if (r < 0)
-            return LQES_NOBUF_HEAD;
-        dst += (unsigned) r;
-        hea_sz = dst - hea_buf;
-        break;
-    case EHA_LIT_WITH_NAME_DYN:
-        id = ef.ef_entry_id;
-        if (id > enc->qpe_cur_header.base_idx)
-            goto post_base_name_ref;
-        *dst = 0x40
-               | (((flags & LQEF_NO_INDEX) > 0) << 5)
-               ;
-        id = enc->qpe_cur_header.base_idx - ef.ef_entry_id;
-        dst = lsqpack_enc_int(dst, hea_buf_end, id, 4);
-        if (dst <= hea_buf)
-            return LQES_NOBUF_HEAD;
-        r = lsqpack_enc_enc_str(7, dst, hea_buf_end - dst,
-                                (const unsigned char *) value, value_len);
-        if (r < 0)
-            return LQES_NOBUF_HEAD;
-        dst += (unsigned) r;
-        hea_sz = dst - hea_buf;
-        break;
-    default:
-        assert(prog.ep_hea_action == EHA_LIT_WITH_NAME_STAT);
-        *dst = 0x40
-               | (((flags & LQEF_NO_INDEX) > 0) << 5)
-               | 0x10
-               ;
-        dst = lsqpack_enc_int(dst, hea_buf_end, ef.ef_entry_id, 4);
-        if (dst <= hea_buf)
-            return LQES_NOBUF_HEAD;
-        r = lsqpack_enc_enc_str(7, dst, hea_buf_end - dst,
-                                (const unsigned char *) value, value_len);
-        if (r < 0)
-            return LQES_NOBUF_HEAD;
-        dst += (unsigned) r;
-        hea_sz = dst - hea_buf;
-        break;
-    }
-
-    switch (prog.ep_tab_action)
-    {
-    case ETA_NEW:
-        new_entry = lsqpack_enc_push_entry(enc, name, name_len, value,
-                                                                    value_len);
-        if (!new_entry)
-        {   /* Push can only fail due to inability to allocate memory.
-             * In this case, fall back on encoding without indexing.
-             */
-            index = 0;
-            goto restart;
-        }
-        if (prog.ep_flags & EPF_REF_NEW)
-        {
-            ++new_entry->ete_n_reffd;
-            assert(new_entry->ete_id > enc->qpe_cur_header.hinfo.qhi_max_id);
-            enc->qpe_cur_header.hinfo.qhi_max_id = new_entry->ete_id;
-            ++enc->qpe_cur_header.n_risked;
-            if (enc->qpe_cur_header.hinfo.qhi_min_id == 0
-                    || enc->qpe_cur_header.hinfo.qhi_min_id > new_entry->ete_id)
-                enc->qpe_cur_header.hinfo.qhi_min_id = new_entry->ete_id;
-        }
-        break;
-    default:
-        assert(prog.ep_tab_action == ETA_NOOP);
-        break;
-    }
-
-    if (prog.ep_flags & EPF_REF_FOUND)
-    {
-        assert(ef.ef_table_type == TT_DYNAMIC);
-        ++ef.ef_entry->ete_n_reffd;
-        enc->qpe_cur_header.n_risked += enc->qpe_max_acked_id < ef.ef_entry_id;
-        if (enc->qpe_cur_header.hinfo.qhi_min_id == 0
-                || enc->qpe_cur_header.hinfo.qhi_min_id > ef.ef_entry_id)
-            enc->qpe_cur_header.hinfo.qhi_min_id = ef.ef_entry_id;
-        if (enc->qpe_cur_header.hinfo.qhi_max_id == 0
-                || enc->qpe_cur_header.hinfo.qhi_max_id < ef.ef_entry_id)
-            enc->qpe_cur_header.hinfo.qhi_max_id = ef.ef_entry_id;
-    }
-
-    *enc_sz_p = enc_sz;
-    *hea_sz_p = hea_sz;
-    return LQES_OK;
-}
-
-
-void
-lsqpack_enc_set_max_capacity (struct lsqpack_enc *enc, unsigned max_capacity)
-{
-    enc->qpe_max_capacity = max_capacity;
-    qenc_remove_overflow_entries(enc);
-}
-
-
-static int
-enc_proc_header_ack (struct lsqpack_enc *enc, uint64_t stream_id)
-{
-    if (stream_id > MAX_QUIC_STREAM_ID)
-        return -1;
-    return -1;  /* TODO */
-}
-
-
-static int
-enc_proc_table_synch (struct lsqpack_enc *enc, uint64_t abs_id)
-{
-    if (abs_id > LSQPACK_MAX_ABS_ID)
-        return -1;
-    return -1;  /* TODO */
-}
-
-
-static int
-enc_proc_stream_cancel (struct lsqpack_enc *enc, uint64_t stream_id)
-{
-    if (stream_id > MAX_QUIC_STREAM_ID)
-        return -1;
-    return -1;  /* TODO */
-}
-
-
-/* Assumption: we have at least one byte to work with */
-/* Return value:
- *  0   OK
- *  -1  Out of input
- *  -2  Value cannot be represented as 64-bit integer (overflow)
- */
-#if !LS_QPACK_EMIT_TEST_CODE
-static
-#endif
-       int
-lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
-                   unsigned prefix_bits, uint64_t *value_p,
-                   struct lsqpack_dec_int_state *state)
-{
-    const unsigned char *const orig_src = *src_p;
-    const unsigned char *src;
-    unsigned char prefix_max;
-    unsigned M, nread;
-    uint64_t val, B;
-
-    src = *src_p;
-
-    if (state->resume)
-    {
-        val = state->val;
-        M = state->M;
-        goto resume;
-    }
-
-    prefix_max = (1 << prefix_bits) - 1;
-    val = *src++;
-    val &= prefix_max;
-
-    if (val < prefix_max)
-    {
-        *src_p = src;
-        *value_p = val;
-        return 0;
-    }
-
-    M = 0;
-    do
-    {
-        if (src < src_end)
-        {
-  resume:   B = *src++;
-            val = val + ((B & 0x7f) << M);
-            M += 7;
-        }
-        else
-        {
-            nread = (state->resume ? state->nread : 0) + (src - orig_src);
-            if (nread < LSQPACK_UINT64_ENC_SZ)
-            {
-                state->val = val;
-                state->M = M;
-                state->nread = nread;
-                state->resume = 1;
-                return -1;
-            }
-            else
-                return -2;
-        }
-    }
-    while (B & 0x80);
-
-    if (M <= 63 || (M == 70 && src[-1] <= 1 && (val & (1ull << 63))))
-    {
-        *src_p = src;
-        *value_p = val;
-        return 0;
-    }
-    else
-        return -2;
-}
-
-
-
-
-int
-lsqpack_enc_decoder_in (struct lsqpack_enc *enc,
-                                    const unsigned char *buf, size_t buf_sz)
-{
-    const unsigned char *const end = buf + buf_sz;
-    uint64_t val;
-    int r;
-    unsigned prefix_bits = -1;  /* This can be any value in a resumed call
-                                 * to the integer decoder -- it is only
-                                 * used in the first call.
-                                 */
-
-    while (buf < end)
-    {
-        switch (enc->qpe_dec_stream_state.dec_int_state.resume)
-        {
-        case 0:
-            if (buf[0] & 0x80)              /* Header ACK */
-            {
-                prefix_bits = 7;
-                enc->qpe_dec_stream_state.handler = enc_proc_header_ack;
-            }
-            else if ((buf[0] & 0xC) == 0)   /* Table State Synchronize */
-            {
-                prefix_bits = 6;
-                enc->qpe_dec_stream_state.handler = enc_proc_table_synch;
-            }
-            else                            /* Stream Cancellation */
-            {
-                assert((buf[0] & 0xC) == 0x40);
-                prefix_bits = 6;
-                enc->qpe_dec_stream_state.handler = enc_proc_stream_cancel;
-            }
-            /* fall through */
-        case 1:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &val,
-                                &enc->qpe_dec_stream_state.dec_int_state);
-            if (r == 0)
-            {
-                r = enc->qpe_dec_stream_state.handler(enc, val);
-                if (r != 0)
-                    return -1;
-                enc->qpe_dec_stream_state.dec_int_state.resume = 0;
-            }
-            else if (r == -1)
-            {
-                enc->qpe_dec_stream_state.dec_int_state.resume = 1;
-                return 0;
-            }
-            else
-                return -1;
-            break;
-        }
-    }
-
-    return 0;
-}
-
-
-/* Dynamic table entry: */
-struct lsqpack_dec_table_entry
-{
-    unsigned    dte_name_len;
-    unsigned    dte_val_len;
-    unsigned    dte_refcnt;
-    char        dte_buf[0];     /* Contains both name and value */
-};
-
-#define DTE_NAME(dte) ((dte)->dte_buf)
-#define DTE_VALUE(dte) (&(dte)->dte_buf[(dte)->dte_name_len])
-#define DTE_SIZE(dte) ENTRY_COST((dte)->dte_name_len, (dte)->dte_val_len)
-
-enum
-{
-    HPACK_HUFFMAN_FLAG_ACCEPTED = 0x01,
-    HPACK_HUFFMAN_FLAG_SYM = 0x02,
-    HPACK_HUFFMAN_FLAG_FAIL = 0x04,
-};
-
-
-static struct lsqpack_dec_table_entry *
-qdec_get_table_entry_rel (const struct lsqpack_dec *dec,
-                                            lsqpack_abs_id_t relative_idx)
-{
-    uintptr_t val;
-    unsigned id;
-
-    if (relative_idx < lsqpack_arr_count(&dec->qpd_dyn_table))
-    {
-        id = lsqpack_arr_count(&dec->qpd_dyn_table) - 1 - relative_idx;
-        val = lsqpack_arr_get(&dec->qpd_dyn_table, id);
-        return (struct lsqpack_dec_table_entry *) val;
-    }
-    else
-        return NULL;
-}
-
-
-static struct lsqpack_dec_table_entry *
-qdec_get_table_entry_abs (const struct lsqpack_dec *dec,
-                                                lsqpack_abs_id_t abs_idx)
-{
-    uintptr_t val;
-    unsigned id;
-
-    if (abs_idx > dec->qpd_del_count && abs_idx <= dec->qpd_ins_count)
-    {
-        id = abs_idx - dec->qpd_del_count - 1;
-        assert(id < lsqpack_arr_count(&dec->qpd_dyn_table));
-        val = lsqpack_arr_get(&dec->qpd_dyn_table, id);
-        return (struct lsqpack_dec_table_entry *) val;
-    }
-    else
-        return NULL;
-}
-
-
-void
-lsqpack_dec_init (struct lsqpack_dec *dec, unsigned dyn_table_size,
-    unsigned max_risked_streams,
-    lsqpack_stream_write_f write_decoder, void *decoder_stream,
-    lsqpack_stream_read_f read_header_block,
-    lsqpack_stream_wantread_f wantread_header_block,
-    void (*header_block_done)(void *, struct lsqpack_header_set *))
-{
-    memset(dec, 0, sizeof(*dec));
-    dec->qpd_max_capacity = dyn_table_size;
-    dec->qpd_cur_max_capacity = dyn_table_size;
-    dec->qpd_max_risked_streams = max_risked_streams;
-    dec->qpd_dec_stream = decoder_stream;
-    dec->qpd_write_dec = write_decoder;
-    dec->qpd_read_header_block = read_header_block;
-    dec->qpd_wantread_header_block = wantread_header_block;
-    dec->qpd_header_block_done = header_block_done;
-    TAILQ_INIT(&dec->qpd_header_sets);
-    lsqpack_arr_init(&dec->qpd_dyn_table);
-}
-
-
-static void
-qdec_decref_entry (struct lsqpack_dec_table_entry *entry)
-{
-    --entry->dte_refcnt;
-    if (0 == entry->dte_refcnt)
-        free(entry);
-}
-
-
-enum {
-    DEI_NEXT_INST,
-    DEI_WINR_READ_NAME_IDX,
-    DEI_WINR_BEGIN_READ_VAL_LEN,
-    DEI_WINR_READ_VAL_LEN,
-    DEI_WINR_READ_VALUE_PLAIN,
-    DEI_WINR_READ_VALUE_HUFFMAN,
-    DEI_DUP_READ_IDX,
-    DEI_SIZE_UPD_READ_IDX,
-    DEI_WONR_READ_NAME_LEN,
-    DEI_WONR_READ_NAME_HUFFMAN,
-    DEI_WONR_READ_NAME_PLAIN,
-    DEI_WONR_BEGIN_READ_VAL_LEN,
-    DEI_WONR_READ_VAL_LEN,
-    DEI_WONR_READ_VALUE_HUFFMAN,
-    DEI_WONR_READ_VALUE_PLAIN,
-};
-
-
-void
-lsqpack_dec_cleanup (struct lsqpack_dec *dec)
-{
-    uintptr_t val;
-
-    /* TODO: free blocked streams */
-
-    /* TODO: mark unreturned header sets */
-
-    if (dec->qpd_enc_state.resume >= DEI_WINR_READ_NAME_IDX
-            && dec->qpd_enc_state.resume <= DEI_WINR_READ_VALUE_HUFFMAN)
-    {
-        if (dec->qpd_enc_state.ctx_u.with_namref.entry)
-            free(dec->qpd_enc_state.ctx_u.with_namref.entry);
-    }
-    else if (dec->qpd_enc_state.resume >= DEI_WONR_READ_NAME_LEN
-            && dec->qpd_enc_state.resume <= DEI_WONR_READ_VALUE_PLAIN)
-    {
-        if (dec->qpd_enc_state.ctx_u.wo_namref.entry)
-            free(dec->qpd_enc_state.ctx_u.wo_namref.entry);
-    }
-
-    while (lsqpack_arr_count(&dec->qpd_dyn_table) > 0)
-    {
-        val = lsqpack_arr_pop(&dec->qpd_dyn_table);
-        qdec_decref_entry((struct lsqpack_dec_table_entry *) val);
-    }
-    lsqpack_arr_cleanup(&dec->qpd_dyn_table);
-}
-
-
-struct header_block_read_ctx
-{
-    TAILQ_ENTRY(header_block_read_ctx)  hbrc_next;
-    void                               *hbrc_stream;
-    size_t                              hbrc_size;
-    lsqpack_abs_id_t                    hbrc_largest_ref;   /* Parsed from prefix */
-    lsqpack_abs_id_t                    hbrc_base_index;    /* Parsed from prefix */
-
-    /* The header set that is returned to the user is built up one entry
-     * at a time.
-     */
-    struct lsqpack_header_set          *hbrc_header_set;
-    unsigned                            hbrc_nalloced_headers;
-
-    /* There are two parsing phases: reading the prefix and reading the
-     * instruction stream.
-     */
-    enum read_header_status           (*hbrc_parse) (struct lsqpack_dec *,
-            struct header_block_read_ctx *, const unsigned char *, size_t);
-
-    enum {
-        HBRC_HAVE_LARGEST_REF   = 1 << 0,
-    }                                   hbrc_flags;
-
-    /* First we read the largest reference to see whether the header block
-     * is blocked.  hbrc_lr_min_sz is the minimum number of bytes that a
-     * valid largest reference could possibly be expressed in. hbrc_lr_nread
-     * is the number of bytes read so far.
-     */
-    unsigned char                       hbrc_lr_min_sz;
-    unsigned char                       hbrc_lr_nread;
-
-    union {
-        struct {
-            enum {
-                PREFIX_STATE_BEGIN_READING_LARGEST_REF,
-                PREFIX_STATE_READ_LARGEST_REF,
-                PREFIX_STATE_BEGIN_READING_BASE_IDX,
-                PREFIX_STATE_READ_DELTA_BASE_IDX,
-            }                                               state;
-            union {
-                /* Largest reference */
-                struct {
-                    struct lsqpack_dec_int_state    dec_int_state;
-                    uint64_t                        value;
-                }                                               lar_ref;
-                /* Delta base index */
-                struct {
-                    struct lsqpack_dec_int_state    dec_int_state;
-                    uint64_t                        value;
-                    int                             sign;
-                }                                               base_idx;
-            }                                               u;
-        }                                       prefix;
-        struct {
-            enum {
-                DATA_STATE_NEXT_INSTRUCTION,
-                DATA_STATE_READ_IHF_IDX,
-                DATA_STATE_READ_IPBI_IDX,
-                DATA_STATE_READ_LFINR_IDX,
-                DATA_STATE_BEGIN_READ_LFINR_VAL_LEN,
-                DATA_STATE_READ_LFINR_VAL_LEN,
-                DATA_STATE_LFINR_READ_VAL_HUFFMAN,
-                DATA_STATE_LFINR_READ_VAL_PLAIN,
-            }                                               state;
-
-            union
-            {
-                /* Indexed Header Field */
-                struct {
-                    struct lsqpack_dec_int_state    dec_int_state;
-                    uint64_t                        value;
-                    int                             is_static;
-                }                                           ihf;
-
-                /* Literal Header Field With Name Reference */
-                struct {
-                    struct lsqpack_dec_int_state    dec_int_state;
-                    struct lsqpack_huff_decode_state
-                                                    dec_huff_state;
-                    union {
-                        unsigned                        static_idx;
-                        struct lsqpack_dec_table_entry *dyn_entry;
-                    }                               name_ref;
-                    char                           *value;
-                    unsigned                        nalloc;
-                    unsigned                        val_len;
-                    unsigned                        val_off;
-                    unsigned                        nread;
-                    int                             is_static;
-                    int                             is_never;
-                    int                             is_huffman;
-                }                                           lfinr;
-
-                /* Indexed Header Field With Post-Base Index */
-                struct {
-                    struct lsqpack_dec_int_state    dec_int_state;
-                    uint64_t                        value;
-                }                                           ipbi;
-            }                                               u;
-        }                                       data;
-    }                                   hbrc_parse_ctx_u;
-};
-
-
-struct header_internal
-{
-    struct lsqpack_header            hi_uhead;
-    struct lsqpack_dec_table_entry  *hi_entry;
-    enum {
-        HI_OWN_NAME     = 1 << 0,
-        HI_OWN_VALUE    = 1 << 1,
-    }                                hi_flags;
-};
-
-
-static struct header_internal *
-allocate_hint (struct header_block_read_ctx *read_ctx)
-{
-    struct lsqpack_header **headers;
-    struct header_internal *hint;
-    unsigned idx;
-
-    if (!read_ctx->hbrc_header_set)
-    {
-        read_ctx->hbrc_header_set
-                            = calloc(1, sizeof(*read_ctx->hbrc_header_set));
-        if (!read_ctx->hbrc_header_set)
-            return NULL;
-    }
-
-    if (read_ctx->hbrc_header_set->qhs_count >= read_ctx->hbrc_nalloced_headers)
-    {
-        if (read_ctx->hbrc_nalloced_headers)
-            read_ctx->hbrc_nalloced_headers *= 2;
-        else
-            read_ctx->hbrc_nalloced_headers = 4;
-        headers =
-            realloc(read_ctx->hbrc_header_set->qhs_headers,
-                read_ctx->hbrc_nalloced_headers
-                    * sizeof(read_ctx->hbrc_header_set->qhs_headers[0]));
-        if (headers)
-            read_ctx->hbrc_header_set->qhs_headers = headers;
-        else
-            return NULL;
-    }
-
-    hint = calloc(1, sizeof(*hint));
-    if (!hint)
-        return NULL;
-
-    idx = read_ctx->hbrc_header_set->qhs_count++;
-    read_ctx->hbrc_header_set->qhs_headers[idx] = &hint->hi_uhead;
-    return hint;
-}
-
-
-static int
-hset_add_static_entry (struct lsqpack_dec *dec,
-                    struct header_block_read_ctx *read_ctx, uint64_t idx)
-{
-    struct header_internal *hint;
-
-    if (idx > 0 && idx <= QPACK_STATIC_TABLE_SIZE
-                                    && (hint = allocate_hint(read_ctx)))
-    {
-        hint->hi_uhead.qh_name      = static_table[idx - 1].name;
-        hint->hi_uhead.qh_value     = static_table[idx - 1].val;
-        hint->hi_uhead.qh_name_len  = static_table[idx - 1].name_len;
-        hint->hi_uhead.qh_value_len = static_table[idx - 1].val_len;
-        hint->hi_uhead.qh_flags     = 0;
-        return 0;
-    }
-    else
-        return -1;
-}
-
-
-static int
-hset_add_dynamic_entry (struct lsqpack_dec *dec,
-                    struct header_block_read_ctx *read_ctx, uint64_t idx)
-{
-    struct lsqpack_dec_table_entry *entry;
-    struct header_internal *hint;
-
-    if ((entry = qdec_get_table_entry_abs(dec, idx))
-                                    && (hint = allocate_hint(read_ctx)))
-    {
-        hint->hi_uhead.qh_name      = DTE_NAME(entry);
-        hint->hi_uhead.qh_value     = DTE_VALUE(entry);
-        hint->hi_uhead.qh_name_len  = entry->dte_name_len;
-        hint->hi_uhead.qh_value_len = entry->dte_val_len;
-        hint->hi_uhead.qh_flags     = 0;
-        hint->hi_entry = entry;
-        ++entry->dte_refcnt;
-        return 0;
-    }
-    else
-        return -1;
-}
-
-
-static int
-hset_add_static_nameref_entry (struct header_block_read_ctx *read_ctx,
-                unsigned idx, char *value, unsigned val_len, int is_never)
-{
-    struct header_internal *hint;
-
-    if ((hint = allocate_hint(read_ctx)))
-    {
-        hint->hi_uhead.qh_name      = static_table[ idx - 1 ].name;
-        hint->hi_uhead.qh_name_len  = static_table[ idx - 1 ].name_len;
-        hint->hi_uhead.qh_value     = value;
-        hint->hi_uhead.qh_value_len = val_len;
-        if (is_never)
-            hint->hi_uhead.qh_flags = QH_NEVER;
-        else
-            hint->hi_uhead.qh_flags = 0;
-        hint->hi_flags = HI_OWN_VALUE;
-        return 0;
-    }
-    else
-        return -1;
-}
-
-
-static int
-hset_add_dynamic_nameref_entry (struct header_block_read_ctx *read_ctx,
-                struct lsqpack_dec_table_entry *entry, char *value,
-                unsigned val_len, int is_never)
-{
-    struct header_internal *hint;
-
-    if ((hint = allocate_hint(read_ctx)))
-    {
-        hint->hi_uhead.qh_name      = DTE_NAME(entry);
-        hint->hi_uhead.qh_name_len  = entry->dte_name_len;
-        hint->hi_uhead.qh_value     = value;
-        hint->hi_uhead.qh_value_len = val_len;
-        if (is_never)
-            hint->hi_uhead.qh_flags = QH_NEVER;
-        else
-            hint->hi_uhead.qh_flags = 0;
-        hint->hi_flags = HI_OWN_VALUE;
-        ++entry->dte_refcnt;
-        return 0;
-    }
-    else
-        return -1;
-}
-
-
-static unsigned char *
-qdec_huff_dec4bits (uint8_t src_4bits, unsigned char *dst,
-                                        struct lsqpack_decode_status *status)
-{
-    const struct decode_el cur_dec_code =
-        decode_tables[status->state][src_4bits];
-    if (cur_dec_code.flags & HPACK_HUFFMAN_FLAG_FAIL) {
-        return NULL; //failed
-    }
-    if (cur_dec_code.flags & HPACK_HUFFMAN_FLAG_SYM)
-    {
-        *dst = cur_dec_code.sym;
-        dst++;
-    }
-
-    status->state = cur_dec_code.state;
-    status->eos = ((cur_dec_code.flags & HPACK_HUFFMAN_FLAG_ACCEPTED) != 0);
-    return dst;
-}
-
-
-struct huff_decode_retval
-{
-    enum
-    {
-        HUFF_DEC_OK,
-        HUFF_DEC_END_SRC,
-        HUFF_DEC_END_DST,
-        HUFF_DEC_ERROR,
-    }                       status;
-    unsigned                n_dst;
-    unsigned                n_src;
-};
-
-
-#if !LS_QPACK_EMIT_TEST_CODE
-static
-#endif
-       struct huff_decode_retval
-lsqpack_huff_decode (const unsigned char *src, int src_len,
-            unsigned char *dst, int dst_len,
-            struct lsqpack_huff_decode_state *state, int final)
-{
-    const unsigned char *p_src = src;
-    const unsigned char *const src_end = src + src_len;
-    unsigned char *p_dst = dst;
-    unsigned char *dst_end = dst + dst_len;
-
-    switch (state->resume)
-    {
-    case 1: goto ck1;
-    case 2: goto ck2;
-    case 3: goto ck3;
-    }
-
-    state->status.state = 0;
-    state->status.eos   = 1;
-
-  ck1:
-    while (p_src != src_end)
-    {
-        if (p_dst == dst_end)
-        {
-            state->resume = 2;
-            return (struct huff_decode_retval) {
-                            .status = HUFF_DEC_END_DST,
-                            .n_dst  = dst_len,
-                            .n_src  = p_src - src,
-            };
-        }
-  ck2:
-        if ((p_dst = qdec_huff_dec4bits(*p_src >> 4, p_dst, &state->status))
-                == NULL)
-            return (struct huff_decode_retval) { .status = HUFF_DEC_ERROR, };
-        if (p_dst == dst_end)
-        {
-            state->resume = 3;
-            return (struct huff_decode_retval) {
-                            .status = HUFF_DEC_END_DST,
-                            .n_dst  = dst_len,
-                            .n_src  = p_src - src,
-            };
-        }
-  ck3:
-        if ((p_dst = qdec_huff_dec4bits(*p_src & 0xf, p_dst, &state->status))
-                == NULL)
-            return (struct huff_decode_retval) { .status = HUFF_DEC_ERROR, };
-        ++p_src;
-    }
-
-    if (final)
-        return (struct huff_decode_retval) {
-                    .status = state->status.eos ? HUFF_DEC_OK : HUFF_DEC_ERROR,
-                    .n_dst  = p_dst - dst,
-                    .n_src  = p_src - src,
-        };
-    else
-    {
-        state->resume = 1;
-        return (struct huff_decode_retval) {
-                    .status = HUFF_DEC_END_SRC,
-                    .n_dst  = p_dst - dst,
-                    .n_src  = p_src - src,
-        };
-    }
-}
-
-
-enum read_header_status
-{
-    RHS_DONE,
-    RHS_BLOCKED,
-    RHS_NEED,
-    RHS_ERROR,
-};
-
-
-static enum read_header_status
-parse_header_data (struct lsqpack_dec *dec,
-        struct header_block_read_ctx *read_ctx, const unsigned char *buf,
-                                                                size_t bufsz)
-{
-    const unsigned char *const end = buf + bufsz;
-    struct huff_decode_retval hdr;
-    uint64_t value;
-    size_t size;
-    char *str;
-    unsigned prefix_bits = -1;
-    int r;
-
-#define IHF read_ctx->hbrc_parse_ctx_u.data.u.ihf
-#define IPBI read_ctx->hbrc_parse_ctx_u.data.u.ipbi
-#define LFINR read_ctx->hbrc_parse_ctx_u.data.u.lfinr
-
-    while (buf < end)
-    {
-        switch (read_ctx->hbrc_parse_ctx_u.data.state)
-        {
-        case DATA_STATE_NEXT_INSTRUCTION:
-            if (buf[0] & 0x80)
-            {
-                prefix_bits = 6;
-                IHF.is_static = buf[0] & 0x40;
-                IHF.dec_int_state.resume = 0;
-                read_ctx->hbrc_parse_ctx_u.data.state
-                                                = DATA_STATE_READ_IHF_IDX;
-                goto data_state_read_ihf_idx;
-            }
-            /* Literal Header Field With Name Reference */
-            else if (buf[0] & 0x40)
-            {
-                prefix_bits = 4;
-                LFINR.is_never = buf[0] & 0x20;
-                LFINR.is_static = buf[0] & 0x10;
-                LFINR.dec_int_state.resume = 0;
-                LFINR.value = NULL;
-                LFINR.name_ref.dyn_entry = NULL;
-                read_ctx->hbrc_parse_ctx_u.data.state
-                                                = DATA_STATE_READ_LFINR_IDX;
-                goto data_state_read_lfinr_idx;
-            }
-            /* Literal Header Field Without Name Reference */
-            else if (buf[0] & 0x20)
-            {
-                assert(0);  /* TODO */
-            }
-            /* Indexed Header Field With Post-Base Index */
-            else if (buf[0] & 0x10)
-            {
-                prefix_bits = 4;
-                IPBI.dec_int_state.resume = 0;
-                read_ctx->hbrc_parse_ctx_u.data.state
-                                                = DATA_STATE_READ_IPBI_IDX;
-                goto data_state_read_ipbi_idx;
-            }
-            /* Literal Header Field With Post-Base Name Reference */
-            else
-            {
-                assert(0);  /* TODO */
-            }
-        case DATA_STATE_READ_IHF_IDX:
-  data_state_read_ihf_idx:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &IHF.value,
-                                                        &IHF.dec_int_state);
-            if (r == 0)
-            {
-                if (IHF.is_static)
-                    r = hset_add_static_entry(dec, read_ctx, IHF.value);
-                else
-                    r = hset_add_dynamic_entry(dec, read_ctx, IHF.value);
-                if (r == 0)
-                {
-                    read_ctx->hbrc_parse_ctx_u.data.state
-                                            = DATA_STATE_NEXT_INSTRUCTION;
-                    break;
-                }
-                else
-                    return RHS_ERROR;
-            }
-            else if (r == -1)
-                return RHS_NEED;
-            else
-                return RHS_ERROR;
-#undef IHF
-        case DATA_STATE_READ_LFINR_IDX:
-  data_state_read_lfinr_idx:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &value,
-                                                        &LFINR.dec_int_state);
-            if (r == 0)
-            {
-                if (LFINR.is_static)
-                {
-                    if (value > 0 && value <= QPACK_STATIC_TABLE_SIZE)
-                        LFINR.name_ref.static_idx = value;
-                    else
-                        return RHS_ERROR;
-                }
-                else
-                {
-                    LFINR.name_ref.dyn_entry
-                        = qdec_get_table_entry_abs(dec,
-                            read_ctx->hbrc_base_index - value);
-                    if (LFINR.name_ref.dyn_entry)
-                        ++LFINR.name_ref.dyn_entry->dte_refcnt;
-                    else
-                        return RHS_ERROR;
-                }
-                read_ctx->hbrc_parse_ctx_u.data.state
-                                    = DATA_STATE_BEGIN_READ_LFINR_VAL_LEN;
-                break;
-            }
-            else if (r == -1)
-                return RHS_NEED;
-            else
-                return RHS_ERROR;
-        case DATA_STATE_BEGIN_READ_LFINR_VAL_LEN:
-            LFINR.is_huffman = buf[0] & 0x80;
-            prefix_bits = 7;
-            LFINR.dec_int_state.resume = 0;
-            read_ctx->hbrc_parse_ctx_u.data.state
-                                    = DATA_STATE_BEGIN_READ_LFINR_VAL_LEN;
-            /* Fall-through */
-        case DATA_STATE_READ_LFINR_VAL_LEN:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &value,
-                                                        &LFINR.dec_int_state);
-            if (r == 0)
-            {
-                if (LFINR.is_huffman)
-                {
-                    LFINR.nalloc = value + value / 2;
-                    LFINR.dec_huff_state.resume = 0;
-                    read_ctx->hbrc_parse_ctx_u.data.state
-                                        = DATA_STATE_LFINR_READ_VAL_HUFFMAN;
-                }
-                else
-                {
-                    LFINR.nalloc = value;
-                    read_ctx->hbrc_parse_ctx_u.data.state
-                                        = DATA_STATE_LFINR_READ_VAL_PLAIN;
-                }
-                LFINR.val_len = value;
-                LFINR.nread = 0;
-                LFINR.val_off = 0;
-                LFINR.value = malloc(LFINR.nalloc);
-                if (LFINR.value)
-                    break;
-                else
-                    return RHS_ERROR;
-            }
-            else if (r == -1)
-                return RHS_NEED;
-            else
-                return RHS_ERROR;
-        case DATA_STATE_LFINR_READ_VAL_HUFFMAN:
-            size = MIN((unsigned) (end - buf), LFINR.val_len - LFINR.nread);
-            hdr = lsqpack_huff_decode(buf, size,
-                    (unsigned char *) LFINR.value + LFINR.val_off,
-                    LFINR.nalloc - LFINR.val_off,
-                    &LFINR.dec_huff_state, LFINR.nread + size == LFINR.val_len);
-            switch (hdr.status)
-            {
-            case HUFF_DEC_OK:
-                buf += hdr.n_src;
-                LFINR.val_off += hdr.n_dst;
-                read_ctx->hbrc_parse_ctx_u.data.state
-                                    = DATA_STATE_NEXT_INSTRUCTION;
-                if (LFINR.is_static)
-                    r = hset_add_static_nameref_entry(read_ctx,
-                            LFINR.name_ref.static_idx, LFINR.value,
-                            LFINR.val_off, LFINR.is_never);
-                else
-                {
-                    r = hset_add_dynamic_nameref_entry(read_ctx,
-                            LFINR.name_ref.dyn_entry, LFINR.value,
-                            LFINR.val_off, LFINR.is_never);
-                    qdec_decref_entry(LFINR.name_ref.dyn_entry);
-                    LFINR.name_ref.dyn_entry = NULL;
-                }
-                if (r == 0)
-                {
-                    LFINR.value = NULL;
-                    break;
-                }
-                else
-                    return RHS_ERROR;
-            case HUFF_DEC_END_SRC:
-                buf += hdr.n_src;
-                LFINR.nread += hdr.n_src;
-                LFINR.val_off += hdr.n_dst;
-                break;
-            case HUFF_DEC_END_DST:
-                LFINR.nalloc *= 2;
-                str = realloc(LFINR.value, LFINR.nalloc);
-                if (!str)
-                    return RHS_ERROR;
-                LFINR.value = str;
-                buf += hdr.n_src;
-                LFINR.nread += hdr.n_src;
-                LFINR.val_off += hdr.n_dst;
-                break;
-            default:
-                return RHS_ERROR;
-            }
-            break;
-#undef LFINR
-        case DATA_STATE_READ_IPBI_IDX:
-  data_state_read_ipbi_idx:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &IPBI.value,
-                                                        &IPBI.dec_int_state);
-            if (r == 0)
-            {
-                r = hset_add_dynamic_entry(dec, read_ctx,
-                                        IPBI.value + read_ctx->hbrc_base_index);
-                if (r == 0)
-                {
-                    read_ctx->hbrc_parse_ctx_u.data.state
-                                            = DATA_STATE_NEXT_INSTRUCTION;
-                    break;
-                }
-                else
-                    return RHS_ERROR;
-            }
-            else if (r == -1)
-                return RHS_NEED;
-            else
-                return RHS_ERROR;
-#undef IPBI
-        default:
-            assert(0);
-            return RHS_ERROR;
-        }
-    }
-
-    if (read_ctx->hbrc_size == 0)
-        return RHS_DONE;
-    else
-        return RHS_ERROR;
-
-}
-
-
-static enum read_header_status
-parse_header_prefix (struct lsqpack_dec *dec,
-        struct header_block_read_ctx *read_ctx, const unsigned char *buf,
-                                                                size_t bufsz)
-{
-    const unsigned char *const end = buf + bufsz;
-    unsigned prefix_bits = -1;
-    int r;
-
-#define LR read_ctx->hbrc_parse_ctx_u.prefix.u.lar_ref
-#define BI read_ctx->hbrc_parse_ctx_u.prefix.u.base_idx
-
-    while (buf < end)
-    {
-        switch (read_ctx->hbrc_parse_ctx_u.prefix.state)
-        {
-        case PREFIX_STATE_BEGIN_READING_LARGEST_REF:
-            prefix_bits = 8;
-            BI.dec_int_state.resume = 0;
-            read_ctx->hbrc_parse_ctx_u.prefix.state =
-                                            PREFIX_STATE_READ_LARGEST_REF;
-            /* Fall-through */
-        case PREFIX_STATE_READ_LARGEST_REF:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &LR.value,
-                                                        &LR.dec_int_state);
-            if (r == 0)
-            {
-                read_ctx->hbrc_flags |= HBRC_HAVE_LARGEST_REF;
-                read_ctx->hbrc_largest_ref = LR.value;
-                read_ctx->hbrc_parse_ctx_u.prefix.state
-                                        = PREFIX_STATE_BEGIN_READING_BASE_IDX;
-                if (LR.value > dec->qpd_ins_count)
-                    return RHS_BLOCKED;
-                else
-                    break;
-            }
-            else if (r == -1)
-            {
-                read_ctx->hbrc_lr_nread += buf - end;
-                if (read_ctx->hbrc_lr_nread < LSQPACK_UINT64_ENC_SZ)
-                    return RHS_NEED;
-                else
-                    return RHS_ERROR;
-            }
-            else
-                return RHS_ERROR;
-        case PREFIX_STATE_BEGIN_READING_BASE_IDX:
-            BI.sign = (buf[0] & 0x80) > 0;
-            BI.dec_int_state.resume = 0;
-            prefix_bits = 7;
-            read_ctx->hbrc_parse_ctx_u.prefix.state =
-                                            PREFIX_STATE_READ_DELTA_BASE_IDX;
-            /* Fall-through */
-        case PREFIX_STATE_READ_DELTA_BASE_IDX:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &BI.value,
-                                                        &BI.dec_int_state);
-            if (r == 0)
-            {
-                if (BI.sign)
-                    read_ctx->hbrc_base_index = read_ctx->hbrc_largest_ref
-                                                                    - BI.value;
-                else
-                    read_ctx->hbrc_base_index = read_ctx->hbrc_largest_ref
-                                                                    + BI.value;
-                read_ctx->hbrc_parse = parse_header_data;
-                read_ctx->hbrc_parse_ctx_u.data.state
-                                                = DATA_STATE_NEXT_INSTRUCTION;
-                if (end - buf)
-                    return parse_header_data(dec, read_ctx, buf, end - buf);
-                else
-                    return RHS_NEED;
-            }
-            else if (r == -1)
-            {
-                return RHS_NEED;
-            }
-            else
-                return RHS_ERROR;
-        default:
-            assert(0);
-            return RHS_ERROR;
-        }
-    }
-
-#undef LR
-#undef BI
-
-    if (read_ctx->hbrc_size > 0)
-        return RHS_NEED;
-    else
-        return RHS_ERROR;
-}
-
-
-static size_t
-max_to_read (const struct header_block_read_ctx *read_ctx)
-{
-    size_t sz;
-
-    if (read_ctx->hbrc_flags & HBRC_HAVE_LARGEST_REF)
-        return read_ctx->hbrc_size;
-    else
-    {
-        if (read_ctx->hbrc_lr_min_sz > read_ctx->hbrc_lr_nread)
-            sz = read_ctx->hbrc_lr_min_sz - read_ctx->hbrc_lr_nread;
-        else
-            sz = 1;
-        return MIN(sz, read_ctx->hbrc_size);
-    }
-}
-
-
-static enum read_header_status
-qdec_read_header (struct lsqpack_dec *dec,
-                                    struct header_block_read_ctx *read_ctx)
-{
-    const unsigned char *buf;
-    enum read_header_status st;
-    size_t n_to_read;
-    ssize_t buf_sz;
-
-    while (read_ctx->hbrc_size > 0)
-    {
-        n_to_read = max_to_read(read_ctx);
-        buf_sz = dec->qpd_read_header_block(read_ctx->hbrc_stream, &buf,
-                                                                    n_to_read);
-        if (buf_sz > 0)
-        {
-            read_ctx->hbrc_size -= buf_sz;
-            st = read_ctx->hbrc_parse(dec, read_ctx, buf, buf_sz);
-            if (st != RHS_NEED)
-                return st;
-        }
-        else if (buf_sz == 0)
-            return RHS_NEED;
-        else
-            return RHS_ERROR;
-    }
-
-    return RHS_DONE;
-}
-
-
-static void
-destroy_header_block_read_ctx (struct lsqpack_dec *dec,
-                        struct header_block_read_ctx *read_ctx)
-{
-    TAILQ_REMOVE(&dec->qpd_hbrcs, read_ctx, hbrc_next);
-    free(read_ctx);
-}
-
-
-static int
-save_header_block_read_ctx (struct lsqpack_dec *dec,
-                        struct header_block_read_ctx *read_ctx, int blocked)
-{
-    TAILQ_INSERT_TAIL(&dec->qpd_hbrcs, read_ctx, hbrc_next);
-    return 0;
-}
-
-
-static struct header_block_read_ctx *
-find_header_block_read_ctx (struct lsqpack_dec *dec, void *stream)
-{
-    struct header_block_read_ctx *read_ctx;
-
-    TAILQ_FOREACH(read_ctx, &dec->qpd_hbrcs, hbrc_next)
-        if (read_ctx->hbrc_stream == stream)
-            return read_ctx;
-
-    return NULL;
-}
-
-
-int
-lsqpack_dec_header_read (struct lsqpack_dec *dec, void *stream)
-{
-    struct header_block_read_ctx *read_ctx;
-    enum read_header_status st;
-
-    read_ctx = find_header_block_read_ctx(dec, stream);
-    if (read_ctx)
-    {
-        st = qdec_read_header(dec, read_ctx);
-        switch (st)
-        {
-        case RHS_DONE:
-            dec->qpd_header_block_done(read_ctx->hbrc_stream,
-                                                read_ctx->hbrc_header_set);
-            destroy_header_block_read_ctx(dec, read_ctx);
-            return 0;
-        case RHS_NEED:
-        case RHS_BLOCKED:
-            dec->qpd_wantread_header_block(read_ctx->hbrc_stream,
-                                                        st == RHS_NEED);
-            return 0;
-        default:
-            assert(st == RHS_ERROR);
-            return -1;
-        }
-    }
-    else
-        return -1;
-}
-
-
-int
-lsqpack_dec_header_in (struct lsqpack_dec *dec, void *stream,
-                                                        size_t header_size)
-{
-    enum read_header_status st;
-    struct header_block_read_ctx *read_ctx;
-    struct header_block_read_ctx read_ctx_buf = {
-        .hbrc_stream    = stream,
-        .hbrc_size      = header_size,
-        .hbrc_parse     = parse_header_prefix,
-        .hbrc_lr_min_sz = lsqpack_val2len(dec->qpd_del_count, 8),
-    };
-
-    st = qdec_read_header(dec, &read_ctx_buf);
-    switch (st)
-    {
-    case RHS_DONE:
-        dec->qpd_header_block_done(stream, read_ctx_buf.hbrc_header_set);
-        return 0;
-    case RHS_NEED:
-    case RHS_BLOCKED:
-        read_ctx = malloc(sizeof(*read_ctx));
-        if (!read_ctx)
-            return -1;
-        memcpy(read_ctx, &read_ctx_buf, sizeof(*read_ctx));
-        if (0 != save_header_block_read_ctx(dec, read_ctx, st == RHS_BLOCKED))
-        {
-            free(read_ctx);
-            return -1;
-        }
-        dec->qpd_wantread_header_block(stream, st == RHS_NEED);
-        return 0;
-    default:
-        assert(st == RHS_ERROR);
-        return -1;
-    }
-}
-
-
-static void
-qdec_drop_oldest_entry (struct lsqpack_dec *dec)
-{
-    struct lsqpack_dec_table_entry *entry;
-    entry = (void *) lsqpack_arr_shift(&dec->qpd_dyn_table);
-    dec->qpd_cur_capacity -= DTE_SIZE(entry);
-    qdec_decref_entry(entry);
-    ++dec->qpd_del_count;
-}
-
-
-static void
-qdec_remove_overflow_entries (struct lsqpack_dec *dec)
-{
-    while (dec->qpd_cur_capacity > dec->qpd_cur_max_capacity)
-        qdec_drop_oldest_entry(dec);
-}
-
-
-static void
-qdec_update_max_capacity (struct lsqpack_dec *dec, unsigned new_capacity)
-{
-    dec->qpd_cur_max_capacity = new_capacity;
-    qdec_remove_overflow_entries(dec);
-}
-
-
-#if !LS_QPACK_EMIT_TEST_CODE
-static
-#endif
-       int
-lsqpack_dec_push_entry (struct lsqpack_dec *dec,
-                                        struct lsqpack_dec_table_entry *entry)
-{
-    if (0 == lsqpack_arr_push(&dec->qpd_dyn_table, (uintptr_t) entry))
-    {
-        dec->qpd_cur_capacity += DTE_SIZE(entry);
-        ++dec->qpd_ins_count;
-        qdec_remove_overflow_entries(dec);
-        return 0;
-    }
-    else
-        return -1;
-}
-
-
-int
-lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
-                                                                size_t buf_sz)
-{
-    const unsigned char *const end = buf + buf_sz;
-    struct lsqpack_dec_table_entry *entry, *new_entry;
-    struct huff_decode_retval hdr;
-    unsigned prefix_bits = -1;
-    size_t size;
-    int r;
-
-#define WINR dec->qpd_enc_state.ctx_u.with_namref
-#define WONR dec->qpd_enc_state.ctx_u.wo_namref
-#define DUPL dec->qpd_enc_state.ctx_u.duplicate
-#define TBSZ dec->qpd_enc_state.ctx_u.size_update
-
-    while (buf < end)
-    {
-        switch (dec->qpd_enc_state.resume)
-        {
-        case DEI_NEXT_INST:
-            if (buf[0] & 0x80)
-            {
-                WINR.is_static = (buf[0] & 0x40) > 0;
-                WINR.dec_int_state.resume = 0;
-                WINR.reffed_entry = NULL;
-                WINR.entry = NULL;
-                dec->qpd_enc_state.resume = DEI_WINR_READ_NAME_IDX;
-                prefix_bits = 6;
-                goto dei_winr_read_name_idx;
-            }
-            else if (buf[0] & 0x40)
-            {
-                WONR.is_huffman = (buf[0] & 0x20) > 0;
-                WONR.dec_int_state.resume = 0;
-                WONR.entry = NULL;
-                dec->qpd_enc_state.resume = DEI_WONR_READ_NAME_LEN;
-                prefix_bits = 5;
-                goto dei_wonr_read_name_idx;
-            }
-            else if (buf[0] & 0x20)
-            {
-                TBSZ.dec_int_state.resume = 0;
-                dec->qpd_enc_state.resume = DEI_SIZE_UPD_READ_IDX;
-                prefix_bits = 5;
-                goto dei_size_upd_read_idx;
-            }
-            else
-            {
-                DUPL.dec_int_state.resume = 0;
-                dec->qpd_enc_state.resume = DEI_DUP_READ_IDX;
-                prefix_bits = 5;
-                goto dei_dup_read_idx;
-            }
-        case DEI_WINR_READ_NAME_IDX:
-  dei_winr_read_name_idx:
-            r = lsqpack_dec_int(&buf, end, prefix_bits,
-                                    &WINR.name_idx, &WINR.dec_int_state);
-            if (r == 0)
-            {
-                if (WINR.is_static)
-                {
-                    if (WINR.name_idx < 1
-                                || WINR.name_idx > QPACK_STATIC_TABLE_SIZE)
-                        return -1;
-                    WINR.reffed_entry = NULL;
-                }
-                else
-                {
-                    WINR.reffed_entry = qdec_get_table_entry_rel(dec,
-                                                                WINR.name_idx);
-                    if (!WINR.reffed_entry)
-                        return -1;
-                    ++WINR.reffed_entry->dte_refcnt;
-                }
-                dec->qpd_enc_state.resume = DEI_WINR_BEGIN_READ_VAL_LEN;
-                break;
-            }
-            else if (r == -1)
-                return 0;
-            else
-                return -1;
-        case DEI_WINR_BEGIN_READ_VAL_LEN:
-            WINR.is_huffman = (buf[0] & 0x80) > 0;
-            WINR.dec_int_state.resume = 0;
-            dec->qpd_enc_state.resume = DEI_WINR_READ_VAL_LEN;
-            prefix_bits = 7;
-            /* fall-through */
-        case DEI_WINR_READ_VAL_LEN:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &WINR.val_len,
-                                                        &WINR.dec_int_state);
-            if (r == 0)
-            {
-                if (WINR.is_static)
-                {
-                    WINR.name_len = static_table[WINR.name_idx - 1].name_len;
-                    WINR.name = static_table[WINR.name_idx - 1].name;
-                }
-                else
-                {
-                    WINR.name_len = WINR.reffed_entry->dte_name_len;
-                    WINR.name = DTE_NAME(WINR.reffed_entry);
-                }
-                if (WINR.is_huffman)
-                    WINR.alloced_val_len = WINR.val_len + WINR.val_len / 4;
-                else
-                    WINR.alloced_val_len = WINR.val_len;
-                WINR.entry = malloc(sizeof(*WINR.entry) + WINR.name_len
-                                                    + WINR.alloced_val_len);
-                if (!WINR.entry)
-                    return -1;
-                WINR.entry->dte_name_len = WINR.name_len;
-                WINR.nread = 0;
-                WINR.val_off = 0;
-                if (WINR.is_huffman)
-                {
-                    dec->qpd_enc_state.resume = DEI_WINR_READ_VALUE_HUFFMAN;
-                    WINR.dec_huff_state.resume = 0;
-                }
-                else
-                    dec->qpd_enc_state.resume = DEI_WINR_READ_VALUE_PLAIN;
-            }
-            else if (r == -1)
-                return 0;
-            else
-                return -1;
-            break;
-        case DEI_WINR_READ_VALUE_HUFFMAN:
-            size = MIN((unsigned) (end - buf), WINR.val_len - WINR.nread);
-            hdr = lsqpack_huff_decode(buf, size,
-                    (unsigned char *) DTE_VALUE(WINR.entry) + WINR.val_off,
-                    WINR.alloced_val_len - WINR.val_off,
-                    &WINR.dec_huff_state, WINR.nread + size == WINR.val_len);
-            switch (hdr.status)
-            {
-            case HUFF_DEC_OK:
-                buf += hdr.n_src;
-                WINR.entry->dte_val_len = WINR.val_off + hdr.n_dst;
-                WINR.entry->dte_refcnt = 1;
-                memcpy(DTE_NAME(WINR.entry), WINR.name, WINR.name_len);
-                if (WINR.reffed_entry)
-                {
-                    qdec_decref_entry(WINR.reffed_entry);
-                    WINR.reffed_entry = NULL;
-                }
-                r = lsqpack_dec_push_entry(dec, WINR.entry);
-                if (0 == r)
-                {
-                    dec->qpd_enc_state.resume = 0;
-                    WINR.entry = NULL;
-                    break;
-                }
-                qdec_decref_entry(WINR.entry);
-                WINR.entry = NULL;
-                return -1;
-            case HUFF_DEC_END_SRC:
-                buf += hdr.n_src;
-                WINR.nread += hdr.n_src;
-                WINR.val_off += hdr.n_dst;
-                break;
-            case HUFF_DEC_END_DST:
-                WINR.alloced_val_len *= 2;
-                entry = realloc(WINR.entry, sizeof(*WINR.entry)
-                                        + WINR.name_len + WINR.alloced_val_len);
-                if (!entry)
-                    return -1;
-                WINR.entry = entry;
-                buf += hdr.n_src;
-                WINR.nread += hdr.n_src;
-                WINR.val_off += hdr.n_dst;
-                break;
-            default:
-                return -1;
-            }
-            break;
-        case DEI_WINR_READ_VALUE_PLAIN:
-            if (WINR.alloced_val_len < WINR.val_len)
-            {
-                WINR.alloced_val_len = WINR.val_len;
-                entry = realloc(WINR.entry, sizeof(*WINR.entry)
-                                                        + WINR.alloced_val_len);
-                if (entry)
-                    WINR.entry = entry;
-                else
-                    return -1;
-            }
-            size = MIN((unsigned) (end - buf), WINR.val_len - WINR.val_off);
-            memcpy(DTE_VALUE(WINR.entry) + WINR.val_off, buf, size);
-            WINR.val_off += size;
-            buf += size;
-            if (WINR.val_off == WINR.val_len)
-            {
-                WINR.entry->dte_val_len = WINR.val_off;
-                WINR.entry->dte_refcnt = 1;
-                memcpy(DTE_NAME(WINR.entry), WINR.name, WINR.name_len);
-                if (WINR.reffed_entry)
-                {
-                    qdec_decref_entry(WINR.reffed_entry);
-                    WINR.reffed_entry = NULL;
-                }
-                r = lsqpack_dec_push_entry(dec, WINR.entry);
-                if (0 == r)
-                {
-                    dec->qpd_enc_state.resume = 0;
-                    WINR.entry = NULL;
-                    break;
-                }
-                qdec_decref_entry(WINR.entry);
-                WINR.entry = NULL;
-                return -1;
-            }
-            break;
-        case DEI_WONR_READ_NAME_LEN:
-  dei_wonr_read_name_idx:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &WONR.str_len,
-                                                        &DUPL.dec_int_state);
-            if (r == 0)
-            {
-                /* TODO: Check that the name is not larger than the max dynamic
-                 * table capacity, for example.
-                 */
-                WONR.alloced_len = WONR.str_len * 2;
-                size = sizeof(*new_entry) + WONR.alloced_len;
-                WONR.entry = malloc(size);
-                if (!WONR.entry)
-                    return -1;
-                WONR.nread = 0;
-                WONR.str_off = 0;
-                if (WONR.is_huffman)
-                {
-                    dec->qpd_enc_state.resume = DEI_WONR_READ_NAME_HUFFMAN;
-                    WONR.dec_huff_state.resume = 0;
-                }
-                else
-                    dec->qpd_enc_state.resume = DEI_WONR_READ_NAME_PLAIN;
-                break;
-            }
-            else if (r == -1)
-                return 0;
-            else
-                return -1;
-        case DEI_WONR_READ_NAME_HUFFMAN:
-            size = MIN((unsigned) (end - buf), WONR.str_len - WONR.nread);
-            hdr = lsqpack_huff_decode(buf, size,
-                    (unsigned char *) DTE_NAME(WONR.entry) + WONR.str_off,
-                    WONR.alloced_len - WONR.str_off,
-                    &WONR.dec_huff_state, WONR.nread + size == WONR.str_len);
-            switch (hdr.status)
-            {
-            case HUFF_DEC_OK:
-                buf += hdr.n_src;
-                WONR.entry->dte_name_len = WONR.str_off + hdr.n_dst;
-                dec->qpd_enc_state.resume = DEI_WONR_BEGIN_READ_VAL_LEN;
-                break;
-            case HUFF_DEC_END_SRC:
-                buf += hdr.n_src;
-                WONR.nread += hdr.n_src;
-                WONR.str_off += hdr.n_dst;
-                break;
-            case HUFF_DEC_END_DST:
-                WONR.alloced_len *= 2;
-                entry = realloc(WONR.entry, sizeof(*WONR.entry)
-                                                        + WONR.alloced_len);
-                if (!entry)
-                    return -1;
-                WONR.entry = entry;
-                buf += hdr.n_src;
-                WONR.nread += hdr.n_src;
-                WONR.str_off += hdr.n_dst;
-                break;
-            default:
-                return -1;
-            }
-            break;
-        case DEI_WONR_READ_NAME_PLAIN:
-            if (WONR.alloced_len < WONR.str_len)
-            {
-                WONR.alloced_len = WONR.str_len * 2;
-                entry = realloc(WONR.entry, sizeof(*WONR.entry)
-                                                        + WONR.alloced_len);
-                if (entry)
-                    WONR.entry = entry;
-                else
-                    return -1;
-            }
-            size = MIN((unsigned) (end - buf), WONR.str_len - WONR.str_off);
-            memcpy(DTE_NAME(WONR.entry) + WONR.str_off, buf, size);
-            WONR.str_off += size;
-            buf += size;
-            if (WONR.str_off == WONR.str_len)
-            {
-                WONR.entry->dte_name_len = WONR.str_off;
-                dec->qpd_enc_state.resume = DEI_WONR_BEGIN_READ_VAL_LEN;
-            }
-            break;
-        case DEI_WONR_BEGIN_READ_VAL_LEN:
-            WONR.is_huffman = (buf[0] & 0x80) > 0;
-            WONR.dec_int_state.resume = 0;
-            dec->qpd_enc_state.resume = DEI_WONR_READ_VAL_LEN;
-            prefix_bits = 7;
-            /* fall-through */
-        case DEI_WONR_READ_VAL_LEN:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &WONR.str_len,
-                                                        &WONR.dec_int_state);
-            if (r == 0)
-            {
-                WONR.nread = 0;
-                WONR.str_off = 0;
-                if (WONR.is_huffman)
-                {
-                    dec->qpd_enc_state.resume = DEI_WONR_READ_VALUE_HUFFMAN;
-                    WONR.dec_huff_state.resume = 0;
-                }
-                else
-                    dec->qpd_enc_state.resume = DEI_WONR_READ_VALUE_PLAIN;
-            }
-            else if (r == -1)
-                return 0;
-            else
-                return -1;
-            break;
-        case DEI_WONR_READ_VALUE_HUFFMAN:
-            size = MIN((unsigned) (end - buf), WONR.str_len - WONR.nread);
-            hdr = lsqpack_huff_decode(buf, size,
-                    (unsigned char *) DTE_VALUE(WONR.entry) + WONR.str_off,
-                    WONR.alloced_len - WONR.entry->dte_name_len - WONR.str_off,
-                    &WONR.dec_huff_state, WONR.nread + size == WONR.str_len);
-            switch (hdr.status)
-            {
-            case HUFF_DEC_OK:
-                buf += hdr.n_src;
-                WONR.entry->dte_val_len = WONR.str_off + hdr.n_dst;
-                WONR.entry->dte_refcnt = 1;
-                r = lsqpack_dec_push_entry(dec, WONR.entry);
-                if (0 == r)
-                {
-                    dec->qpd_enc_state.resume = 0;
-                    WONR.entry = NULL;
-                    break;
-                }
-                qdec_decref_entry(WONR.entry);
-                WONR.entry = NULL;
-                return -1;
-            case HUFF_DEC_END_SRC:
-                buf += hdr.n_src;
-                WONR.nread += hdr.n_src;
-                WONR.str_off += hdr.n_dst;
-                break;
-            case HUFF_DEC_END_DST:
-                WONR.alloced_len *= 2;
-                entry = realloc(WONR.entry, sizeof(*WONR.entry)
-                                                        + WONR.alloced_len);
-                if (!entry)
-                    return -1;
-                WONR.entry = entry;
-                buf += hdr.n_src;
-                WONR.nread += hdr.n_src;
-                WONR.str_off += hdr.n_dst;
-                break;
-            default:
-                return -1;
-            }
-            break;
-        case DEI_WONR_READ_VALUE_PLAIN:
-            if (WONR.alloced_len < WONR.entry->dte_name_len + WONR.str_len)
-            {
-                WONR.alloced_len = WONR.entry->dte_name_len + WONR.str_len;
-                entry = realloc(WONR.entry, sizeof(*WONR.entry)
-                                                        + WONR.alloced_len);
-                if (entry)
-                    WONR.entry = entry;
-                else
-                    return -1;
-            }
-            size = MIN((unsigned) (end - buf), WONR.str_len - WONR.str_off);
-            memcpy(DTE_VALUE(WONR.entry) + WONR.str_off, buf, size);
-            WONR.str_off += size;
-            buf += size;
-            if (WONR.str_off == WONR.str_len)
-            {
-                WONR.entry->dte_val_len = WONR.str_off;
-                WONR.entry->dte_refcnt = 1;
-                r = lsqpack_dec_push_entry(dec, WONR.entry);
-                if (0 == r)
-                {
-                    dec->qpd_enc_state.resume = 0;
-                    WONR.entry = NULL;
-                    break;
-                }
-                qdec_decref_entry(WONR.entry);
-                WONR.entry = NULL;
-                return -1;
-            }
-            break;
-        case DEI_DUP_READ_IDX:
-  dei_dup_read_idx:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &DUPL.index,
-                                                        &DUPL.dec_int_state);
-            if (r == 0)
-            {
-                entry = qdec_get_table_entry_rel(dec, DUPL.index);
-                if (!entry)
-                    return -1;
-                size = sizeof(*new_entry) + entry->dte_name_len
-                                                        + entry->dte_val_len;
-                new_entry = malloc(size);
-                if (!new_entry)
-                    return -1;
-                memcpy(new_entry, entry, size);
-                new_entry->dte_refcnt = 1;
-                if (0 == lsqpack_dec_push_entry(dec, new_entry))
-                {
-                    dec->qpd_enc_state.resume = 0;
-                    break;
-                }
-                qdec_decref_entry(new_entry);
-                return -1;
-            }
-            else if (r == -1)
-                return 0;
-            else
-                return -1;
-        case DEI_SIZE_UPD_READ_IDX:
-  dei_size_upd_read_idx:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &TBSZ.new_size,
-                                                        &TBSZ.dec_int_state);
-            if (r == 0)
-            {
-                if (TBSZ.new_size <= dec->qpd_max_capacity)
-                {
-                    dec->qpd_enc_state.resume = 0;
-                    qdec_update_max_capacity(dec, TBSZ.new_size);
-                    break;
-                }
-                else
-                    return -1;
-            }
-            else if (r == -1)
-                return 0;
-            else
-                return -1;
-        default:
-            assert(0);
-        }
-    }
-
-#undef WINR
-#undef WONR
-#undef DUPL
-#undef TBSZ
-
-    return 0;
-}
-
-
-void
-lsqpack_dec_set_max_capacity (struct lsqpack_dec *dec, unsigned max_capacity)
-{
-    dec->qpd_max_capacity = max_capacity;
-    qdec_update_max_capacity(dec, max_capacity);
-}
-
-
-void
-lsqpack_dec_print_table (const struct lsqpack_dec *dec, FILE *out)
-{
-    const struct lsqpack_dec_table_entry *entry;
-    uintptr_t val;
-    unsigned n;
-
-    fprintf(out, "Printing decoder table state.\n");
-    fprintf(out, "Insertions: %u; deletions: %u.\n", dec->qpd_ins_count,
-                                                        dec->qpd_del_count);
-    fprintf(out, "Max capacity: %u; current capacity: %u\n",
-        dec->qpd_cur_max_capacity, dec->qpd_cur_capacity);
-    for (n = 0; n < lsqpack_arr_count(&dec->qpd_dyn_table); ++n)
-    {
-        val = lsqpack_arr_get(&dec->qpd_dyn_table, n);
-        entry = (void *) val;
-        fprintf(out, "%u) %.*s: %.*s\n", dec->qpd_del_count + 1 + n,
-            entry->dte_name_len, DTE_NAME(entry),
-            entry->dte_val_len, DTE_VALUE(entry));
-    }
-    fprintf(out, "\n");
-}
-
-
-void
-lsqpack_dec_destroy_header_set (struct lsqpack_header_set *set)
-{
-    struct header_internal *hint;
-    unsigned n;
-
-    for (n = 0; n < set->qhs_count; ++n)
-    {
-        hint = (struct header_internal *) set->qhs_headers[n];
-        if (hint->hi_entry)
-            qdec_decref_entry(hint->hi_entry);
-        if (hint->hi_flags & HI_OWN_NAME)
-            free((char *) hint->hi_uhead.qh_name);
-        if (hint->hi_flags & HI_OWN_VALUE)
-            free((char *) hint->hi_uhead.qh_value);
-        free(hint);
-    }
-    free(set->qhs_headers);
-    free(set);
-}
