@@ -30,9 +30,6 @@ SOFTWARE.
 #include <sys/queue.h>
 
 #include "lsqpack.h"
-#if LS_QPACK_EMIT_TEST_CODE
-#include "lsqpack-test.h"
-#endif
 #include XXH_HEADER_NAME
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -5744,14 +5741,6 @@ lsqpack_enc_get_stx_tab_id (const char *name, unsigned name_len,
 }
 
 
-#if !LS_QPACK_EMIT_TEST_CODE
-static
-#endif
-       int
-lsqpack_dec_int (const unsigned char **src, const unsigned char *src_end,
-                                        unsigned prefix_bits, uint64_t *value);
-
-
 enum table_type {
     TT_STATIC = 0,
     TT_DYNAMIC = 1,
@@ -6190,15 +6179,13 @@ lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
      * are at risk.
      */
     if (seqno)
+    {
         for (i = 0; i < enc->qpe_hinfos_count; ++i)
-        {
             if (enc->qpe_hinfos_arr[i].qhi_stream_id == stream_id
                                 && enc->qpe_hinfos_arr[i].qhi_at_risk)
-            {
-                at_risk = 1;
                 break;
-            }
-        }
+        at_risk = i < enc->qpe_hinfos_count;
+    }
     else
         at_risk = 0;
 
@@ -6633,6 +6620,85 @@ enc_proc_stream_cancel (struct lsqpack_enc *enc, uint64_t stream_id)
 }
 
 
+/* Assumption: we have at least one byte to work with */
+/* Return value:
+ *  0   OK
+ *  -1  Out of input
+ *  -2  Value cannot be represented as 64-bit integer (overflow)
+ */
+#if !LS_QPACK_EMIT_TEST_CODE
+static
+#endif
+       int
+lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
+                   unsigned prefix_bits, uint64_t *value_p,
+                   struct lsqpack_dec_int_state *state)
+{
+    const unsigned char *const orig_src = *src_p;
+    const unsigned char *src;
+    unsigned char prefix_max;
+    unsigned M, nread;
+    uint64_t val, B;
+
+    src = *src_p;
+
+    if (state->resume)
+    {
+        val = state->val;
+        M = state->M;
+        goto resume;
+    }
+
+    prefix_max = (1 << prefix_bits) - 1;
+    val = *src++;
+    val &= prefix_max;
+
+    if (val < prefix_max)
+    {
+        *src_p = src;
+        *value_p = val;
+        return 0;
+    }
+
+    M = 0;
+    do
+    {
+        if (src < src_end)
+        {
+  resume:   B = *src++;
+            val = val + ((B & 0x7f) << M);
+            M += 7;
+        }
+        else
+        {
+            nread = (state->resume ? state->nread : 0) + (src - orig_src);
+            if (nread < LSQPACK_UINT64_ENC_SZ)
+            {
+                state->val = val;
+                state->M = M;
+                state->nread = nread;
+                state->resume = 1;
+                return -1;
+            }
+            else
+                return -2;
+        }
+    }
+    while (B & 0x80);
+
+    if (M <= 63 || (M == 70 && src[-1] <= 1 && (val & (1ull << 63))))
+    {
+        *src_p = src;
+        *value_p = val;
+        return 0;
+    }
+    else
+        return -2;
+}
+
+
+
+
 int
 lsqpack_enc_decoder_in (struct lsqpack_enc *enc,
                                     const unsigned char *buf, size_t buf_sz)
@@ -6668,7 +6734,7 @@ lsqpack_enc_decoder_in (struct lsqpack_enc *enc,
             }
             /* fall through */
         case 1:
-            r = lsqpack_dec_int_r(&buf, end, prefix_bits, &val,
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &val,
                                 &enc->qpe_dec_stream_state.dec_int_state);
             if (r == 0)
             {
@@ -6828,136 +6894,6 @@ lsqpack_dec_cleanup (struct lsqpack_dec *dec)
         qdec_decref_entry((struct lsqpack_dec_table_entry *) val);
     }
     lsqpack_arr_cleanup(&dec->qpd_dyn_table);
-}
-
-
-/* Assumption: we have at least one byte to work with */
-/* Return value:
- *  0   OK
- *  -1  Out of input
- *  -2  Value cannot be represented as 64-bit integer (overflow)
- */
-#if !LS_QPACK_EMIT_TEST_CODE
-static
-#endif
-       int
-lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
-                                        unsigned prefix_bits, uint64_t *value_p)
-{
-    const unsigned char *const orig_src = *src_p;
-    const unsigned char *src;
-    unsigned char prefix_max;
-    uint64_t val, B;
-    unsigned M;
-
-    prefix_max = (1 << prefix_bits) - 1;
-    src = *src_p;
-    val = *src++;
-    val &= prefix_max;
-
-    if (val < prefix_max)
-    {
-        *src_p = src;
-        *value_p = val;
-        return 0;
-    }
-
-    M = 0;
-    do
-    {
-        if (src < src_end)
-        {
-            B = *src++;
-            val = val + ((B & 0x7f) << M);
-            M += 7;
-        }
-        else if (src - orig_src < 11 /* 11 bytes to encode UINT64_MAX */ )
-            return -1;
-        else
-            return -2;
-    }
-    while (B & 0x80);
-
-    if (M <= 63 || (M == 70 && src[-1] <= 1 && (val & (1ull << 63))))
-    {
-        *src_p = src;
-        *value_p = val;
-        return 0;
-    }
-    else
-        return -2;
-}
-
-
-#if !LS_QPACK_EMIT_TEST_CODE
-
-
-static
-#endif
-       int
-lsqpack_dec_int_r (const unsigned char **src_p, const unsigned char *src_end,
-                   unsigned prefix_bits, uint64_t *value_p,
-                   struct lsqpack_dec_int_state *state)
-{
-    const unsigned char *const orig_src = *src_p;
-    const unsigned char *src;
-    unsigned char prefix_max;
-    unsigned M, nread;
-    uint64_t val, B;
-
-    if (state->resume)
-    {
-        val = state->val;
-        M = state->M;
-        goto resume;
-    }
-
-    prefix_max = (1 << prefix_bits) - 1;
-    src = *src_p;
-    val = *src++;
-    val &= prefix_max;
-
-    if (val < prefix_max)
-    {
-        *src_p = src;
-        *value_p = val;
-        return 0;
-    }
-
-    M = 0;
-    do
-    {
-        if (src < src_end)
-        {
-  resume:   B = *src++;
-            val = val + ((B & 0x7f) << M);
-            M += 7;
-        }
-        else
-        {
-            nread = (state->resume ? state->nread : 0) + (src - orig_src);
-            if (nread < LSQPACK_UINT64_ENC_SZ)
-            {
-                state->val = val;
-                state->M = M;
-                state->nread = nread;
-                state->resume = 1;
-                return -1;
-            }
-            else
-                return -2;
-        }
-    }
-    while (B & 0x80);
-
-    if (M <= 63 || (M == 70 && src[-1] <= 1 && (val & (1ull << 63))))
-    {
-        *src_p = src;
-        *value_p = val;
-        return 0;
-    }
-    else
-        return -2;
 }
 
 
@@ -7213,6 +7149,114 @@ hset_add_dynamic_nameref_entry (struct header_block_read_ctx *read_ctx,
 }
 
 
+static unsigned char *
+qdec_huff_dec4bits (uint8_t src_4bits, unsigned char *dst,
+                                        struct lsqpack_decode_status *status)
+{
+    const struct decode_el cur_dec_code =
+        decode_tables[status->state][src_4bits];
+    if (cur_dec_code.flags & HPACK_HUFFMAN_FLAG_FAIL) {
+        return NULL; //failed
+    }
+    if (cur_dec_code.flags & HPACK_HUFFMAN_FLAG_SYM)
+    {
+        *dst = cur_dec_code.sym;
+        dst++;
+    }
+
+    status->state = cur_dec_code.state;
+    status->eos = ((cur_dec_code.flags & HPACK_HUFFMAN_FLAG_ACCEPTED) != 0);
+    return dst;
+}
+
+
+struct huff_decode_retval
+{
+    enum
+    {
+        HUFF_DEC_OK,
+        HUFF_DEC_END_SRC,
+        HUFF_DEC_END_DST,
+        HUFF_DEC_ERROR,
+    }                       status;
+    unsigned                n_dst;
+    unsigned                n_src;
+};
+
+
+#if !LS_QPACK_EMIT_TEST_CODE
+static
+#endif
+       struct huff_decode_retval
+lsqpack_huff_decode (const unsigned char *src, int src_len,
+            unsigned char *dst, int dst_len,
+            struct lsqpack_huff_decode_state *state, int final)
+{
+    const unsigned char *p_src = src;
+    const unsigned char *const src_end = src + src_len;
+    unsigned char *p_dst = dst;
+    unsigned char *dst_end = dst + dst_len;
+
+    switch (state->resume)
+    {
+    case 1: goto ck1;
+    case 2: goto ck2;
+    case 3: goto ck3;
+    }
+
+    state->status.state = 0;
+    state->status.eos   = 1;
+
+  ck1:
+    while (p_src != src_end)
+    {
+        if (p_dst == dst_end)
+        {
+            state->resume = 2;
+            return (struct huff_decode_retval) {
+                            .status = HUFF_DEC_END_DST,
+                            .n_dst  = dst_len,
+                            .n_src  = p_src - src,
+            };
+        }
+  ck2:
+        if ((p_dst = qdec_huff_dec4bits(*p_src >> 4, p_dst, &state->status))
+                == NULL)
+            return (struct huff_decode_retval) { .status = HUFF_DEC_ERROR, };
+        if (p_dst == dst_end)
+        {
+            state->resume = 3;
+            return (struct huff_decode_retval) {
+                            .status = HUFF_DEC_END_DST,
+                            .n_dst  = dst_len,
+                            .n_src  = p_src - src,
+            };
+        }
+  ck3:
+        if ((p_dst = qdec_huff_dec4bits(*p_src & 0xf, p_dst, &state->status))
+                == NULL)
+            return (struct huff_decode_retval) { .status = HUFF_DEC_ERROR, };
+        ++p_src;
+    }
+
+    if (final)
+        return (struct huff_decode_retval) {
+                    .status = state->status.eos ? HUFF_DEC_OK : HUFF_DEC_ERROR,
+                    .n_dst  = p_dst - dst,
+                    .n_src  = p_src - src,
+        };
+    else
+    {
+        state->resume = 1;
+        return (struct huff_decode_retval) {
+                    .status = HUFF_DEC_END_SRC,
+                    .n_dst  = p_dst - dst,
+                    .n_src  = p_src - src,
+        };
+    }
+}
+
+
 enum read_header_status
 {
     RHS_DONE,
@@ -7287,7 +7331,7 @@ parse_header_data (struct lsqpack_dec *dec,
             }
         case DATA_STATE_READ_IHF_IDX:
   data_state_read_ihf_idx:
-            r = lsqpack_dec_int_r(&buf, end, prefix_bits, &IHF.value,
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &IHF.value,
                                                         &IHF.dec_int_state);
             if (r == 0)
             {
@@ -7311,7 +7355,7 @@ parse_header_data (struct lsqpack_dec *dec,
 #undef IHF
         case DATA_STATE_READ_LFINR_IDX:
   data_state_read_lfinr_idx:
-            r = lsqpack_dec_int_r(&buf, end, prefix_bits, &value,
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &value,
                                                         &LFINR.dec_int_state);
             if (r == 0)
             {
@@ -7348,7 +7392,7 @@ parse_header_data (struct lsqpack_dec *dec,
                                     = DATA_STATE_BEGIN_READ_LFINR_VAL_LEN;
             /* Fall-through */
         case DATA_STATE_READ_LFINR_VAL_LEN:
-            r = lsqpack_dec_int_r(&buf, end, prefix_bits, &value,
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &value,
                                                         &LFINR.dec_int_state);
             if (r == 0)
             {
@@ -7380,7 +7424,7 @@ parse_header_data (struct lsqpack_dec *dec,
                 return RHS_ERROR;
         case DATA_STATE_LFINR_READ_VAL_HUFFMAN:
             size = MIN((unsigned) (end - buf), LFINR.val_len - LFINR.nread);
-            hdr = lsqpack_huff_decode_r(buf, size,
+            hdr = lsqpack_huff_decode(buf, size,
                     (unsigned char *) LFINR.value + LFINR.val_off,
                     LFINR.nalloc - LFINR.val_off,
                     &LFINR.dec_huff_state, LFINR.nread + size == LFINR.val_len);
@@ -7432,7 +7476,7 @@ parse_header_data (struct lsqpack_dec *dec,
 #undef LFINR
         case DATA_STATE_READ_IPBI_IDX:
   data_state_read_ipbi_idx:
-            r = lsqpack_dec_int_r(&buf, end, prefix_bits, &IPBI.value,
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &IPBI.value,
                                                         &IPBI.dec_int_state);
             if (r == 0)
             {
@@ -7489,7 +7533,7 @@ parse_header_prefix (struct lsqpack_dec *dec,
                                             PREFIX_STATE_READ_LARGEST_REF;
             /* Fall-through */
         case PREFIX_STATE_READ_LARGEST_REF:
-            r = lsqpack_dec_int_r(&buf, end, prefix_bits, &LR.value,
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &LR.value,
                                                         &LR.dec_int_state);
             if (r == 0)
             {
@@ -7520,7 +7564,7 @@ parse_header_prefix (struct lsqpack_dec *dec,
                                             PREFIX_STATE_READ_DELTA_BASE_IDX;
             /* Fall-through */
         case PREFIX_STATE_READ_DELTA_BASE_IDX:
-            r = lsqpack_dec_int_r(&buf, end, prefix_bits, &BI.value,
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &BI.value,
                                                         &BI.dec_int_state);
             if (r == 0)
             {
@@ -7813,7 +7857,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             }
         case DEI_WINR_READ_NAME_IDX:
   dei_winr_read_name_idx:
-            r = lsqpack_dec_int_r(&buf, end, prefix_bits,
+            r = lsqpack_dec_int(&buf, end, prefix_bits,
                                     &WINR.name_idx, &WINR.dec_int_state);
             if (r == 0)
             {
@@ -7846,7 +7890,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             prefix_bits = 7;
             /* fall-through */
         case DEI_WINR_READ_VAL_LEN:
-            r = lsqpack_dec_int_r(&buf, end, prefix_bits, &WINR.val_len,
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &WINR.val_len,
                                                         &WINR.dec_int_state);
             if (r == 0)
             {
@@ -7886,7 +7930,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             break;
         case DEI_WINR_READ_VALUE_HUFFMAN:
             size = MIN((unsigned) (end - buf), WINR.val_len - WINR.nread);
-            hdr = lsqpack_huff_decode_r(buf, size,
+            hdr = lsqpack_huff_decode(buf, size,
                     (unsigned char *) DTE_VALUE(WINR.entry) + WINR.val_off,
                     WINR.alloced_val_len - WINR.val_off,
                     &WINR.dec_huff_state, WINR.nread + size == WINR.val_len);
@@ -7971,7 +8015,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             break;
         case DEI_WONR_READ_NAME_LEN:
   dei_wonr_read_name_idx:
-            r = lsqpack_dec_int_r(&buf, end, prefix_bits, &WONR.str_len,
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &WONR.str_len,
                                                         &DUPL.dec_int_state);
             if (r == 0)
             {
@@ -8000,7 +8044,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 return -1;
         case DEI_WONR_READ_NAME_HUFFMAN:
             size = MIN((unsigned) (end - buf), WONR.str_len - WONR.nread);
-            hdr = lsqpack_huff_decode_r(buf, size,
+            hdr = lsqpack_huff_decode(buf, size,
                     (unsigned char *) DTE_NAME(WONR.entry) + WONR.str_off,
                     WONR.alloced_len - WONR.str_off,
                     &WONR.dec_huff_state, WONR.nread + size == WONR.str_len);
@@ -8059,7 +8103,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             prefix_bits = 7;
             /* fall-through */
         case DEI_WONR_READ_VAL_LEN:
-            r = lsqpack_dec_int_r(&buf, end, prefix_bits, &WONR.str_len,
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &WONR.str_len,
                                                         &WONR.dec_int_state);
             if (r == 0)
             {
@@ -8080,7 +8124,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             break;
         case DEI_WONR_READ_VALUE_HUFFMAN:
             size = MIN((unsigned) (end - buf), WONR.str_len - WONR.nread);
-            hdr = lsqpack_huff_decode_r(buf, size,
+            hdr = lsqpack_huff_decode(buf, size,
                     (unsigned char *) DTE_VALUE(WONR.entry) + WONR.str_off,
                     WONR.alloced_len - WONR.entry->dte_name_len - WONR.str_off,
                     &WONR.dec_huff_state, WONR.nread + size == WONR.str_len);
@@ -8153,7 +8197,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             break;
         case DEI_DUP_READ_IDX:
   dei_dup_read_idx:
-            r = lsqpack_dec_int_r(&buf, end, prefix_bits, &DUPL.index,
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &DUPL.index,
                                                         &DUPL.dec_int_state);
             if (r == 0)
             {
@@ -8181,7 +8225,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 return -1;
         case DEI_SIZE_UPD_READ_IDX:
   dei_size_upd_read_idx:
-            r = lsqpack_dec_int_r(&buf, end, prefix_bits, &TBSZ.new_size,
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &TBSZ.new_size,
                                                         &TBSZ.dec_int_state);
             if (r == 0)
             {
@@ -8217,114 +8261,6 @@ lsqpack_dec_set_max_capacity (struct lsqpack_dec *dec, unsigned max_capacity)
 {
     dec->qpd_max_capacity = max_capacity;
     qdec_update_max_capacity(dec, max_capacity);
-}
-
-
-static unsigned char *
-qdec_huff_dec4bits (uint8_t src_4bits, unsigned char *dst,
-                                        struct lsqpack_decode_status *status)
-{
-    const struct decode_el cur_dec_code =
-        decode_tables[status->state][src_4bits];
-    if (cur_dec_code.flags & HPACK_HUFFMAN_FLAG_FAIL) {
-        return NULL; //failed
-    }
-    if (cur_dec_code.flags & HPACK_HUFFMAN_FLAG_SYM)
-    {
-        *dst = cur_dec_code.sym;
-        dst++;
-    }
-
-    status->state = cur_dec_code.state;
-    status->eos = ((cur_dec_code.flags & HPACK_HUFFMAN_FLAG_ACCEPTED) != 0);
-    return dst;
-}
-
-
-#if !LS_QPACK_EMIT_TEST_CODE
-struct huff_decode_retval
-{
-    enum
-    {
-        HUFF_DEC_OK,
-        HUFF_DEC_END_SRC,
-        HUFF_DEC_END_DST,
-        HUFF_DEC_ERROR,
-    }                       status;
-    unsigned                n_dst;
-    unsigned                n_src;
-};
-
-
-static
-#endif
-       struct huff_decode_retval
-lsqpack_huff_decode_r (const unsigned char *src, int src_len,
-            unsigned char *dst, int dst_len,
-            struct lsqpack_huff_decode_state *state, int final)
-{
-    const unsigned char *p_src = src;
-    const unsigned char *const src_end = src + src_len;
-    unsigned char *p_dst = dst;
-    unsigned char *dst_end = dst + dst_len;
-
-    switch (state->resume)
-    {
-    case 1: goto ck1;
-    case 2: goto ck2;
-    case 3: goto ck3;
-    }
-
-    state->status.state = 0;
-    state->status.eos   = 1;
-
-  ck1:
-    while (p_src != src_end)
-    {
-        if (p_dst == dst_end)
-        {
-            state->resume = 2;
-            return (struct huff_decode_retval) {
-                            .status = HUFF_DEC_END_DST,
-                            .n_dst  = dst_len,
-                            .n_src  = p_src - src,
-            };
-        }
-  ck2:
-        if ((p_dst = qdec_huff_dec4bits(*p_src >> 4, p_dst, &state->status))
-                == NULL)
-            return (struct huff_decode_retval) { .status = HUFF_DEC_ERROR, };
-        if (p_dst == dst_end)
-        {
-            state->resume = 3;
-            return (struct huff_decode_retval) {
-                            .status = HUFF_DEC_END_DST,
-                            .n_dst  = dst_len,
-                            .n_src  = p_src - src,
-            };
-        }
-  ck3:
-        if ((p_dst = qdec_huff_dec4bits(*p_src & 0xf, p_dst, &state->status))
-                == NULL)
-            return (struct huff_decode_retval) { .status = HUFF_DEC_ERROR, };
-        ++p_src;
-    }
-
-    if (final)
-        return (struct huff_decode_retval) {
-                    .status = state->status.eos ? HUFF_DEC_OK : HUFF_DEC_ERROR,
-                    .n_dst  = p_dst - dst,
-                    .n_src  = p_src - src,
-        };
-    else
-    {
-        state->resume = 1;
-        return (struct huff_decode_retval) {
-                    .status = HUFF_DEC_END_SRC,
-                    .n_dst  = p_dst - dst,
-                    .n_src  = p_src - src,
-        };
-    }
 }
 
 

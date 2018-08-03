@@ -5,18 +5,14 @@ int
 lsqpack_enc_enc_str (unsigned prefix_bits, unsigned char *const dst,
     size_t dst_len, const unsigned char *str, unsigned str_len);
 
-int
-lsqpack_dec_int (const unsigned char **src, const unsigned char *src_end,
-                                    unsigned prefix_bits, uint64_t *value);
-
 unsigned char *
 lsqpack_enc_int (unsigned char *dst, unsigned char *const end, uint64_t value,
                                                         unsigned prefix_bits);
 
 int
-lsqpack_dec_int_r (const unsigned char **src_p, const unsigned char *src_end,
-                   unsigned prefix_bits, uint64_t *value_p,
-                   struct lsqpack_dec_int_state *state);
+lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
+                 unsigned prefix_bits, uint64_t *value_p,
+                 struct lsqpack_dec_int_state *state);
 
 struct huff_decode_retval
 {
@@ -32,7 +28,7 @@ struct huff_decode_retval
 };
 
 struct huff_decode_retval
-lsqpack_huff_decode_r (const unsigned char *src, int src_len,
+lsqpack_huff_decode (const unsigned char *src, int src_len,
     unsigned char *dst, int dst_len, struct lsqpack_huff_decode_state *state,
     int final);
 

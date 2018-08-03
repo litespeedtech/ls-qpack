@@ -191,42 +191,17 @@ main (void)
     /* Test the decoder */
     for (test = tests; test < tests + sizeof(tests) / sizeof(tests[0]); ++test)
     {
-        for (sz = 1; sz < test->it_enc_sz; ++sz)
-        {
-            src = test->it_encoded;
-            rv = lsqpack_dec_int(&src, src + sz, test->it_prefix_bits, &val);
-            assert(-1 == rv);
-            assert(src == test->it_encoded);
-        }
-        for (; sz <= sizeof(test->it_encoded); ++sz)
-        {
-            src = test->it_encoded;
-            rv = lsqpack_dec_int(&src, src + sz, test->it_prefix_bits, &val);
-            assert(rv == test->it_dec_retval);
-            if (0 == rv)
-            {
-                assert(val == test->it_decoded);
-                assert(src == test->it_encoded + test->it_enc_sz);
-            }
-            else
-                assert(src == test->it_encoded);
-        }
-    }
-
-    /* Test stateful decoder */
-    for (test = tests; test < tests + sizeof(tests) / sizeof(tests[0]); ++test)
-    {
         struct lsqpack_dec_int_state state;
         state.resume = 0;
         for (sz = 0; sz < test->it_enc_sz - 1; ++sz)
         {
             src = test->it_encoded + sz;
-            rv = lsqpack_dec_int_r(&src, src + 1, test->it_prefix_bits,
+            rv = lsqpack_dec_int(&src, src + 1, test->it_prefix_bits,
                                                                 &val, &state);
             assert(-1 == rv);
         }
         src = test->it_encoded + sz;
-        rv = lsqpack_dec_int_r(&src, src + 1, test->it_prefix_bits,
+        rv = lsqpack_dec_int(&src, src + 1, test->it_prefix_bits,
                                                             &val, &state);
         assert(rv == test->it_dec_retval);
         if (0 == rv)
