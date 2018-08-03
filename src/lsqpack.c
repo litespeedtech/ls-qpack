@@ -1135,7 +1135,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         }
         else
         {
-            *dst = 0x80 | 0x40;
+            *dst = 0x80;
             id = enc->qpe_ins_count - esr.esr_entry_id;
         }
         dst = lsqpack_enc_int(dst, enc_buf_end, id, 6);
