@@ -2330,6 +2330,36 @@ parse_header_data (struct lsqpack_dec *dec,
                 return RHS_ERROR;
             }
             break;
+        case DATA_STATE_LFINR_READ_VAL_PLAIN:
+            size = MIN((unsigned) (end - buf), LFINR.val_len - LFINR.val_off);
+            memcpy(LFINR.value + LFINR.val_off, buf, size);
+            LFINR.val_off += size;
+            buf += size;
+            if (LFINR.val_off == LFINR.val_len)
+            {
+                read_ctx->hbrc_parse_ctx_u.data.state
+                                    = DATA_STATE_NEXT_INSTRUCTION;
+                if (LFINR.is_static)
+                    r = hset_add_static_nameref_entry(read_ctx,
+                            LFINR.name_ref.static_idx, LFINR.value,
+                            LFINR.val_off, LFINR.is_never);
+                else
+                {
+                    r = hset_add_dynamic_nameref_entry(read_ctx,
+                            LFINR.name_ref.dyn_entry, LFINR.value,
+                            LFINR.val_off, LFINR.is_never);
+                    qdec_decref_entry(LFINR.name_ref.dyn_entry);
+                    LFINR.name_ref.dyn_entry = NULL;
+                }
+                if (r == 0)
+                {
+                    LFINR.value = NULL;
+                    break;
+                }
+                else
+                    return RHS_ERROR;
+            }
+            break;
 #undef LFINR
         case DATA_STATE_READ_LFONR_NAME_LEN:
   data_state_read_lfonr_name_len:
