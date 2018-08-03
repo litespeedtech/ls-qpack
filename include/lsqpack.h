@@ -124,7 +124,7 @@ struct lsqpack_header
     unsigned            qh_name_len;
     unsigned            qh_value_len;
     enum {
-        /** Must be encoder with a literal representation */
+        /** Must be encoded with a literal representation */
         QH_NEVER    = 1 << 0,
     }                   qh_flags;
 };
@@ -141,8 +141,9 @@ struct lsqpack_header_set
 /* The callback `header_block_done' is called when the decoder is done
  * reading from the header block.  At this point, the decoder is no
  * longer using the stream reference.  If header block decoding was
- * successful, the header set is not NULL.  This is a read-only structure
- * that must be returned to the decoder when it has been processed.
+ * successful, the header set is not NULL.  This structure should be
+ * destroyed when the user is done with it using
+ * lsqpack_dec_destroy_header_set().
  */
 void
 lsqpack_dec_init (struct lsqpack_dec *, unsigned dyn_table_size,
@@ -153,12 +154,16 @@ lsqpack_dec_init (struct lsqpack_dec *, unsigned dyn_table_size,
     void (*header_block_done)(void *header_block_stream,
                                         struct lsqpack_header_set *));
 
-/* The decoder will attempt to read exactly `header_block_size' byte from
- * the stream using the read_header_block specified during initialization.
- * If the header block cannot be processed due to blocked references, the
- * decoder keeps the stream until the references become unblocked.  The
- * user knows that the header block processing is complete (successful or
- * not) when `header_block_done' callback is called.
+/* The decoder will read exactly `header_block_size' bytes from the stream
+ * using the read_header_block() function pointer specified during
+ * initialization.  If the header block cannot be processed due to blocked
+ * references, the decoder keeps the stream until the references become
+ * unblocked.  wantread_header_block() is called to indicate whether to
+ * the decoder want more bytes.  If yes, lsqpack_dec_header_read() should
+ * be called when more data becomes available.
+ *
+ * Until the `header_block_done()' callback is called, the decoder keeps
+ * a reference to the stream and may call associated callbacks.
  */
 int
 lsqpack_dec_header_in (struct lsqpack_dec *,

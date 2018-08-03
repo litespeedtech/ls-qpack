@@ -8255,9 +8255,7 @@ struct huff_decode_retval
     unsigned                n_src;
 };
 
-/* A non-negative value indicates success.  A negative value is one of
- * the HUFF_DEC_* codes above.
- */
+
 static
 #endif
        struct huff_decode_retval
