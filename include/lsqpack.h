@@ -123,6 +123,10 @@ struct lsqpack_header
     const char         *qh_value;
     unsigned            qh_name_len;
     unsigned            qh_value_len;
+    enum {
+        /** Must be encoder with a literal representation */
+        QH_NEVER    = 1 << 0,
+    }                   qh_flags;
 };
 
 /**
