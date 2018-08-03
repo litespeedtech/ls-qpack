@@ -50,6 +50,10 @@ SOFTWARE.
 
 #define MAX_QUIC_STREAM_ID ((1ull << 62) - 1)
 
+/* Entries in the encoder's dynamic table are hashed 1) by name and 2) by
+ * name and value.  Instead of having two arrays of buckets, the encoder
+ * keeps just one, but each bucket has two heads.
+ */
 struct lsqpack_double_enc_head
 {
     struct lsqpack_enc_head by_name;
@@ -471,18 +475,17 @@ enum table_type {
 };
 
 
-struct enc_found
+struct enc_search_result
 {
-    int                 ef_found;
-    enum table_type     ef_table_type;
-    lsqpack_abs_id_t    ef_entry_id;
-    int                 ef_value_match;
-    struct lsqpack_enc_table_entry
-                       *ef_entry;
+    int                             esr_found;
+    enum table_type                 esr_table_type;
+    lsqpack_abs_id_t                esr_entry_id;
+    int                             esr_value_match;
+    struct lsqpack_enc_table_entry *esr_entry;
 };
 
 
-static struct enc_found
+static struct enc_search_result
 qenc_find_entry_in_static_table (const char *name, unsigned name_len,
                                  const char *value, unsigned value_len)
 {
@@ -492,13 +495,14 @@ qenc_find_entry_in_static_table (const char *name, unsigned name_len,
     static_table_id = lsqpack_enc_get_stx_tab_id(name, name_len, value,
                                                     value_len, &val_matched);
     if (static_table_id > 0)
-        return (struct enc_found) { 1, TT_STATIC, static_table_id, val_matched, NULL, };
+        return (struct enc_search_result) { 1, TT_STATIC, static_table_id,
+                                                        val_matched, NULL, };
     else
-        return (struct enc_found) { 0, 0, 0, 0, NULL, };
+        return (struct enc_search_result) { 0, 0, 0, 0, NULL, };
 }
 
 
-static struct enc_found
+static struct enc_search_result
 qenc_find_entry_in_either_table (struct lsqpack_enc *enc, int risk,
         const char *name, unsigned name_len, const char *value,
         unsigned value_len)
@@ -512,7 +516,8 @@ qenc_find_entry_in_either_table (struct lsqpack_enc *enc, int risk,
     static_table_id = lsqpack_enc_get_stx_tab_id(name, name_len, value,
                                                     value_len, &val_matched);
     if (static_table_id > 0 && val_matched)
-        return (struct enc_found) { 1, TT_STATIC, static_table_id, 1, NULL, };
+        return (struct enc_search_result) { 1, TT_STATIC,
+                                            static_table_id, 1, NULL, };
 
     /* Search by name and value: */
     XXH32_reset(&hash_state, (uintptr_t) enc);
@@ -538,14 +543,16 @@ qenc_find_entry_in_either_table (struct lsqpack_enc *enc, int risk,
             0 == memcmp(name, ETE_NAME(entry), name_len) &&
             0 == memcmp(value, ETE_VALUE(entry), value_len))
         {
-            return (struct enc_found) { 1, TT_DYNAMIC, entry->ete_id, 1, entry, };
+            return (struct enc_search_result) { 1, TT_DYNAMIC,
+                                                entry->ete_id, 1, entry, };
         }
 
     /* Name/value match is not found, but if the caller found a matching
      * static table entry, no need to continue to search:
      */
     if (static_table_id > 0)
-        return (struct enc_found) { 1, TT_STATIC, static_table_id, 0, NULL, };
+        return (struct enc_search_result) { 1, TT_STATIC,
+                                            static_table_id, 0, NULL, };
 
     /* Search by name only: */
     buckno = BUCKNO(enc->qpe_nbits, name_hash);
@@ -557,14 +564,15 @@ qenc_find_entry_in_either_table (struct lsqpack_enc *enc, int risk,
                 || entry->ete_id > enc->qpe_cur_header.search_cutoff) &&
             0 == memcmp(name, ETE_NAME(entry), name_len))
         {
-            return (struct enc_found) { 1, TT_DYNAMIC, entry->ete_id, 0, entry, };
+            return (struct enc_search_result) { 1, TT_DYNAMIC,
+                                                entry->ete_id, 0, entry, };
         }
 
-    return (struct enc_found) { 0, 0, 0, 0, NULL, };
+    return (struct enc_search_result) { 0, 0, 0, 0, NULL, };
 }
 
 
-static struct enc_found
+static struct enc_search_result
 qenc_find_entry (struct lsqpack_enc *enc, int risk, const char *name,
         unsigned name_len, const char *value,
         unsigned value_len)
@@ -582,16 +590,16 @@ lsqpack_val2len (uint64_t value, unsigned prefix_bits)
 {
     uint64_t mask = (1ULL << prefix_bits) - 1;
     return 1
-         + (value >=                  mask )
-         + (value >=  ((1ULL <<  7) + mask))
-         + (value >=  ((1ULL << 14) + mask))
-         + (value >=  ((1ULL << 21) + mask))
-         + (value >=  ((1ULL << 28) + mask))
-         + (value >=  ((1ULL << 35) + mask))
-         + (value >=  ((1ULL << 42) + mask))
-         + (value >=  ((1ULL << 49) + mask))
-         + (value >=  ((1ULL << 56) + mask))
-         + (value >=  ((1ULL << 63) + mask))
+         + (value >=                 mask )
+         + (value >= ((1ULL <<  7) + mask))
+         + (value >= ((1ULL << 14) + mask))
+         + (value >= ((1ULL << 21) + mask))
+         + (value >= ((1ULL << 28) + mask))
+         + (value >= ((1ULL << 35) + mask))
+         + (value >= ((1ULL << 42) + mask))
+         + (value >= ((1ULL << 49) + mask))
+         + (value >= ((1ULL << 56) + mask))
+         + (value >= ((1ULL << 63) + mask))
          ;
 }
 
@@ -1083,7 +1091,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     unsigned char *const hea_buf_end = hea_buf + *hea_sz_p;
     struct lsqpack_enc_table_entry *new_entry;
     struct encode_program prog;
-    struct enc_found ef;
+    struct enc_search_result esr;
     int index, risk;
 
     size_t enc_sz, hea_sz;
@@ -1107,12 +1115,12 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         || enc->qpe_cur_header.others_at_risk
         || enc->qpe_cur_streams_at_risk < enc->qpe_max_risked_streams;
 
-    ef = qenc_find_entry(enc, risk, name, name_len, value, value_len);
+    esr = qenc_find_entry(enc, risk, name, name_len, value, value_len);
 
     prog = encode_programs
-                [ef.ef_found]
-                [ef.ef_table_type]
-                [ef.ef_value_match]
+                [esr.esr_found]
+                [esr.esr_table_type]
+                [esr.esr_value_match]
                 [index]
                 [risk];
 
@@ -1120,15 +1128,15 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     {
     case EEA_INS_NAMEREF:
         dst = enc_buf;
-        if (TT_STATIC == ef.ef_table_type)
+        if (TT_STATIC == esr.esr_table_type)
         {
             *dst = 0x80 | 0x40;
-            id = ef.ef_entry_id;
+            id = esr.esr_entry_id;
         }
         else
         {
             *dst = 0x80 | 0x40;
-            id = enc->qpe_ins_count - ef.ef_entry_id;
+            id = enc->qpe_ins_count - esr.esr_entry_id;
         }
         dst = lsqpack_enc_int(dst, enc_buf_end, id, 6);
         if (dst <= enc_buf)
@@ -1166,7 +1174,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     {
     case EHA_INDEXED_STAT:
         *dst = 0x80 | 0x40;
-        dst = lsqpack_enc_int(dst, hea_buf_end, ef.ef_entry_id, 6);
+        dst = lsqpack_enc_int(dst, hea_buf_end, esr.esr_entry_id, 6);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         hea_sz = dst - hea_buf;
@@ -1183,11 +1191,11 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         hea_sz = dst - hea_buf;
         break;
     case EHA_INDEXED_DYN:
-        id = ef.ef_entry_id;
+        id = esr.esr_entry_id;
         if (id > enc->qpe_cur_header.base_idx)
             goto post_base_idx;
         *dst = 0x80;
-        dst = lsqpack_enc_int(dst, hea_buf_end, ef.ef_entry_id, 6);
+        dst = lsqpack_enc_int(dst, hea_buf_end, esr.esr_entry_id, 6);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         hea_sz = dst - hea_buf;
@@ -1209,7 +1217,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         hea_sz = dst - hea_buf;
         break;
     case EHA_LIT_WITH_NAME_NEW:
-        id = ef.ef_entry_id;
+        id = esr.esr_entry_id;
  post_base_name_ref:
         *dst = (((flags & LQEF_NO_INDEX) > 0) << 3);
         assert(id > enc->qpe_cur_header.base_idx);
@@ -1225,13 +1233,13 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         hea_sz = dst - hea_buf;
         break;
     case EHA_LIT_WITH_NAME_DYN:
-        id = ef.ef_entry_id;
+        id = esr.esr_entry_id;
         if (id > enc->qpe_cur_header.base_idx)
             goto post_base_name_ref;
         *dst = 0x40
                | (((flags & LQEF_NO_INDEX) > 0) << 5)
                ;
-        id = enc->qpe_cur_header.base_idx - ef.ef_entry_id;
+        id = enc->qpe_cur_header.base_idx - esr.esr_entry_id;
         dst = lsqpack_enc_int(dst, hea_buf_end, id, 4);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
@@ -1248,7 +1256,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                | (((flags & LQEF_NO_INDEX) > 0) << 5)
                | 0x10
                ;
-        dst = lsqpack_enc_int(dst, hea_buf_end, ef.ef_entry_id, 4);
+        dst = lsqpack_enc_int(dst, hea_buf_end, esr.esr_entry_id, 4);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         r = lsqpack_enc_enc_str(7, dst, hea_buf_end - dst,
@@ -1290,15 +1298,15 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
 
     if (prog.ep_flags & EPF_REF_FOUND)
     {
-        assert(ef.ef_table_type == TT_DYNAMIC);
-        ++ef.ef_entry->ete_n_reffd;
-        enc->qpe_cur_header.n_risked += enc->qpe_max_acked_id < ef.ef_entry_id;
+        assert(esr.esr_table_type == TT_DYNAMIC);
+        ++esr.esr_entry->ete_n_reffd;
+        enc->qpe_cur_header.n_risked += enc->qpe_max_acked_id < esr.esr_entry_id;
         if (enc->qpe_cur_header.hinfo.qhi_min_id == 0
-                || enc->qpe_cur_header.hinfo.qhi_min_id > ef.ef_entry_id)
-            enc->qpe_cur_header.hinfo.qhi_min_id = ef.ef_entry_id;
+                || enc->qpe_cur_header.hinfo.qhi_min_id > esr.esr_entry_id)
+            enc->qpe_cur_header.hinfo.qhi_min_id = esr.esr_entry_id;
         if (enc->qpe_cur_header.hinfo.qhi_max_id == 0
-                || enc->qpe_cur_header.hinfo.qhi_max_id < ef.ef_entry_id)
-            enc->qpe_cur_header.hinfo.qhi_max_id = ef.ef_entry_id;
+                || enc->qpe_cur_header.hinfo.qhi_max_id < esr.esr_entry_id)
+            enc->qpe_cur_header.hinfo.qhi_max_id = esr.esr_entry_id;
     }
 
     *enc_sz_p = enc_sz;
