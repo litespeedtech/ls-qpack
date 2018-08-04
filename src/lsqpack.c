@@ -1574,6 +1574,110 @@ lsqpack_arr_push (struct lsqpack_arr *arr, uintptr_t val)
 }
 
 
+struct lsqpack_min_heap_elem
+{
+    void                *mhe_hbrc;
+    lsqpack_abs_id_t     mhe_max_id;
+};
+
+
+#define MHE_PARENT(i) ((i - 1) / 2)
+#define MHE_LCHILD(i) (2 * i + 1)
+#define MHE_RCHILD(i) (2 * i + 2)
+
+#define mh_count(heap) ((heap)->mh_nelem)
+
+static void
+mh_heapify (struct lsqpack_min_heap *heap, unsigned i)
+{
+    struct lsqpack_min_heap_elem el;
+    unsigned smallest;
+
+    assert(i < heap->mh_nelem);
+
+    if (MHE_LCHILD(i) < heap->mh_nelem)
+    {
+        if (heap->mh_elems[ MHE_LCHILD(i) ].mhe_max_id <
+                                    heap->mh_elems[ i ].mhe_max_id)
+            smallest = MHE_LCHILD(i);
+        else
+            smallest = i;
+        if (MHE_RCHILD(i) < heap->mh_nelem &&
+            heap->mh_elems[ MHE_RCHILD(i) ].mhe_max_id <
+                                    heap->mh_elems[ smallest ].mhe_max_id)
+            smallest = MHE_RCHILD(i);
+    }
+    else
+        smallest = i;
+
+    if (smallest != i)
+    {
+        el = heap->mh_elems[ smallest ];
+        heap->mh_elems[ smallest ] = heap->mh_elems[ i ];
+        heap->mh_elems[ i ] = el;
+        mh_heapify(heap, smallest);
+    }
+}
+
+
+static int
+mh_insert (struct lsqpack_min_heap *heap, void *conn, uint64_t val)
+{
+    struct lsqpack_min_heap_elem *els;
+    struct lsqpack_min_heap_elem el;
+    unsigned i;
+
+    if (heap->mh_nelem >= heap->mh_nalloc)
+    {
+        if (heap->mh_nalloc)
+            heap->mh_nalloc *= 2;
+        else
+            heap->mh_nalloc = 4;
+        els = realloc(heap->mh_elems, sizeof(els[0]) * heap->mh_nalloc);
+        if (els)
+            heap->mh_elems = els;
+        else
+            return -1;
+    }
+
+    heap->mh_elems[ heap->mh_nelem ].mhe_hbrc = conn;
+    heap->mh_elems[ heap->mh_nelem ].mhe_max_id  = val;
+    ++heap->mh_nelem;
+
+    i = heap->mh_nelem - 1;
+    while (i > 0 && heap->mh_elems[ MHE_PARENT(i) ].mhe_max_id >
+                                    heap->mh_elems[ i ].mhe_max_id)
+    {
+        el = heap->mh_elems[ MHE_PARENT(i) ];
+        heap->mh_elems[ MHE_PARENT(i) ] = heap->mh_elems[ i ];
+        heap->mh_elems[ i ] = el;
+        i = MHE_PARENT(i);
+    }
+
+    return 0;
+}
+
+
+static void *
+mh_pop (struct lsqpack_min_heap *heap, lsqpack_abs_id_t largest_id)
+{
+    void *hbrc;
+
+    if (heap->mh_nelem == 0 || heap->mh_elems[0].mhe_max_id > largest_id)
+        return NULL;
+
+    hbrc = heap->mh_elems[0].mhe_hbrc;
+    --heap->mh_nelem;
+    if (heap->mh_nelem > 0)
+    {
+        heap->mh_elems[0] = heap->mh_elems[ heap->mh_nelem ];
+        mh_heapify(heap, 0);
+    }
+
+    return hbrc;
+}
+
+
 static struct lsqpack_dec_table_entry *
 qdec_get_table_entry_rel (const struct lsqpack_dec *dec,
                                             lsqpack_abs_id_t relative_idx)
@@ -1714,6 +1818,7 @@ struct header_block_read_ctx
 
     enum {
         HBRC_HAVE_LARGEST_REF   = 1 << 0,
+        HBRC_BLOCKED            = 1 << 1,
     }                                   hbrc_flags;
 
     /* First we read the largest reference to see whether the header block
@@ -2718,10 +2823,27 @@ destroy_header_block_read_ctx (struct lsqpack_dec *dec,
 
 static int
 save_header_block_read_ctx (struct lsqpack_dec *dec,
-                        struct header_block_read_ctx *read_ctx, int blocked)
+                        struct header_block_read_ctx *read_ctx)
 {
     TAILQ_INSERT_TAIL(&dec->qpd_hbrcs, read_ctx, hbrc_next);
     return 0;
+}
+
+
+static int
+stash_blocked_header (struct lsqpack_dec *dec,
+                        struct header_block_read_ctx *read_ctx)
+{
+    if (mh_count(&dec->qpd_blocked_headers) >= dec->qpd_max_risked_streams)
+        return -1;
+    if (0 == mh_insert(&dec->qpd_blocked_headers, read_ctx,
+                                        read_ctx->hbrc_largest_ref))
+    {
+        read_ctx->hbrc_flags |= HBRC_BLOCKED;
+        return 0;
+    }
+    else
+        return -1;
 }
 
 
@@ -2756,10 +2878,16 @@ lsqpack_dec_header_read (struct lsqpack_dec *dec, void *stream)
             destroy_header_block_read_ctx(dec, read_ctx);
             return 0;
         case RHS_NEED:
-        case RHS_BLOCKED:
-            dec->qpd_wantread_header_block(read_ctx->hbrc_stream,
-                                                        st == RHS_NEED);
+            dec->qpd_wantread_header_block(read_ctx->hbrc_stream, 1);
             return 0;
+        case RHS_BLOCKED:
+            if (0 == stash_blocked_header(dec, read_ctx))
+            {
+                dec->qpd_wantread_header_block(read_ctx->hbrc_stream, 0);
+                return 0;
+            }
+            else
+                return -1;
         default:
             assert(st == RHS_ERROR);
             return -1;
@@ -2795,11 +2923,13 @@ lsqpack_dec_header_in (struct lsqpack_dec *dec, void *stream,
         if (!read_ctx)
             return -1;
         memcpy(read_ctx, &read_ctx_buf, sizeof(*read_ctx));
-        if (0 != save_header_block_read_ctx(dec, read_ctx, st == RHS_BLOCKED))
+        if (0 != save_header_block_read_ctx(dec, read_ctx))
         {
             free(read_ctx);
             return -1;
         }
+        if (st == RHS_BLOCKED && 0 != stash_blocked_header(dec, read_ctx))
+            return -1;
         dec->qpd_wantread_header_block(stream, st == RHS_NEED);
         return 0;
     default:
@@ -2836,6 +2966,19 @@ qdec_update_max_capacity (struct lsqpack_dec *dec, unsigned new_capacity)
 }
 
 
+static void
+qdec_process_blocked_headers (struct lsqpack_dec *dec)
+{
+    struct header_block_read_ctx *read_ctx;
+
+    while ((read_ctx = mh_pop(&dec->qpd_blocked_headers, dec->qpd_ins_count)))
+    {
+        read_ctx->hbrc_flags &= ~HBRC_BLOCKED;
+        dec->qpd_wantread_header_block(read_ctx->hbrc_stream, 1);
+    }
+}
+
+
 static int
 lsqpack_dec_push_entry (struct lsqpack_dec *dec,
                                         struct lsqpack_dec_table_entry *entry)
@@ -2845,6 +2988,7 @@ lsqpack_dec_push_entry (struct lsqpack_dec *dec,
         dec->qpd_cur_capacity += DTE_SIZE(entry);
         ++dec->qpd_ins_count;
         qdec_remove_overflow_entries(dec);
+        qdec_process_blocked_headers(dec);
         return 0;
     }
     else

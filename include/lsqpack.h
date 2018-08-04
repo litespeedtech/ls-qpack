@@ -325,6 +325,15 @@ struct lsqpack_huff_decode_state
     struct lsqpack_decode_status    status;
 };
 
+struct lsqpack_min_heap_elem;
+
+struct lsqpack_min_heap
+{
+    struct lsqpack_min_heap_elem   *mh_elems;
+    unsigned                        mh_nalloc,
+                                    mh_nelem;
+};
+
 struct lsqpack_dec
 {
     /** This is the hard limit set at initialization */
@@ -354,10 +363,8 @@ struct lsqpack_dec
                             qpd_hbrcs;
 
     /** Blocked headers are kept in a min-heap */
-    struct lsqpack_header_block
-                           *qpd_blocked_headers;
-    /** Number of blocked headers */
-    unsigned                qpd_bh_count;
+    struct lsqpack_min_heap qpd_blocked_headers;
+
     /**
      * Number of elements currently allocated in the qpd_blocked_headers
      * array.
