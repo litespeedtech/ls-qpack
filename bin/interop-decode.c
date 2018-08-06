@@ -255,6 +255,7 @@ main (int argc, char **argv)
                 exit(EXIT_FAILURE);
             }
         }
+        fclose(recipe);
     }
 
     while ((buf = TAILQ_FIRST(&bufs)))

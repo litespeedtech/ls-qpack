@@ -1620,6 +1620,13 @@ mh_heapify (struct lsqpack_min_heap *heap, unsigned i)
 }
 
 
+static void
+mh_cleanup (struct lsqpack_min_heap *heap)
+{
+    free(heap->mh_elems);
+}
+
+
 static int
 mh_insert (struct lsqpack_min_heap *heap, void *conn, uint64_t val)
 {
@@ -1794,6 +1801,7 @@ lsqpack_dec_cleanup (struct lsqpack_dec *dec)
         qdec_decref_entry((struct lsqpack_dec_table_entry *) val);
     }
     lsqpack_arr_cleanup(&dec->qpd_dyn_table);
+    mh_cleanup(&dec->qpd_blocked_headers);
 }
 
 
