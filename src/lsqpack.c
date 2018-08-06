@@ -2662,7 +2662,10 @@ parse_header_data (struct lsqpack_dec *dec,
         }
     }
 
-    if (read_ctx->hbrc_size == 0)
+    if (read_ctx->hbrc_size > 0)
+        return RHS_NEED;
+    else if (read_ctx->hbrc_parse_ctx_u.data.state
+                                            == DATA_STATE_NEXT_INSTRUCTION)
         return RHS_DONE;
     else
         return RHS_ERROR;
@@ -2800,7 +2803,12 @@ qdec_read_header (struct lsqpack_dec *dec,
         {
             read_ctx->hbrc_size -= buf_sz;
             st = read_ctx->hbrc_parse(dec, read_ctx, buf, buf_sz);
-            if (st != RHS_NEED)
+            if (st == RHS_NEED)
+            {
+                if (read_ctx->hbrc_size == 0)
+                    return RHS_ERROR;
+            }
+            else
                 return st;
         }
         else if (buf_sz == 0)
