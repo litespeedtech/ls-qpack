@@ -226,7 +226,7 @@ main (int argc, char **argv)
             if (*line == '#')
                 continue;
 
-            if (3 == sscanf(line, " %c %lu %u ", command, &stream_id, &size))
+            if (3 == sscanf(line, " %[s] %lu %u ", command, &stream_id, &size))
             {
                 TAILQ_FOREACH(buf, &bufs, next_buf)
                     if (stream_id == buf->stream_id)
@@ -244,6 +244,10 @@ main (int argc, char **argv)
                         lineno, stream_id);
                     exit(EXIT_FAILURE);
                 }
+            }
+            else if (2 == sscanf(line, " %[z] %u ", command, &size))
+            {
+                s_max_read_size = size;
             }
             else
             {
