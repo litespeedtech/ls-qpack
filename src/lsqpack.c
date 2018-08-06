@@ -1733,6 +1733,7 @@ lsqpack_dec_init (struct lsqpack_dec *dec, unsigned dyn_table_size,
     dec->qpd_wantread_header_block = wantread_header_block;
     dec->qpd_header_block_done = header_block_done;
     TAILQ_INIT(&dec->qpd_header_sets);
+    TAILQ_INIT(&dec->qpd_hbrcs);
     lsqpack_arr_init(&dec->qpd_dyn_table);
 }
 
