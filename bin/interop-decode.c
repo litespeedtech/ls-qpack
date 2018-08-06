@@ -4,6 +4,7 @@
  * https://github.com/quicwg/base-drafts/wiki/QPACK-Offline-Interop
  */
 
+#include <assert.h>
 #include <byteswap.h>
 #include <errno.h>
 #include <inttypes.h>
@@ -11,11 +12,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/queue.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 
 #include "lsqpack.h"
+
+static size_t s_max_read_size = SIZE_MAX;
 
 static void
 usage (const char *name)
@@ -28,6 +32,8 @@ usage (const char *name)
 "                 read from stdin.\n"
 "   -o FILE     Output file.  If not spepcified or set to `-', the output\n"
 "                 is written to stdout.\n"
+"   -r FILE     Recipe file.  Without a recipe, buffers are processed in\n"
+"                 order.\n"
 "   -s NUMBER   Maximum number of risked streams.  Defaults to %u.\n"
 "   -t NUMBER   Dynamic table size.  Defaults to %u.\n"
 "\n"
@@ -36,50 +42,61 @@ usage (const char *name)
 }
 
 
-struct stream
+struct buf
 {
-    uint64_t                 stream_id;
-    const unsigned char     *buf;
-    size_t                   size;
-    size_t                   off;
-    int                      wantread;
+    TAILQ_ENTRY(buf)        next_buf;
+    struct lsqpack_dec     *dec;
+    uint64_t                stream_id;     /* Zero means encoder stream */
+    size_t                  size;
+    size_t                  off;
+    int                     wantread;
+    unsigned char           buf[0];
 };
 
 
+TAILQ_HEAD(, buf) bufs = TAILQ_HEAD_INITIALIZER(bufs);
+
+
 static ssize_t
-read_header_block (void *stream_p, const unsigned char **buf, size_t size)
+read_header_block (void *buf_p, const unsigned char **dst, size_t size)
 {
-    struct stream *stream = stream_p;
-    size_t avail = stream->size - stream->off;
+    struct buf *buf = buf_p;
+    size_t avail = buf->size - buf->off;
     if (size > avail)
         size = avail;
-    *buf = stream->buf + stream->off;
-    stream->off += size;
+    if (size > s_max_read_size)
+        size = s_max_read_size;
+    *dst = buf->buf + buf->off;
+    buf->off += size;
     return size;
 }
 
 
 static void
-wantread_header_block (void *stream_p, int wantread)
+wantread_header_block (void *buf_p, int wantread)
 {
-    struct stream *stream = stream_p;
-    stream->wantread = wantread;
+    struct buf *buf = buf_p;
+    buf->wantread = wantread;
+    if (wantread)
+        lsqpack_dec_header_read(buf->dec, buf);
 }
 
 
 static void
-header_block_done (void *stream_p, struct lsqpack_header_set *set)
+header_block_done (void *buf_p, struct lsqpack_header_set *set)
 {
-    struct stream *stream = stream_p;
+    struct buf *buf = buf_p;
     unsigned n;
 
-    fprintf(stderr, "Have headers for stream %"PRIu64":\n", stream->stream_id);
+    fprintf(stderr, "Have headers for stream %"PRIu64":\n", buf->stream_id);
     for (n = 0; n < set->qhs_count; ++n)
         fprintf(stderr, "  %.*s: %.*s\n",
             set->qhs_headers[n]->qh_name_len, set->qhs_headers[n]->qh_name,
             set->qhs_headers[n]->qh_value_len, set->qhs_headers[n]->qh_value);
     fprintf(stderr, "\n");
     lsqpack_dec_destroy_header_set(set);
+    TAILQ_REMOVE(&bufs, buf, next_buf);
+    free(buf);
 }
 
 
@@ -87,7 +104,7 @@ int
 main (int argc, char **argv)
 {
     int in = STDIN_FILENO;
-    FILE *out = stdout;
+    FILE *out = stdout, *recipe = NULL;
     int opt;
     unsigned dyn_table_size     = LSQPACK_DEF_DYN_TABLE_SIZE,
              max_risked_streams = LSQPACK_DEF_MAX_RISKED_STREAMS;
@@ -96,10 +113,13 @@ main (int argc, char **argv)
     int r;
     uint64_t stream_id;
     uint32_t size;
-    struct stream stream;
-    unsigned char buf[0x1000];
+    struct buf *buf;
+    unsigned lineno;
+    char *line, *end;
+    char command[0x100];
+    char line_buf[0x100];
 
-    while (-1 != (opt = getopt(argc, argv, "i:o:s:t:h")))
+    while (-1 != (opt = getopt(argc, argv, "i:o:r:s:t:h")))
     {
         switch (opt)
         {
@@ -122,6 +142,20 @@ main (int argc, char **argv)
                 if (!out)
                 {
                     fprintf(stderr, "cannot open `%s' for writing: %s\n",
+                                                optarg, strerror(errno));
+                    exit(EXIT_FAILURE);
+                }
+            }
+            break;
+        case 'r':
+            if (0 == strcmp(optarg, "-"))
+                recipe = stdin;
+            else
+            {
+                recipe = fopen(optarg, "r");
+                if (!out)
+                {
+                    fprintf(stderr, "cannot open `%s' for reading: %s\n",
                                                 optarg, strerror(errno));
                     exit(EXIT_FAILURE);
                 }
@@ -159,46 +193,103 @@ main (int argc, char **argv)
         stream_id = bswap_64(stream_id);
         size = bswap_32(size);
 #endif
-        if (size > sizeof(buf))
+        buf = malloc(sizeof(*buf) + size);
+        if (!buf)
         {
-            fprintf(stderr, "span larger than the buffer\n");
+            perror("malloc");
             exit(EXIT_FAILURE);
         }
-        nr = read(in, buf, size);
+        memset(buf, 0, sizeof(*buf));
+        nr = read(in, buf->buf, size);
         if (nr != size)
             goto read_err;
-        if (stream_id == 0)
+        buf->dec = &decoder;
+        buf->stream_id = stream_id;
+        buf->size = size;
+        TAILQ_INSERT_TAIL(&bufs, buf, next_buf);
+    }
+
+    if (recipe)
+    {
+        lineno = 0;
+        while ((line = fgets(line_buf, sizeof(line_buf), recipe)))
         {
-            r = lsqpack_dec_enc_in(&decoder, buf, size);
+            ++lineno;
+            end = strchr(line, '\n');
+            if (!end)
+            {
+                fprintf(stderr, "no newline on line %u\n", lineno);
+                exit(EXIT_FAILURE);
+            }
+            *end = '\0';
+
+            if (*line == '#')
+                continue;
+
+            if (3 == sscanf(line, " %c %lu %u ", command, &stream_id, &size))
+            {
+                TAILQ_FOREACH(buf, &bufs, next_buf)
+                    if (stream_id == buf->stream_id)
+                        break;
+                if (!buf)
+                {
+                    fprintf(stderr, "stream %lu not found (recipe line %u)\n",
+                        stream_id, lineno);
+                    exit(EXIT_FAILURE);
+                }
+                r = lsqpack_dec_header_in(&decoder, buf, buf->size);
+                if (r != 0)
+                {
+                    fprintf(stderr, "recipe line %u: stream %lu: header_in error\n",
+                        lineno, stream_id);
+                    exit(EXIT_FAILURE);
+                }
+            }
+            else
+            {
+                perror("sscanf");
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
+
+    while ((buf = TAILQ_FIRST(&bufs)))
+    {
+        if (buf->stream_id == 0)
+        {
+            r = lsqpack_dec_enc_in(&decoder, buf->buf, buf->size - buf->off);
             if (r != 0)
             {
                 fprintf(stderr, "encoder in error\n");
                 exit(EXIT_FAILURE);
             }
+            TAILQ_REMOVE(&bufs, buf, next_buf);
+            free(buf);
             lsqpack_dec_print_table(&decoder, stderr);
         }
-        else
+        else if (buf->off == 0)
         {
-            stream = (struct stream) { stream_id, buf, size, 0, 0, };
-            r = lsqpack_dec_header_in(&decoder, &stream, size);
+            r = lsqpack_dec_header_in(&decoder, buf, buf->size);
             if (r != 0)
             {
                 fprintf(stderr, "header_in error\n");
                 exit(EXIT_FAILURE);
             }
-            while (stream.off < stream.size)
+        }
+        else
+        {
+            r = lsqpack_dec_header_read(&decoder, buf);
+            if (r != 0)
             {
-                r = lsqpack_dec_header_read(&decoder, &stream);
-                if (r != 0)
-                {
-                    fprintf(stderr, "header_read error\n");
-                    exit(EXIT_FAILURE);
-                }
+                fprintf(stderr, "header_read error\n");
+                exit(EXIT_FAILURE);
             }
         }
     }
 
     lsqpack_dec_cleanup(&decoder);
+
+    assert(TAILQ_EMPTY(&bufs));
 
     exit(EXIT_SUCCESS);
 
