@@ -86,6 +86,104 @@ struct lsqpack_enc_table_entry
 #define N_BUCKETS(n_bits) (1U << (n_bits))
 #define BUCKNO(n_bits, hash) ((hash) & (N_BUCKETS(n_bits) - 1))
 
+struct lsqpack_header_info
+{
+    TAILQ_ENTRY(lsqpack_header_info)    qhi_next;
+    uint64_t                            qhi_stream_id;
+    unsigned                            qhi_seqno;
+    lsqpack_abs_id_t                    qhi_min_id;
+    lsqpack_abs_id_t                    qhi_max_id;
+    signed char                         qhi_at_risk;
+};
+
+/* Header info structures are kept in a list of arrays, which is faster than
+ * searching through a linked list whose elements may be all over the place
+ * in memory.  This is important because we need to look up header infos by
+ * stream ID and also calculate the minimum absolute ID.  If not sequential
+ * search, we would need to implement a hybrid of min-heap and a hash (or
+ * search tree) and that seems to be an overkill for something that is not
+ * likely to have more than a few hundred elements at the most.
+ */
+struct lsqpack_header_info_arr
+{
+    STAILQ_ENTRY(lsqpack_header_info_arr)   hia_next;
+    uint64_t                                hia_slots;
+    struct lsqpack_header_info              hia_hinfos[64];
+};
+
+static unsigned
+find_free_slot (uint64_t slots)
+{
+#if __GNUC__
+    return __builtin_ffsll(~slots) - 1;
+#else
+    unsigned n;
+
+    slots =~ slots;
+    n = 0;
+
+    if (0 == (slots & ((1ULL << 32) - 1))) { n += 32; slots >>= 32; }
+    if (0 == (slots & ((1ULL << 16) - 1))) { n += 16; slots >>= 16; }
+    if (0 == (slots & ((1ULL <<  8) - 1))) { n +=  8; slots >>=  8; }
+    if (0 == (slots & ((1ULL <<  4) - 1))) { n +=  4; slots >>=  4; }
+    if (0 == (slots & ((1ULL <<  2) - 1))) { n +=  2; slots >>=  2; }
+    if (0 == (slots & ((1ULL <<  1) - 1))) { n +=  1; slots >>=  1; }
+    return n;
+#endif
+}
+
+static struct lsqpack_header_info *
+enc_alloc_hinfo (struct lsqpack_enc *enc)
+{
+    struct lsqpack_header_info_arr *hiarr;
+    struct lsqpack_header_info *hinfo;
+    unsigned slot;
+
+    STAILQ_FOREACH(hiarr, &enc->qpe_hinfo_arrs, hia_next)
+        if (hiarr->hia_slots != ~0ULL)
+            break;
+
+    if (!hiarr)
+    {
+        hiarr = malloc(sizeof(*hiarr));
+        if (!hiarr)
+            return NULL;
+        hiarr->hia_slots = 0;
+        STAILQ_INSERT_TAIL(&enc->qpe_hinfo_arrs, hiarr, hia_next);
+    }
+
+    slot = find_free_slot(hiarr->hia_slots);
+    hiarr->hia_slots |= 1ULL << slot;
+    hinfo = &hiarr->hia_hinfos[ slot ];
+    memset(hinfo, 0, sizeof(*hinfo));
+    TAILQ_INSERT_TAIL(&enc->qpe_hinfos, hinfo, qhi_next);
+    return hinfo;
+}
+
+static void
+enc_free_hinfo (struct lsqpack_enc *enc, struct lsqpack_header_info *hinfo)
+{
+    struct lsqpack_header_info_arr *hiarr;
+    unsigned slot;
+
+    STAILQ_FOREACH(hiarr, &enc->qpe_hinfo_arrs, hia_next)
+        if (hinfo >= hiarr->hia_hinfos && hinfo < &hiarr->hia_hinfos[64])
+        {
+            slot = hinfo - hiarr->hia_hinfos;
+            hiarr->hia_slots &= ~(1ULL << slot);
+            TAILQ_REMOVE(&enc->qpe_hinfos, &hiarr->hia_hinfos[slot], qhi_next);
+            return;
+        }
+
+    assert(0);
+}
+
+static int
+enc_use_dynamic_table (const struct lsqpack_enc *enc)
+{
+    return enc->qpe_cur_header.hinfo != NULL;
+}
+
 int
 lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
     unsigned max_risked_streams)
@@ -113,6 +211,8 @@ lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
 
     memset(enc, 0, sizeof(*enc));
     STAILQ_INIT(&enc->qpe_all_entries);
+    STAILQ_INIT(&enc->qpe_hinfo_arrs);
+    TAILQ_INIT(&enc->qpe_hinfos);
     enc->qpe_max_capacity = dyn_table_size;
     enc->qpe_max_risked_streams = max_risked_streams;
     enc->qpe_buckets      = buckets;
@@ -125,13 +225,21 @@ void
 lsqpack_enc_cleanup (struct lsqpack_enc *enc)
 {
     struct lsqpack_enc_table_entry *entry, *next;
+    struct lsqpack_header_info_arr *hiarr, *next_hiarr;
+
     for (entry = STAILQ_FIRST(&enc->qpe_all_entries); entry; entry = next)
     {
         next = STAILQ_NEXT(entry, ete_next_all);
         free(entry);
     }
+
+    for (hiarr = STAILQ_FIRST(&enc->qpe_hinfo_arrs); hiarr; hiarr = next_hiarr)
+    {
+        next_hiarr = STAILQ_NEXT(hiarr, hia_next);
+        free(hiarr);
+    }
+
     free(enc->qpe_buckets);
-    free(enc->qpe_hinfos_arr);
 }
 
 
@@ -577,7 +685,7 @@ qenc_find_entry (struct lsqpack_enc *enc, int risk, const char *name,
         unsigned name_len, const char *value,
         unsigned value_len)
 {
-    if (enc->qpe_cur_header.use_dynamic_table)
+    if (enc_use_dynamic_table(enc))
         return qenc_find_entry_in_either_table(enc, risk, name, name_len, value,
                                                                     value_len);
     else
@@ -874,47 +982,31 @@ int
 lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
                             unsigned seqno)
 {
-    struct lsqpack_header_info *hinfos_arr;
-    unsigned at_risk, nalloc, i;
+    const struct lsqpack_header_info *hinfo;
+    unsigned at_risk;
 
     if (enc->qpe_flags & LSQPACK_ENC_HEADER)
         return -1;
 
-    enc->qpe_cur_header.hinfo = (struct lsqpack_header_info)
-                        { .qhi_stream_id = stream_id, .qhi_seqno = seqno, };
+    enc->qpe_cur_header.hinfo = enc_alloc_hinfo(enc);
+    if (enc->qpe_cur_header.hinfo)
+    {
+        enc->qpe_cur_header.hinfo->qhi_stream_id = stream_id;
+        enc->qpe_cur_header.hinfo->qhi_seqno     = seqno;
+    }
     enc->qpe_cur_header.n_risked = 0;
     enc->qpe_cur_header.base_idx = enc->qpe_ins_count;
     enc->qpe_cur_header.search_cutoff = 0;
-    enc->qpe_cur_header.use_dynamic_table = 1;
-
-    if (enc->qpe_hinfos_count == enc->qpe_hinfos_nalloc)
-    {
-        if (enc->qpe_hinfos_nalloc)
-            nalloc = enc->qpe_hinfos_nalloc * 2;
-        else
-            nalloc = 4;
-        hinfos_arr = realloc(enc->qpe_hinfos_arr,
-                                    sizeof(enc->qpe_hinfos_arr[0]) * 2);
-        if (hinfos_arr)
-        {
-            free(enc->qpe_hinfos_arr);
-            enc->qpe_hinfos_arr = hinfos_arr;
-            enc->qpe_hinfos_nalloc = nalloc;
-        }
-        else
-            enc->qpe_cur_header.use_dynamic_table = 0;
-    }
 
     /* Check if there are other header blocks with the same stream ID that
      * are at risk.
      */
     if (seqno)
     {
-        for (i = 0; i < enc->qpe_hinfos_count; ++i)
-            if (enc->qpe_hinfos_arr[i].qhi_stream_id == stream_id
-                                && enc->qpe_hinfos_arr[i].qhi_at_risk)
+        TAILQ_FOREACH(hinfo, &enc->qpe_hinfos, qhi_next)
+            if (hinfo->qhi_stream_id == stream_id && hinfo->qhi_at_risk)
                 break;
-        at_risk = i < enc->qpe_hinfos_count;
+        at_risk = hinfo != NULL;
     }
     else
         at_risk = 0;
@@ -936,12 +1028,12 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
     if (!(enc->qpe_flags & LSQPACK_ENC_HEADER))
         return -1;
 
-    if (enc->qpe_cur_header.hinfo.qhi_max_id)
+    if (enc->qpe_cur_header.hinfo && enc->qpe_cur_header.hinfo->qhi_max_id)
     {
         end = buf + sz;
 
         *buf = 0;
-        dst = lsqpack_enc_int(buf, end, enc->qpe_cur_header.hinfo.qhi_max_id, 8);
+        dst = lsqpack_enc_int(buf, end, enc->qpe_cur_header.hinfo->qhi_max_id, 8);
         if (dst <= buf)
             return 0;
 
@@ -950,16 +1042,16 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
 
         buf = dst;
         if (enc->qpe_cur_header.base_idx
-                                    >= enc->qpe_cur_header.hinfo.qhi_max_id)
+                                    >= enc->qpe_cur_header.hinfo->qhi_max_id)
         {
             sign = 0;
             diff = enc->qpe_cur_header.base_idx
-                                    - enc->qpe_cur_header.hinfo.qhi_max_id;
+                                    - enc->qpe_cur_header.hinfo->qhi_max_id;
         }
         else
         {
             sign = 1;
-            diff = enc->qpe_cur_header.hinfo.qhi_max_id
+            diff = enc->qpe_cur_header.hinfo->qhi_max_id
                                     - enc->qpe_cur_header.base_idx;
         }
         *buf = sign << 7;
@@ -967,12 +1059,16 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
         if (dst <= buf)
             return 0;
 
+        enc->qpe_cur_header.hinfo = NULL;
         enc->qpe_flags &= ~LSQPACK_ENC_HEADER;
         return dst - end + sz;
     }
-    else if (sz >= 2)
+
+    if (sz >= 2)
     {
         memset(buf, 0, 2);
+        enc_free_hinfo(enc, enc->qpe_cur_header.hinfo);
+        enc->qpe_cur_header.hinfo = NULL;
         enc->qpe_flags &= ~LSQPACK_ENC_HEADER;
         return 2;
     }
@@ -1106,7 +1202,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         return LQES_NOBUF_HEAD;
 
     index = !(flags & LQEF_NO_INDEX)
-        && enc->qpe_cur_header.use_dynamic_table
+        && enc_use_dynamic_table(enc)
         && enc->qpe_ins_count < LSQPACK_MAX_ABS_ID
         && enc_has_or_can_evict_at_least(enc, ENTRY_COST(name_len, value_len));
 
@@ -1283,12 +1379,12 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         if (prog.ep_flags & EPF_REF_NEW)
         {
             ++new_entry->ete_n_reffd;
-            assert(new_entry->ete_id > enc->qpe_cur_header.hinfo.qhi_max_id);
-            enc->qpe_cur_header.hinfo.qhi_max_id = new_entry->ete_id;
+            assert(new_entry->ete_id > enc->qpe_cur_header.hinfo->qhi_max_id);
+            enc->qpe_cur_header.hinfo->qhi_max_id = new_entry->ete_id;
             ++enc->qpe_cur_header.n_risked;
-            if (enc->qpe_cur_header.hinfo.qhi_min_id == 0
-                    || enc->qpe_cur_header.hinfo.qhi_min_id > new_entry->ete_id)
-                enc->qpe_cur_header.hinfo.qhi_min_id = new_entry->ete_id;
+            if (enc->qpe_cur_header.hinfo->qhi_min_id == 0
+                    || enc->qpe_cur_header.hinfo->qhi_min_id > new_entry->ete_id)
+                enc->qpe_cur_header.hinfo->qhi_min_id = new_entry->ete_id;
         }
         break;
     default:
@@ -1301,12 +1397,12 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         assert(esr.esr_table_type == TT_DYNAMIC);
         ++esr.esr_entry->ete_n_reffd;
         enc->qpe_cur_header.n_risked += enc->qpe_max_acked_id < esr.esr_entry_id;
-        if (enc->qpe_cur_header.hinfo.qhi_min_id == 0
-                || enc->qpe_cur_header.hinfo.qhi_min_id > esr.esr_entry_id)
-            enc->qpe_cur_header.hinfo.qhi_min_id = esr.esr_entry_id;
-        if (enc->qpe_cur_header.hinfo.qhi_max_id == 0
-                || enc->qpe_cur_header.hinfo.qhi_max_id < esr.esr_entry_id)
-            enc->qpe_cur_header.hinfo.qhi_max_id = esr.esr_entry_id;
+        if (enc->qpe_cur_header.hinfo->qhi_min_id == 0
+                || enc->qpe_cur_header.hinfo->qhi_min_id > esr.esr_entry_id)
+            enc->qpe_cur_header.hinfo->qhi_min_id = esr.esr_entry_id;
+        if (enc->qpe_cur_header.hinfo->qhi_max_id == 0
+                || enc->qpe_cur_header.hinfo->qhi_max_id < esr.esr_entry_id)
+            enc->qpe_cur_header.hinfo->qhi_max_id = esr.esr_entry_id;
     }
 
     *enc_sz_p = enc_sz;

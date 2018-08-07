@@ -215,14 +215,7 @@ struct lsqpack_enc_table_entry;
 STAILQ_HEAD(lsqpack_enc_head, lsqpack_enc_table_entry);
 struct lsqpack_double_enc_head;
 
-struct lsqpack_header_info
-{
-    uint64_t            qhi_stream_id;
-    unsigned            qhi_seqno;
-    lsqpack_abs_id_t    qhi_min_id;
-    lsqpack_abs_id_t    qhi_max_id;
-    signed char         qhi_at_risk;
-};
+struct lsqpack_header_info_arr;
 
 struct lsqpack_dec_int_state
 {
@@ -269,15 +262,14 @@ struct lsqpack_enc
     struct lsqpack_double_enc_head
                                *qpe_buckets;
 
-    /* A min-heap of header info structures.  The first element is one
-     * with smallest qhi_min_id.
-     */
-    struct lsqpack_header_info *qpe_hinfos_arr;
+    STAILQ_HEAD(, lsqpack_header_info_arr)
+                                qpe_hinfo_arrs;
+    TAILQ_HEAD(, lsqpack_header_info)
+                                qpe_hinfos;
 
     /* Current header state */
     struct {
-        struct lsqpack_header_info
-                            hinfo;
+        struct lsqpack_header_info  *hinfo;
 
         /* Number of at-risk references in this header block */
         unsigned            n_risked;
@@ -286,7 +278,6 @@ struct lsqpack_enc
          * as well.)
          */
         int                 others_at_risk;
-        int                 use_dynamic_table;
         /* Base index */
         lsqpack_abs_id_t    base_idx;
         /* Search cutoff -- to index, entries at this ID and below will be
