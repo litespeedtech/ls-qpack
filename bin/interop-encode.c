@@ -4,6 +4,7 @@
  * https://github.com/quicwg/base-drafts/wiki/QPACK-Offline-Interop
  */
 
+#include <assert.h>
 #include <byteswap.h>
 #include <errno.h>
 #include <stdio.h>
@@ -15,6 +16,10 @@
 #include <fcntl.h>
 
 #include "lsqpack.h"
+
+unsigned char *
+lsqpack_enc_int (unsigned char *dst, unsigned char *const end, uint64_t value,
+                                                        unsigned prefix_bits);
 
 static void
 usage (const char *name)
@@ -82,12 +87,15 @@ main (int argc, char **argv)
     unsigned lineno, stream_id;
     struct lsqpack_enc encoder;
     char *line, *end, *tab;
+    unsigned char *end_cmd;
     ssize_t pref_sz;
     enum lsqpack_enc_status st;
     size_t enc_sz, hea_sz, enc_off, hea_off;
-    int header_opened;
+    int header_opened, r;
+    unsigned arg;
     char line_buf[0x1000];
     unsigned char enc_buf[0x1000], hea_buf[0x1000], pref_buf[0x20];
+    unsigned char cmd[0x80];
 
     while (-1 != (opt = getopt(argc, argv, "i:o:s:t:h")))
     {
@@ -175,7 +183,23 @@ main (int argc, char **argv)
         }
 
         if (*line == '#')
+        {
+            /* Lines starting with ## are potential annotations */
+            if (1 == sscanf(line, "## %*[a] %u ", &arg))
+            {
+                fprintf(stderr, "ACK stream ID %u\n", arg);
+                cmd[0] = 0x80;
+                end_cmd = lsqpack_enc_int(cmd, cmd + sizeof(cmd), arg, 7);
+                assert(end_cmd > cmd);
+                r = lsqpack_enc_decoder_in(&encoder, cmd, end_cmd - cmd);
+                if (r != 0)
+                {
+                    fprintf(stderr, "ACKing stream ID %u failed\n", arg);
+                    exit(EXIT_FAILURE);
+                }
+            }
             continue;
+        }
 
         tab = strchr(line, '\t');
         if (!tab)

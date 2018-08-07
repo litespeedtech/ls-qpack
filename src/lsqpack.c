@@ -1422,9 +1422,24 @@ lsqpack_enc_set_max_capacity (struct lsqpack_enc *enc, unsigned max_capacity)
 static int
 enc_proc_header_ack (struct lsqpack_enc *enc, uint64_t stream_id)
 {
+    struct lsqpack_header_info *hinfo, *acked;
+
     if (stream_id > MAX_QUIC_STREAM_ID)
         return -1;
-    return -1;  /* TODO */
+
+    acked = NULL;
+    TAILQ_FOREACH(hinfo, &enc->qpe_hinfos, qhi_next)
+        if (stream_id == hinfo->qhi_stream_id &&
+                (!acked || hinfo->qhi_seqno < acked->qhi_seqno))
+            acked = hinfo;
+
+    if (!acked)
+        return -1;
+
+    /* TODO: update minimum referenced */
+    /* TODO: update maximum acked */
+    enc_free_hinfo(enc, acked);
+    return 0;
 }
 
 
