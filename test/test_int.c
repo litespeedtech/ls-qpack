@@ -229,5 +229,42 @@ main (void)
         }
     }
 
+    /* Test the reentrant encoder */
+    for (test = tests; test < tests + sizeof(tests) / sizeof(tests[0]); ++test)
+    {
+        if (test->it_dec_retval != 0)
+            continue;
+        struct lsqpack_enc_int_state state =
+                                { .resume = 0, .value = test->it_decoded, };
+        buf[0] = '\0';
+        dst = buf;
+        for (sz = 1; sz < test->it_enc_sz; ++sz)
+        {
+            unsigned char *const dst_orig = dst;
+            dst = lsqpack_enc_int_r(dst, buf + sz, &state, test->it_prefix_bits);
+            assert(dst == dst_orig + 1);
+            assert(state.resume);
+        }
+        unsigned char *const dst_orig = dst;
+        dst = lsqpack_enc_int_r(dst, buf + sz, &state, test->it_prefix_bits);
+        assert(dst == dst_orig + 1);
+        assert(state.resume == 0);
+        assert(dst - buf == (intptr_t) test->it_enc_sz);
+        assert(0 == memcmp(buf, test->it_encoded, test->it_enc_sz));
+
+        /* Test that it decodes in one shot as well: */
+        for (; sz <= sizeof(buf); ++sz)
+        {
+            struct lsqpack_enc_int_state state =
+                                { .resume = 0, .value = test->it_decoded, };
+            buf[0] = '\0';
+            dst = lsqpack_enc_int_r(buf, buf + sz, &state, test->it_prefix_bits);
+            assert(state.resume == 0);
+            assert(dst - buf == (intptr_t) test->it_enc_sz);
+            assert(0 == memcmp(buf, test->it_encoded, test->it_enc_sz));
+        }
+    }
+
+
     return 0;
 }

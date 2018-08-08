@@ -745,6 +745,55 @@ lsqpack_enc_int (unsigned char *dst, unsigned char *const end, uint64_t value,
 }
 
 
+struct lsqpack_enc_int_state
+{
+    int         resume;
+    uint64_t    value;
+};
+
+
+unsigned char *
+lsqpack_enc_int_r (unsigned char *dst, unsigned char *const end,
+                   struct lsqpack_enc_int_state *state, unsigned prefix_bits)
+{
+    assert(dst < end);
+
+    switch (state->resume)
+    {
+    case 0: if (state->value < (1u << prefix_bits) - 1)
+                *dst++ |= state->value;
+            else
+            {
+                *dst++ |= (1 << prefix_bits) - 1;
+                state->value -= (1 << prefix_bits) - 1;
+                while (state->value >= 128)
+                {
+                    if (dst < end)
+                    {
+    case 1:             *dst++ = (0x80 | state->value);
+                        state->value >>= 7;
+                    }
+                    else
+                    {
+                        state->resume = 1;
+                        return dst;
+                    }
+                }
+                if (dst < end)
+    case 2:         *dst++ = state->value;
+                else
+                {
+                    state->resume = 2;
+                    return dst;
+                }
+            }
+    }
+
+    state->resume = 0;
+    return dst;
+}
+
+
 static void
 lsqpack_enc_int_nocheck (unsigned char *dst, uint64_t value,
                                                         unsigned prefix_bits)

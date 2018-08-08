@@ -32,4 +32,15 @@ lsqpack_huff_decode (const unsigned char *src, int src_len,
     unsigned char *dst, int dst_len, struct lsqpack_huff_decode_state *state,
     int final);
 
+struct lsqpack_enc_int_state
+{
+    int         resume;
+    uint64_t    value;
+};
+
+
+unsigned char *
+lsqpack_enc_int_r (unsigned char *dst, unsigned char *const end,
+                   struct lsqpack_enc_int_state *state, unsigned prefix_bits);
+
 #endif
