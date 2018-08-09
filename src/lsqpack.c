@@ -745,13 +745,6 @@ lsqpack_enc_int (unsigned char *dst, unsigned char *const end, uint64_t value,
 }
 
 
-struct lsqpack_enc_int_state
-{
-    int         resume;
-    uint64_t    value;
-};
-
-
 unsigned char *
 lsqpack_enc_int_r (unsigned char *dst, unsigned char *const end,
                    struct lsqpack_enc_int_state *state, unsigned prefix_bits)
@@ -1901,6 +1894,7 @@ lsqpack_dec_init (struct lsqpack_dec *dec, unsigned dyn_table_size,
     dec->qpd_header_block_done = header_block_done;
     TAILQ_INIT(&dec->qpd_header_sets);
     TAILQ_INIT(&dec->qpd_hbrcs);
+    STAILQ_INIT(&dec->qpd_dinsts);
     lsqpack_arr_init(&dec->qpd_dyn_table);
 }
 
@@ -1965,10 +1959,31 @@ lsqpack_dec_cleanup (struct lsqpack_dec *dec)
 }
 
 
+enum dec_inst_type
+{
+    DIT_READ_CTX_ACK,
+    DIT_READ_CTX_CANCEL,
+    DIT_HEAD_ACK,
+};
+
+struct lsqpack_dec_inst
+{
+    STAILQ_ENTRY(lsqpack_dec_inst)  di_next;
+    enum dec_inst_type              di_type;
+};
+
+struct header_ack
+{
+    struct lsqpack_dec_inst     dinst;
+    uint64_t                    stream_id;
+};
+
 struct header_block_read_ctx
 {
+    struct lsqpack_dec_inst             hbrc_dinst;
     TAILQ_ENTRY(header_block_read_ctx)  hbrc_next;
     void                               *hbrc_stream;
+    uint64_t                            hbrc_stream_id;
     size_t                              hbrc_size;
     lsqpack_abs_id_t                    hbrc_largest_ref;   /* Parsed from prefix */
     lsqpack_abs_id_t                    hbrc_base_index;    /* Parsed from prefix */
@@ -1988,6 +2003,7 @@ struct header_block_read_ctx
     enum {
         HBRC_HAVE_LARGEST_REF   = 1 << 0,
         HBRC_BLOCKED            = 1 << 1,
+        HBRC_DINST              = 1 << 2,
     }                                   hbrc_flags;
 
     /* First we read the largest reference to see whether the header block
@@ -3156,10 +3172,19 @@ destroy_header_block_read_ctx (struct lsqpack_dec *dec,
 
 
 static int
-save_header_block_read_ctx (struct lsqpack_dec *dec,
+qdec_insert_header_block (struct lsqpack_dec *dec,
                         struct header_block_read_ctx *read_ctx)
 {
     TAILQ_INSERT_TAIL(&dec->qpd_hbrcs, read_ctx, hbrc_next);
+    return 0;
+}
+
+
+static int
+qdec_remove_header_block (struct lsqpack_dec *dec,
+                        struct header_block_read_ctx *read_ctx)
+{
+    TAILQ_REMOVE(&dec->qpd_hbrcs, read_ctx, hbrc_next);
     return 0;
 }
 
@@ -3194,6 +3219,47 @@ find_header_block_read_ctx (struct lsqpack_dec *dec, void *stream)
 }
 
 
+static void
+maybe_want_write_decoder (struct lsqpack_dec *dec)
+{
+    if (0 != (dec->qpd_flags & LSQPACK_DEC_WANT_WRITE_DECODER))
+    {
+        dec->qpd_flags |= LSQPACK_DEC_WANT_WRITE_DECODER;
+        dec->qpd_wantwrite_decoder(dec->qpd_dec_stream, 1);
+    }
+}
+
+
+static int
+schedule_short_header_ack (struct lsqpack_dec *dec, uint64_t stream_id)
+{
+    struct header_ack *hack;
+
+    hack = malloc(sizeof(*hack));
+    if (hack)
+    {
+        STAILQ_INSERT_TAIL(&dec->qpd_dinsts, &hack->dinst, di_next);
+        hack->dinst.di_type = DIT_HEAD_ACK;
+        hack->stream_id = stream_id;
+        maybe_want_write_decoder(dec);
+        return 0;
+    }
+    else
+        return -1;
+}
+
+
+static void
+schedule_long_header_ack (struct lsqpack_dec *dec,
+                                        struct header_block_read_ctx *read_ctx)
+{
+    STAILQ_INSERT_TAIL(&dec->qpd_dinsts, &read_ctx->hbrc_dinst, di_next);
+    read_ctx->hbrc_dinst.di_type = DIT_READ_CTX_ACK;
+    read_ctx->hbrc_flags |= HBRC_DINST;
+    maybe_want_write_decoder(dec);
+}
+
+
 int
 lsqpack_dec_header_read (struct lsqpack_dec *dec, void *stream)
 {
@@ -3209,7 +3275,8 @@ lsqpack_dec_header_read (struct lsqpack_dec *dec, void *stream)
         case RHS_DONE:
             dec->qpd_header_block_done(read_ctx->hbrc_stream,
                                                 read_ctx->hbrc_header_set);
-            destroy_header_block_read_ctx(dec, read_ctx);
+            qdec_remove_header_block(dec, read_ctx);
+            schedule_long_header_ack(dec, read_ctx);
             return 0;
         case RHS_NEED:
             dec->qpd_wantread_header_block(read_ctx->hbrc_stream, 1);
@@ -3234,11 +3301,12 @@ lsqpack_dec_header_read (struct lsqpack_dec *dec, void *stream)
 
 int
 lsqpack_dec_header_in (struct lsqpack_dec *dec, void *stream,
-                                                        size_t header_size)
+                       uint64_t stream_id, size_t header_size)
 {
     enum read_header_status st;
     struct header_block_read_ctx *read_ctx;
     struct header_block_read_ctx read_ctx_buf = {
+        .hbrc_stream_id = stream_id,
         .hbrc_stream    = stream,
         .hbrc_size      = header_size,
         .hbrc_parse     = parse_header_prefix,
@@ -3250,6 +3318,11 @@ lsqpack_dec_header_in (struct lsqpack_dec *dec, void *stream,
     {
     case RHS_DONE:
         dec->qpd_header_block_done(stream, read_ctx_buf.hbrc_header_set);
+        if (read_ctx_buf.hbrc_largest_ref)
+        {
+            if (0 != schedule_short_header_ack(dec, stream_id))
+                return -1;
+        }
         return 0;
     case RHS_NEED:
     case RHS_BLOCKED:
@@ -3257,7 +3330,7 @@ lsqpack_dec_header_in (struct lsqpack_dec *dec, void *stream,
         if (!read_ctx)
             return -1;
         memcpy(read_ctx, &read_ctx_buf, sizeof(*read_ctx));
-        if (0 != save_header_block_read_ctx(dec, read_ctx))
+        if (0 != qdec_insert_header_block(dec, read_ctx))
         {
             free(read_ctx);
             return -1;

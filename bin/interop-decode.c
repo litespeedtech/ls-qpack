@@ -237,7 +237,7 @@ main (int argc, char **argv)
                         stream_id, lineno);
                     exit(EXIT_FAILURE);
                 }
-                r = lsqpack_dec_header_in(&decoder, buf, buf->size);
+                r = lsqpack_dec_header_in(&decoder, buf, stream_id, buf->size);
                 if (r != 0)
                 {
                     fprintf(stderr, "recipe line %u: stream %lu: header_in error\n",
@@ -274,7 +274,7 @@ main (int argc, char **argv)
         }
         else if (buf->off == 0)
         {
-            r = lsqpack_dec_header_in(&decoder, buf, buf->size);
+            r = lsqpack_dec_header_in(&decoder, buf, stream_id, buf->size);
             if (r != 0)
             {
                 fprintf(stderr, "header_in error\n");

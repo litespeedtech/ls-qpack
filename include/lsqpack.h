@@ -53,6 +53,7 @@ struct lsqpack_dec;
 typedef ssize_t (*lsqpack_stream_read_f)(void *stream, const unsigned char **buf, size_t sz);
 typedef ssize_t (*lsqpack_stream_write_f)(void *stream, void *buf, size_t sz);
 typedef void (*lsqpack_stream_wantread_f)(void *stream, int wantread);
+typedef void (*lsqpack_stream_wantwrite_f)(void *stream, int wantwrite);
 
 int
 lsqpack_enc_init (struct lsqpack_enc *, unsigned dyn_table_size,
@@ -166,8 +167,8 @@ lsqpack_dec_init (struct lsqpack_dec *, unsigned dyn_table_size,
  * a reference to the stream and may call associated callbacks.
  */
 int
-lsqpack_dec_header_in (struct lsqpack_dec *,
-                        void *header_block_stream, size_t header_block_size);
+lsqpack_dec_header_in (struct lsqpack_dec *, void *header_block_stream,
+                        uint64_t stream_iid, size_t header_block_size);
 
 /**
  * More stream data is available -- have the decoder read it.
@@ -325,6 +326,14 @@ struct lsqpack_min_heap
                                     mh_nelem;
 };
 
+struct lsqpack_enc_int_state
+{
+    int         resume;
+    uint64_t    value;
+};
+
+struct lsqpack_dec_inst;
+
 struct lsqpack_dec
 {
     /** This is the hard limit set at initialization */
@@ -335,7 +344,12 @@ struct lsqpack_dec
     unsigned                qpd_max_risked_streams;
     lsqpack_abs_id_t        qpd_ins_count;
     lsqpack_abs_id_t        qpd_del_count;
+    enum {
+        LSQPACK_DEC_WANT_WRITE_DECODER  = 1 << 0,
+    }                       qpd_flags;
     void                   *qpd_dec_stream;
+    lsqpack_stream_wantread_f
+                            qpd_wantwrite_decoder;
     lsqpack_stream_write_f  qpd_write_dec;
     lsqpack_stream_wantread_f
                             qpd_wantread_header_block;
@@ -355,6 +369,13 @@ struct lsqpack_dec
 
     /** Blocked headers are kept in a min-heap */
     struct lsqpack_min_heap qpd_blocked_headers;
+
+    /** Decoder instructions to be sent out */
+    STAILQ_HEAD(, lsqpack_dec_inst)
+                            qpd_dinsts;
+    /** Intra-instruction state for the decoder stream */
+    struct lsqpack_enc_int_state
+                            qpd_dinst_state;
 
     /**
      * Number of elements currently allocated in the qpd_blocked_headers
