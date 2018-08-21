@@ -40,6 +40,7 @@ usage (const char *name)
 "   -a MODE     Header acknowledgement mode.  0 means headers are never\n"
 "                 acknowledged, non-zero means header blocks are acknowledged\n"
 "                 immediately.  Default value is 0.\n"
+"   -n          Process annotations.\n"
 "   -v          Verbose: print various messages to stderr.\n"
 "\n"
 "   -h          Print this help screen and exit\n"
@@ -116,13 +117,17 @@ main (int argc, char **argv)
     int header_opened;
     unsigned arg;
     enum { ACK_NEVER, ACK_IMMEDIATE, } ack_mode = ACK_NEVER;
+    int process_annotations = 0;
     char line_buf[0x1000];
     unsigned char enc_buf[0x1000], hea_buf[0x1000], pref_buf[0x20];
 
-    while (-1 != (opt = getopt(argc, argv, "a:i:o:s:t:hv")))
+    while (-1 != (opt = getopt(argc, argv, "a:i:no:s:t:hv")))
     {
         switch (opt)
         {
+        case 'n':
+            ++process_annotations;
+            break;
         case 'a':
             ack_mode = atoi(optarg) ? ACK_IMMEDIATE : ACK_NEVER;
             break;
@@ -219,6 +224,9 @@ main (int argc, char **argv)
 
         if (*line == '#')
         {
+            if (!process_annotations)
+                continue;
+
             /* Lines starting with ## are potential annotations */
             if (ack_mode != ACK_IMMEDIATE
                 /* Ignore ACK annotations in immediate ACK mode, as we do
