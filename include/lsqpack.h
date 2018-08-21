@@ -112,6 +112,14 @@ lsqpack_enc_end_header (struct lsqpack_enc *, unsigned char *buf, size_t);
 int
 lsqpack_enc_decoder_in (struct lsqpack_enc *, const unsigned char *, size_t);
 
+/**
+ * Return estimated compression ratio until this point.  Compression ratio
+ * is defined as size of the output stream divided by the size of the
+ * input stream.
+ */
+float
+lsqpack_enc_ratio (const struct lsqpack_enc *);
+
 void
 lsqpack_enc_cleanup (struct lsqpack_enc *);
 
@@ -291,6 +299,13 @@ struct lsqpack_enc
         struct lsqpack_dec_int_state dec_int_state;
         int   (*handler)(struct lsqpack_enc *, uint64_t);
     }                           qpe_dec_stream_state;
+
+    /* Used to calculate estimated compression ratio.  Note that the `out'
+     * part contains bytes sent on the decoder stream, as it also counts
+     * toward the overhead.
+     */
+    unsigned long               qpe_bytes_in;
+    unsigned long               qpe_bytes_out;
 };
 
 struct lsqpack_arr

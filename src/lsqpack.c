@@ -1447,6 +1447,9 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
             enc->qpe_cur_header.hinfo->qhi_max_id = esr.esr_entry_id;
     }
 
+    enc->qpe_bytes_in += name_len + value_len;
+    enc->qpe_bytes_out += enc_sz + hea_sz;
+
     *enc_sz_p = enc_sz;
     *hea_sz_p = hea_sz;
     return LQES_OK;
@@ -1633,8 +1636,20 @@ lsqpack_enc_decoder_in (struct lsqpack_enc *enc,
             break;
         }
     }
+    enc->qpe_bytes_out += buf_sz;
 
     return 0;
+}
+
+
+float
+lsqpack_enc_ratio (const struct lsqpack_enc *enc)
+{
+    if (enc->qpe_bytes_in)
+        return (float) ((double) enc->qpe_bytes_out
+                                        / (double) enc->qpe_bytes_in);
+    else
+        return 0;
 }
 
 
