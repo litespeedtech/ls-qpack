@@ -21,6 +21,10 @@
 
 static size_t s_max_read_size = SIZE_MAX;
 
+static int s_verbose;
+
+static FILE *s_out;
+
 static void
 usage (const char *name)
 {
@@ -36,6 +40,7 @@ usage (const char *name)
 "                 order.\n"
 "   -s NUMBER   Maximum number of risked streams.  Defaults to %u.\n"
 "   -t NUMBER   Dynamic table size.  Defaults to %u.\n"
+"   -v          Verbose: print headers and table state to stderr.\n"
 "\n"
 "   -h          Print this help screen and exit\n"
     , name, LSQPACK_DEF_MAX_RISKED_STREAMS, LSQPACK_DEF_DYN_TABLE_SIZE);
@@ -88,12 +93,24 @@ header_block_done (void *buf_p, struct lsqpack_header_set *set)
     struct buf *buf = buf_p;
     unsigned n;
 
-    fprintf(stderr, "Have headers for stream %"PRIu64":\n", buf->stream_id);
+    if (s_verbose)
+    {
+        fprintf(stderr, "Have headers for stream %"PRIu64":\n", buf->stream_id);
+        for (n = 0; n < set->qhs_count; ++n)
+            fprintf(stderr, "  %.*s: %.*s\n",
+                set->qhs_headers[n]->qh_name_len, set->qhs_headers[n]->qh_name,
+                set->qhs_headers[n]->qh_value_len, set->qhs_headers[n]->qh_value);
+        fprintf(stderr, "\n");
+    }
+
+    fprintf(s_out, "# stream %"PRIu64"\n", buf->stream_id);
+    fprintf(s_out, "# (stream ID above is used for sorting)\n");
     for (n = 0; n < set->qhs_count; ++n)
-        fprintf(stderr, "  %.*s: %.*s\n",
+        fprintf(s_out, "%.*s\t%.*s\n",
             set->qhs_headers[n]->qh_name_len, set->qhs_headers[n]->qh_name,
             set->qhs_headers[n]->qh_value_len, set->qhs_headers[n]->qh_value);
-    fprintf(stderr, "\n");
+    fprintf(s_out, "\n");
+
     lsqpack_dec_destroy_header_set(set);
     TAILQ_REMOVE(&bufs, buf, next_buf);
     free(buf);
@@ -104,7 +121,7 @@ int
 main (int argc, char **argv)
 {
     int in = STDIN_FILENO;
-    FILE *out = stdout, *recipe = NULL;
+    FILE *recipe = NULL;
     int opt;
     unsigned dyn_table_size     = LSQPACK_DEF_DYN_TABLE_SIZE,
              max_risked_streams = LSQPACK_DEF_MAX_RISKED_STREAMS;
@@ -119,7 +136,7 @@ main (int argc, char **argv)
     char command[0x100];
     char line_buf[0x100];
 
-    while (-1 != (opt = getopt(argc, argv, "i:o:r:s:t:h")))
+    while (-1 != (opt = getopt(argc, argv, "i:o:r:s:t:hv")))
     {
         switch (opt)
         {
@@ -138,8 +155,8 @@ main (int argc, char **argv)
         case 'o':
             if (0 != strcmp(optarg, "-"))
             {
-                out = fopen(optarg, "w");
-                if (!out)
+                s_out = fopen(optarg, "w");
+                if (!s_out)
                 {
                     fprintf(stderr, "cannot open `%s' for writing: %s\n",
                                                 optarg, strerror(errno));
@@ -153,7 +170,7 @@ main (int argc, char **argv)
             else
             {
                 recipe = fopen(optarg, "r");
-                if (!out)
+                if (!s_out)
                 {
                     fprintf(stderr, "cannot open `%s' for reading: %s\n",
                                                 optarg, strerror(errno));
@@ -170,10 +187,16 @@ main (int argc, char **argv)
         case 'h':
             usage(argv[0]);
             exit(EXIT_SUCCESS);
+        case 'v':
+            ++s_verbose;
+            break;
         default:
             exit(EXIT_FAILURE);
         }
     }
+
+    if (!s_out)
+        s_out = stdout;
 
     lsqpack_dec_init(&decoder, dyn_table_size, max_risked_streams,
                  NULL, NULL, read_header_block, wantread_header_block,
@@ -270,7 +293,8 @@ main (int argc, char **argv)
             }
             TAILQ_REMOVE(&bufs, buf, next_buf);
             free(buf);
-            lsqpack_dec_print_table(&decoder, stderr);
+            if (s_verbose)
+                lsqpack_dec_print_table(&decoder, stderr);
         }
         else if (buf->off == 0)
         {
