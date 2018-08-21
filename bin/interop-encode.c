@@ -17,6 +17,8 @@
 
 #include "lsqpack.h"
 
+static int s_verbose;
+
 unsigned char *
 lsqpack_enc_int (unsigned char *dst, unsigned char *const end, uint64_t value,
                                                         unsigned prefix_bits);
@@ -34,6 +36,7 @@ usage (const char *name)
 "                 is written to stdout.\n"
 "   -s NUMBER   Maximum number of risked streams.  Defaults to %u.\n"
 "   -t NUMBER   Dynamic table size.  Defaults to %u.\n"
+"   -v          Verbose: print various messages to stderr.\n"
 "\n"
 "   -h          Print this help screen and exit\n"
     , name, LSQPACK_DEF_MAX_RISKED_STREAMS, LSQPACK_DEF_DYN_TABLE_SIZE);
@@ -97,7 +100,7 @@ main (int argc, char **argv)
     unsigned char enc_buf[0x1000], hea_buf[0x1000], pref_buf[0x20];
     unsigned char cmd[0x80];
 
-    while (-1 != (opt = getopt(argc, argv, "i:o:s:t:h")))
+    while (-1 != (opt = getopt(argc, argv, "i:o:s:t:hv")))
     {
         switch (opt)
         {
@@ -134,6 +137,9 @@ main (int argc, char **argv)
         case 'h':
             usage(argv[0]);
             exit(EXIT_SUCCESS);
+        case 'v':
+            ++s_verbose;
+            break;
         default:
             exit(EXIT_FAILURE);
         }
@@ -187,7 +193,8 @@ main (int argc, char **argv)
             /* Lines starting with ## are potential annotations */
             if (1 == sscanf(line, "## %*[a] %u ", &arg))
             {
-                fprintf(stderr, "ACK stream ID %u\n", arg);
+                if (s_verbose)
+                    fprintf(stderr, "ACK stream ID %u\n", arg);
                 cmd[0] = 0x80;
                 end_cmd = lsqpack_enc_int(cmd, cmd + sizeof(cmd), arg, 7);
                 assert(end_cmd > cmd);
