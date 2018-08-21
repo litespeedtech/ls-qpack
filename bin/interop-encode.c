@@ -14,6 +14,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <inttypes.h>
 
 #include "lsqpack.h"
 
@@ -36,6 +37,9 @@ usage (const char *name)
 "                 is written to stdout.\n"
 "   -s NUMBER   Maximum number of risked streams.  Defaults to %u.\n"
 "   -t NUMBER   Dynamic table size.  Defaults to %u.\n"
+"   -a MODE     Header acknowledgement mode.  0 means headers are never\n"
+"                 acknowledged, non-zero means header blocks are acknowledged\n"
+"                 immediately.  Default value is 0.\n"
 "   -v          Verbose: print various messages to stderr.\n"
 "\n"
 "   -h          Print this help screen and exit\n"
@@ -79,6 +83,22 @@ write_enc_and_header_streams (int out, unsigned stream_id,
 }
 
 
+static int
+ack_stream (struct lsqpack_enc *encoder, uint64_t stream_id)
+{
+    unsigned char *end_cmd;
+    unsigned char cmd[80];
+
+    if (s_verbose)
+        fprintf(stderr, "ACK stream ID %"PRIu64"\n", stream_id);
+
+    cmd[0] = 0x80;
+    end_cmd = lsqpack_enc_int(cmd, cmd + sizeof(cmd), stream_id, 7);
+    assert(end_cmd > cmd);
+    return lsqpack_enc_decoder_in(encoder, cmd, end_cmd - cmd);
+}
+
+
 int
 main (int argc, char **argv)
 {
@@ -90,20 +110,22 @@ main (int argc, char **argv)
     unsigned lineno, stream_id;
     struct lsqpack_enc encoder;
     char *line, *end, *tab;
-    unsigned char *end_cmd;
     ssize_t pref_sz;
     enum lsqpack_enc_status st;
     size_t enc_sz, hea_sz, enc_off, hea_off;
-    int header_opened, r;
+    int header_opened;
     unsigned arg;
+    enum { ACK_NEVER, ACK_IMMEDIATE, } ack_mode = ACK_NEVER;
     char line_buf[0x1000];
     unsigned char enc_buf[0x1000], hea_buf[0x1000], pref_buf[0x20];
-    unsigned char cmd[0x80];
 
-    while (-1 != (opt = getopt(argc, argv, "i:o:s:t:hv")))
+    while (-1 != (opt = getopt(argc, argv, "a:i:o:s:t:hv")))
     {
         switch (opt)
         {
+        case 'a':
+            ack_mode = atoi(optarg) ? ACK_IMMEDIATE : ACK_NEVER;
+            break;
         case 'i':
             if (0 != strcmp(optarg, "-"))
             {
@@ -179,6 +201,13 @@ main (int argc, char **argv)
                     fprintf(stderr, "end_header failed: %s", strerror(errno));
                     exit(EXIT_FAILURE);
                 }
+                if (ack_mode == ACK_IMMEDIATE
+                    && 0 != ack_stream(&encoder, stream_id))
+                {
+                    fprintf(stderr, "acking stream %u failed: %s", stream_id,
+                                                                strerror(errno));
+                    exit(EXIT_FAILURE);
+                }
                 write_enc_and_header_streams(out, stream_id, enc_buf, enc_off,
                                              pref_buf, pref_sz, hea_buf, hea_off);
                 enc_off = 0;
@@ -191,15 +220,13 @@ main (int argc, char **argv)
         if (*line == '#')
         {
             /* Lines starting with ## are potential annotations */
-            if (1 == sscanf(line, "## %*[a] %u ", &arg))
+            if (ack_mode != ACK_IMMEDIATE
+                /* Ignore ACK annotations in immediate ACK mode, as we do
+                 * not tolerate duplicate ACKs.
+                 */
+                                && 1 == sscanf(line, "## %*[a] %u ", &arg))
             {
-                if (s_verbose)
-                    fprintf(stderr, "ACK stream ID %u\n", arg);
-                cmd[0] = 0x80;
-                end_cmd = lsqpack_enc_int(cmd, cmd + sizeof(cmd), arg, 7);
-                assert(end_cmd > cmd);
-                r = lsqpack_enc_decoder_in(&encoder, cmd, end_cmd - cmd);
-                if (r != 0)
+                if (0 != ack_stream(&encoder, arg))
                 {
                     fprintf(stderr, "ACKing stream ID %u failed\n", arg);
                     exit(EXIT_FAILURE);
@@ -253,6 +280,13 @@ main (int argc, char **argv)
         if (pref_sz < 0)
         {
             fprintf(stderr, "end_header failed: %s", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        if (ack_mode == ACK_IMMEDIATE
+            && 0 != ack_stream(&encoder, stream_id))
+        {
+            fprintf(stderr, "acking stream %u failed: %s", stream_id,
+                                                                strerror(errno));
             exit(EXIT_FAILURE);
         }
         write_enc_and_header_streams(out, stream_id, enc_buf, enc_off, pref_buf,
