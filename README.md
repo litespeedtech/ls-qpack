@@ -11,7 +11,7 @@ we will use it in our own software products.
 
 ## API
 
-The API is documented in the header file,
-[include/lsqpack.h](blob/master/include/lsqpack.h).  The interface
-is designed with the stream APIs in [lsquic-client](/litespeedtech/lsquic-client)
-in mind.  We want to achieve zero-copy when possible.
+The API is documented in the header file, [include/lsqpack.h](include/lsqpack.h).
+The interface is designed with the stream APIs in
+[lsquic-client](https://github.com/litespeedtech/lsquic-client) in mind.  We want
+to achieve zero-copy when possible.
