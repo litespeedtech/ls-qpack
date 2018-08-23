@@ -485,102 +485,6 @@ struct enc_search_result
 };
 
 
-static struct enc_search_result
-qenc_find_entry_in_static_table (const char *name, unsigned name_len,
-                                 const char *value, unsigned value_len)
-{
-    int id;
-
-    id = find_in_static_full(name, name_len, value, value_len);
-    if (id > 0)
-        return (struct enc_search_result) { 1, TT_STATIC, id, 1, NULL, };
-
-    id = find_in_static_headers(name, name_len);
-    if (id > 0)
-        return (struct enc_search_result) { 1, TT_STATIC, id, 0, NULL, };
-
-    return (struct enc_search_result) { 0, 0, 0, 0, NULL, };
-}
-
-
-static struct enc_search_result
-qenc_find_entry_in_either_table (struct lsqpack_enc *enc, int risk,
-        const char *name, unsigned name_len, const char *value,
-        unsigned value_len)
-{
-    struct lsqpack_enc_table_entry *entry;
-    unsigned name_hash, nameval_hash, buckno;
-    XXH32_state_t hash_state;
-    int id;
-
-    /* First, look for a match in the static table: */
-    id = find_in_static_full(name, name_len, value, value_len);
-    if (id > 0)
-        return (struct enc_search_result) { 1, TT_STATIC, id, 1, NULL, };
-
-    /* Search by name and value: */
-    XXH32_reset(&hash_state, (uintptr_t) enc);
-    XXH32_update(&hash_state, &name_len, sizeof(name_len));
-    XXH32_update(&hash_state, name, name_len);
-    name_hash = XXH32_digest(&hash_state);
-    XXH32_update(&hash_state,  &value_len, sizeof(value_len));
-    XXH32_update(&hash_state,  value, value_len);
-    nameval_hash = XXH32_digest(&hash_state);
-    buckno = BUCKNO(enc->qpe_nbits, nameval_hash);
-    /* TODO there could be several matching entries.  We want to pick one
-     * that's not too old (eviction blocking) and also not too young
-     * (header blocking).
-     */
-    STAILQ_FOREACH(entry, &enc->qpe_buckets[buckno].by_nameval,
-                                                        ete_next_nameval)
-        if (nameval_hash == entry->ete_nameval_hash &&
-            name_len == entry->ete_name_len &&
-            value_len == entry->ete_val_len &&
-            (risk || entry->ete_id <= enc->qpe_max_acked_id) &&
-            (enc->qpe_cur_header.search_cutoff == 0
-                || entry->ete_id > enc->qpe_cur_header.search_cutoff) &&
-            0 == memcmp(name, ETE_NAME(entry), name_len) &&
-            0 == memcmp(value, ETE_VALUE(entry), value_len))
-        {
-            return (struct enc_search_result) { 1, TT_DYNAMIC,
-                                                entry->ete_id, 1, entry, };
-        }
-
-    id = find_in_static_headers(name, name_len);
-    if (id > 0)
-        return (struct enc_search_result) { 1, TT_STATIC, id, 0, NULL, };
-
-    /* Search by name only: */
-    buckno = BUCKNO(enc->qpe_nbits, name_hash);
-    STAILQ_FOREACH(entry, &enc->qpe_buckets[buckno].by_name, ete_next_name)
-        if (name_hash == entry->ete_name_hash &&
-            name_len == entry->ete_name_len &&
-            (risk || entry->ete_id <= enc->qpe_max_acked_id) &&
-            (enc->qpe_cur_header.search_cutoff == 0
-                || entry->ete_id > enc->qpe_cur_header.search_cutoff) &&
-            0 == memcmp(name, ETE_NAME(entry), name_len))
-        {
-            return (struct enc_search_result) { 1, TT_DYNAMIC,
-                                                entry->ete_id, 0, entry, };
-        }
-
-    return (struct enc_search_result) { 0, 0, 0, 0, NULL, };
-}
-
-
-static struct enc_search_result
-qenc_find_entry (struct lsqpack_enc *enc, int risk, const char *name,
-        unsigned name_len, const char *value,
-        unsigned value_len)
-{
-    if (enc_use_dynamic_table(enc))
-        return qenc_find_entry_in_either_table(enc, risk, name, name_len, value,
-                                                                    value_len);
-    else
-        return qenc_find_entry_in_static_table(name, name_len, value, value_len);
-}
-
-
 static unsigned
 lsqpack_val2len (uint64_t value, unsigned prefix_bits)
 {
@@ -1009,12 +913,12 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
 
 struct encode_program
 {
-    enum {
+    enum enc_stream_action {        /* What to do on encoder stream */
         EEA_NONE,
         EEA_INS_NAMEREF,
         EEA_INS_LIT,
     }           ep_enc_action;
-    enum {
+    enum hea_block_action {         /* What to output to header block */
         EHA_INDEXED_NEW,
         EHA_INDEXED_STAT,
         EHA_INDEXED_DYN,
@@ -1023,56 +927,14 @@ struct encode_program
         EHA_LIT_WITH_NAME_NEW,
         EHA_LIT,
     }           ep_hea_action;
-    enum {
+    enum dyn_table_action {         /* Any changes to the dynamic table */
         ETA_NOOP,
         ETA_NEW,
     }           ep_tab_action;
-    enum {
+    enum ref_flags {                /* Which entries to take references to */
         EPF_REF_FOUND   = 1 << 1,
         EPF_REF_NEW     = 1 << 2,
     }           ep_flags;
-};
-
-/* Factors at play:
- *
- *      - Found or not found
- *      - Table: static or dynamic
- *      - Value matched or not
- *      - Index: yes/no
- *      - Risk blocking: yes/no
- *
- * Effects:
- *
- *      - Output to encoder stream (if index=yes)
- *      - Insert new dynamic entry into the table (if index=yes)
- *      - Output to header stream.  This always happens, but the output
- *        depends on the value of "risk blocking".
- */
-static const struct encode_program encode_programs[2][2][2][2][2] =
-{
-/* "A" is for "Any" (this makes the table narrower) */
-#define A 0 ... 1
- /*
-  *  ,--------------- Found or not found (bool)
-  *  |  ,------------ Static or dynamic (0 or 1, respectively)
-  *  |  |  ,--------- Value matched or not (bool)
-  *  |  |  |  ,------ To index or not to index (bool)
-  *  |  |  |  |  ,--- To risk blocking or not to risk (bool)
-  *  |  |  |  |  |
-  *  |  |  |  |  |
-  *  V  V  V  V  V
-  */
-    [0][A][A][0][A] = { EEA_NONE,        EHA_LIT,                ETA_NOOP, 0, },
-    [0][A][A][1][0] = { EEA_INS_LIT,     EHA_LIT,                ETA_NEW,  0, },
-    [0][A][A][1][1] = { EEA_INS_LIT,     EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
-    [1][0][0][0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
-    [1][0][0][1][0] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME_STAT, ETA_NEW,  0, },
-    [1][0][0][1][1] = { EEA_INS_NAMEREF, EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
-    [1][0][1][A][A] = { EEA_NONE,        EHA_INDEXED_STAT,       ETA_NOOP, 0, },
-    [1][1][0][0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME_DYN,  ETA_NOOP, EPF_REF_FOUND, },
-    [1][1][0][1][A] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME_NEW,  ETA_NEW,  EPF_REF_NEW|EPF_REF_FOUND, },
-    [1][1][1][A][A] = { EEA_NONE,        EHA_INDEXED_DYN,        ETA_NOOP, EPF_REF_FOUND, },
-#undef A
 };
 
 
@@ -1118,7 +980,10 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     struct lsqpack_enc_table_entry *new_entry;
     struct encode_program prog;
     struct enc_search_result esr;
-    int index, risk;
+    int index, risk, use_dyn_table, static_id;
+    struct lsqpack_enc_table_entry *entry;
+    unsigned name_hash, nameval_hash, buckno;
+    XXH32_state_t hash_state;
 
     size_t enc_sz, hea_sz;
     unsigned char *dst;
@@ -1131,8 +996,10 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     if (hea_buf == hea_buf_end)
         return LQES_NOBUF_HEAD;
 
+    use_dyn_table = enc_use_dynamic_table(enc);
+
     index = !(flags & LQEF_NO_INDEX)
-        && enc_use_dynamic_table(enc)
+        && use_dyn_table
         && enc->qpe_ins_count < LSQPACK_MAX_ABS_ID
         && enc_has_or_can_evict_at_least(enc, ENTRY_COST(name_len, value_len));
 
@@ -1141,15 +1008,131 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         || enc->qpe_cur_header.others_at_risk
         || enc->qpe_cur_streams_at_risk < enc->qpe_max_risked_streams;
 
-    esr = qenc_find_entry(enc, risk, name, name_len, value, value_len);
+    /* Look for a full match in the static table */
+    static_id = find_in_static_full(name, name_len, value, value_len);
+    if (static_id > 0)
+    {
+        esr = (struct enc_search_result) {
+                    .esr_found      = 1,
+                    .esr_table_type = TT_STATIC,
+                    .esr_entry_id   = static_id,
+                    .esr_value_match= 1,
+        };
+        prog = (struct encode_program) {
+                    .ep_enc_action = EEA_NONE,
+                    .ep_hea_action = EHA_INDEXED_STAT,
+                    .ep_tab_action = ETA_NOOP,
+                    .ep_flags      = 0,
+        };
+        goto execute_program;
+    }
 
-    prog = encode_programs
-                [esr.esr_found]
-                [esr.esr_table_type]
-                [esr.esr_value_match]
-                [index]
-                [risk];
+    /* Look for a full match in the dynamic table */
+    if (use_dyn_table)
+    {
+        XXH32_reset(&hash_state, (uintptr_t) enc);
+        XXH32_update(&hash_state, &name_len, sizeof(name_len));
+        XXH32_update(&hash_state, name, name_len);
+        name_hash = XXH32_digest(&hash_state);
+        XXH32_update(&hash_state,  &value_len, sizeof(value_len));
+        XXH32_update(&hash_state,  value, value_len);
+        nameval_hash = XXH32_digest(&hash_state);
+        buckno = BUCKNO(enc->qpe_nbits, nameval_hash);
+        /* TODO there could be several matching entries.  We want to pick one
+         * that's not too old (eviction blocking) and also not too young
+         * (header blocking).
+         */
+        STAILQ_FOREACH(entry, &enc->qpe_buckets[buckno].by_nameval,
+                                                            ete_next_nameval)
+            if (nameval_hash == entry->ete_nameval_hash &&
+                name_len == entry->ete_name_len &&
+                value_len == entry->ete_val_len &&
+                (risk || entry->ete_id <= enc->qpe_max_acked_id) &&
+                (enc->qpe_cur_header.search_cutoff == 0
+                    || entry->ete_id > enc->qpe_cur_header.search_cutoff) &&
+                0 == memcmp(name, ETE_NAME(entry), name_len) &&
+                0 == memcmp(value, ETE_VALUE(entry), value_len))
+            {
+                esr = (struct enc_search_result) {
+                            .esr_found      = 1,
+                            .esr_table_type = TT_DYNAMIC,
+                            .esr_entry_id   = entry->ete_id,
+                            .esr_value_match= 1,
+                            .esr_entry      = entry,
+                };
+                prog = (struct encode_program) {
+                            .ep_enc_action = EEA_NONE,
+                            .ep_hea_action = EHA_INDEXED_DYN,
+                            .ep_tab_action = ETA_NOOP,
+                            .ep_flags      = EPF_REF_FOUND,
+                };
+                goto execute_program;
+            }
+    }
 
+    /* Look for name-only match in the static table */
+    static_id = find_in_static_headers(name, name_len);
+    if (static_id > 0)
+    {
+        static const struct encode_program programs[2][2] = {
+#define A 0 ... 1
+            [0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
+            [1][0] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME_STAT, ETA_NEW,  0, },
+            [1][1] = { EEA_INS_NAMEREF, EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
+#undef A
+        };
+        esr = (struct enc_search_result) {
+                    .esr_found      = 1,
+                    .esr_table_type = TT_STATIC,
+                    .esr_entry_id   = static_id,
+                    .esr_value_match= 0,
+        };
+        prog = programs[index][risk];
+        goto execute_program;
+    }
+
+    /* Look for name-only match in the dynamic table */
+    if (use_dyn_table)
+    {
+        static const struct encode_program programs[2] = {
+            [0] = { EEA_NONE,        EHA_LIT_WITH_NAME_DYN,  ETA_NOOP, EPF_REF_FOUND, },
+            [1] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME_NEW,  ETA_NEW,  EPF_REF_NEW|EPF_REF_FOUND, },
+        };
+        buckno = BUCKNO(enc->qpe_nbits, name_hash);
+        STAILQ_FOREACH(entry, &enc->qpe_buckets[buckno].by_name, ete_next_name)
+            if (name_hash == entry->ete_name_hash &&
+                name_len == entry->ete_name_len &&
+                (risk || entry->ete_id <= enc->qpe_max_acked_id) &&
+                (enc->qpe_cur_header.search_cutoff == 0
+                    || entry->ete_id > enc->qpe_cur_header.search_cutoff) &&
+                0 == memcmp(name, ETE_NAME(entry), name_len))
+            {
+                esr = (struct enc_search_result) {
+                        .esr_found      = 1,
+                        .esr_table_type = TT_DYNAMIC,
+                        .esr_entry_id   = entry->ete_id,
+                        .esr_value_match= 0,
+                        .esr_entry      = entry,
+                };
+                prog = programs[index];
+                goto execute_program;
+            }
+    }
+
+    /* No matches found */
+    {
+        static const struct encode_program programs[2][2] = {
+#define A 0 ... 1
+            [0][A] = { EEA_NONE,        EHA_LIT,                ETA_NOOP, 0, },
+            [1][0] = { EEA_INS_LIT,     EHA_LIT,                ETA_NEW,  0, },
+            [1][1] = { EEA_INS_LIT,     EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
+#undef A
+        };
+        esr = (struct enc_search_result) { .esr_found = 0, };
+        prog = programs[index][risk];
+    }
+
+  execute_program:
     switch (prog.ep_enc_action)
     {
     case EEA_INS_NAMEREF:
