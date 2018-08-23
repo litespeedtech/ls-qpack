@@ -469,22 +469,6 @@ find_in_static_headers (const char *str, unsigned len)
 }
 
 
-enum table_type {
-    TT_STATIC = 0,
-    TT_DYNAMIC = 1,
-};
-
-
-struct enc_search_result
-{
-    int                             esr_found;
-    enum table_type                 esr_table_type;
-    lsqpack_abs_id_t                esr_entry_id;
-    int                             esr_value_match;
-    struct lsqpack_enc_table_entry *esr_entry;
-};
-
-
 static unsigned
 lsqpack_val2len (uint64_t value, unsigned prefix_bits)
 {
@@ -915,7 +899,8 @@ struct encode_program
 {
     enum enc_stream_action {        /* What to do on encoder stream */
         EEA_NONE,
-        EEA_INS_NAMEREF,
+        EEA_INS_NAMEREF_STATIC,
+        EEA_INS_NAMEREF_DYNAMIC,
         EEA_INS_LIT,
     }           ep_enc_action;
     enum hea_block_action {         /* What to output to header block */
@@ -977,11 +962,9 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
 {
     unsigned char *const enc_buf_end = enc_buf + *enc_sz_p;
     unsigned char *const hea_buf_end = hea_buf + *hea_sz_p;
-    struct lsqpack_enc_table_entry *new_entry;
+    struct lsqpack_enc_table_entry *entry, *new_entry;
     struct encode_program prog;
-    struct enc_search_result esr;
     int index, risk, use_dyn_table, static_id;
-    struct lsqpack_enc_table_entry *entry;
     unsigned name_hash, nameval_hash, buckno;
     XXH32_state_t hash_state;
 
@@ -1012,12 +995,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     static_id = find_in_static_full(name, name_len, value, value_len);
     if (static_id > 0)
     {
-        esr = (struct enc_search_result) {
-                    .esr_found      = 1,
-                    .esr_table_type = TT_STATIC,
-                    .esr_entry_id   = static_id,
-                    .esr_value_match= 1,
-        };
+        id = static_id;
         prog = (struct encode_program) {
                     .ep_enc_action = EEA_NONE,
                     .ep_hea_action = EHA_INDEXED_STAT,
@@ -1053,13 +1031,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                 0 == memcmp(name, ETE_NAME(entry), name_len) &&
                 0 == memcmp(value, ETE_VALUE(entry), value_len))
             {
-                esr = (struct enc_search_result) {
-                            .esr_found      = 1,
-                            .esr_table_type = TT_DYNAMIC,
-                            .esr_entry_id   = entry->ete_id,
-                            .esr_value_match= 1,
-                            .esr_entry      = entry,
-                };
+                id = entry->ete_id;
                 prog = (struct encode_program) {
                             .ep_enc_action = EEA_NONE,
                             .ep_hea_action = EHA_INDEXED_DYN,
@@ -1077,16 +1049,11 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         static const struct encode_program programs[2][2] = {
 #define A 0 ... 1
             [0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
-            [1][0] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME_STAT, ETA_NEW,  0, },
-            [1][1] = { EEA_INS_NAMEREF, EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
+            [1][0] = { EEA_INS_NAMEREF_STATIC, EHA_LIT_WITH_NAME_STAT, ETA_NEW,  0, },
+            [1][1] = { EEA_INS_NAMEREF_STATIC, EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
 #undef A
         };
-        esr = (struct enc_search_result) {
-                    .esr_found      = 1,
-                    .esr_table_type = TT_STATIC,
-                    .esr_entry_id   = static_id,
-                    .esr_value_match= 0,
-        };
+        id = static_id;
         prog = programs[index][risk];
         goto execute_program;
     }
@@ -1096,7 +1063,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     {
         static const struct encode_program programs[2] = {
             [0] = { EEA_NONE,        EHA_LIT_WITH_NAME_DYN,  ETA_NOOP, EPF_REF_FOUND, },
-            [1] = { EEA_INS_NAMEREF, EHA_LIT_WITH_NAME_NEW,  ETA_NEW,  EPF_REF_NEW|EPF_REF_FOUND, },
+            [1] = { EEA_INS_NAMEREF_DYNAMIC, EHA_LIT_WITH_NAME_NEW,  ETA_NEW,  EPF_REF_NEW|EPF_REF_FOUND, },
         };
         buckno = BUCKNO(enc->qpe_nbits, name_hash);
         STAILQ_FOREACH(entry, &enc->qpe_buckets[buckno].by_name, ete_next_name)
@@ -1107,13 +1074,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                     || entry->ete_id > enc->qpe_cur_header.search_cutoff) &&
                 0 == memcmp(name, ETE_NAME(entry), name_len))
             {
-                esr = (struct enc_search_result) {
-                        .esr_found      = 1,
-                        .esr_table_type = TT_DYNAMIC,
-                        .esr_entry_id   = entry->ete_id,
-                        .esr_value_match= 0,
-                        .esr_entry      = entry,
-                };
+                id = entry->ete_id;
                 prog = programs[index];
                 goto execute_program;
             }
@@ -1128,25 +1089,29 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
             [1][1] = { EEA_INS_LIT,     EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
 #undef A
         };
-        esr = (struct enc_search_result) { .esr_found = 0, };
         prog = programs[index][risk];
     }
 
   execute_program:
     switch (prog.ep_enc_action)
     {
-    case EEA_INS_NAMEREF:
+    case EEA_INS_NAMEREF_STATIC:
         dst = enc_buf;
-        if (TT_STATIC == esr.esr_table_type)
-        {
-            *dst = 0x80 | 0x40;
-            id = esr.esr_entry_id;
-        }
-        else
-        {
-            *dst = 0x80;
-            id = enc->qpe_ins_count - esr.esr_entry_id;
-        }
+        *dst = 0x80 | 0x40;
+        dst = lsqpack_enc_int(dst, enc_buf_end, id, 6);
+        if (dst <= enc_buf)
+            return LQES_NOBUF_ENC;
+        r = lsqpack_enc_enc_str(7, dst, enc_buf_end - dst,
+                                    (const unsigned char *) value, value_len);
+        if (r < 0)
+            return LQES_NOBUF_ENC;
+        dst += (unsigned) r;
+        enc_sz = dst - enc_buf;
+        break;
+    case EEA_INS_NAMEREF_DYNAMIC:
+        dst = enc_buf;
+        *dst = 0x80;
+        id = enc->qpe_ins_count - id;
         dst = lsqpack_enc_int(dst, enc_buf_end, id, 6);
         if (dst <= enc_buf)
             return LQES_NOBUF_ENC;
@@ -1183,7 +1148,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     {
     case EHA_INDEXED_STAT:
         *dst = 0x80 | 0x40;
-        dst = lsqpack_enc_int(dst, hea_buf_end, esr.esr_entry_id, 6);
+        dst = lsqpack_enc_int(dst, hea_buf_end, id, 6);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         hea_sz = dst - hea_buf;
@@ -1200,11 +1165,10 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         hea_sz = dst - hea_buf;
         break;
     case EHA_INDEXED_DYN:
-        id = esr.esr_entry_id;
         if (id > enc->qpe_cur_header.base_idx)
             goto post_base_idx;
         *dst = 0x80;
-        dst = lsqpack_enc_int(dst, hea_buf_end, esr.esr_entry_id, 6);
+        dst = lsqpack_enc_int(dst, hea_buf_end, id, 6);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         hea_sz = dst - hea_buf;
@@ -1226,7 +1190,6 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         hea_sz = dst - hea_buf;
         break;
     case EHA_LIT_WITH_NAME_NEW:
-        id = esr.esr_entry_id;
  post_base_name_ref:
         *dst = (((flags & LQEF_NO_INDEX) > 0) << 3);
         assert(id > enc->qpe_cur_header.base_idx);
@@ -1242,13 +1205,12 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         hea_sz = dst - hea_buf;
         break;
     case EHA_LIT_WITH_NAME_DYN:
-        id = esr.esr_entry_id;
         if (id > enc->qpe_cur_header.base_idx)
             goto post_base_name_ref;
         *dst = 0x40
                | (((flags & LQEF_NO_INDEX) > 0) << 5)
                ;
-        id = enc->qpe_cur_header.base_idx - esr.esr_entry_id;
+        id = enc->qpe_cur_header.base_idx - id;
         dst = lsqpack_enc_int(dst, hea_buf_end, id, 4);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
@@ -1265,7 +1227,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                | (((flags & LQEF_NO_INDEX) > 0) << 5)
                | 0x10
                ;
-        dst = lsqpack_enc_int(dst, hea_buf_end, esr.esr_entry_id, 4);
+        dst = lsqpack_enc_int(dst, hea_buf_end, id, 4);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         r = lsqpack_enc_enc_str(7, dst, hea_buf_end - dst,
@@ -1307,15 +1269,14 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
 
     if (prog.ep_flags & EPF_REF_FOUND)
     {
-        assert(esr.esr_table_type == TT_DYNAMIC);
-        ++esr.esr_entry->ete_n_reffd;
-        enc->qpe_cur_header.n_risked += enc->qpe_max_acked_id < esr.esr_entry_id;
+        ++entry->ete_n_reffd;
+        enc->qpe_cur_header.n_risked += enc->qpe_max_acked_id < id;
         if (enc->qpe_cur_header.hinfo->qhi_min_id == 0
-                || enc->qpe_cur_header.hinfo->qhi_min_id > esr.esr_entry_id)
-            enc->qpe_cur_header.hinfo->qhi_min_id = esr.esr_entry_id;
+                || enc->qpe_cur_header.hinfo->qhi_min_id > id)
+            enc->qpe_cur_header.hinfo->qhi_min_id = id;
         if (enc->qpe_cur_header.hinfo->qhi_max_id == 0
-                || enc->qpe_cur_header.hinfo->qhi_max_id < esr.esr_entry_id)
-            enc->qpe_cur_header.hinfo->qhi_max_id = esr.esr_entry_id;
+                || enc->qpe_cur_header.hinfo->qhi_max_id < id)
+            enc->qpe_cur_header.hinfo->qhi_max_id = id;
     }
 
     enc->qpe_bytes_in += name_len + value_len;
