@@ -253,327 +253,219 @@ struct static_table_entry
 
 static const struct static_table_entry static_table[QPACK_STATIC_TABLE_SIZE];
 
-//not find return 0, otherwise return the index
-static unsigned
-lsqpack_enc_get_stx_tab_id (const char *name, unsigned name_len,
-                const char *val, unsigned val_len, int *val_matched)
+
+static int
+hash_hpack_full (const char *name, int name_len, const char *val, int val_len)
 {
-    if (name_len < 3)
-        return 0;
-
-    *val_matched = 0;
-
-    //check value first
-    int i = -1;
-    switch (*val)
+    static const unsigned char asso_values[] =
     {
-        case 'G':
-            i = 1;
-            break;
-        case 'P':
-            i = 2;
-            break;
-        case '/':
-            if (val_len == 1)
-                i = 3;
-            else if (val_len == 11)
-                i = 4;
-            break;
-        case 'h':
-            if (val_len == 4)
-                i = 5;
-            else if (val_len == 5)
-                i = 6;
-            break;
-        case '2':
-            if (val_len == 3)
+        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
+        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
+        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
+        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
+        36, 36, 36, 36, 36, 36, 36, 36, 10, 36,
+         5,  4,  0, 15,  4, 36, 36, 36, 36, 36,
+        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
+        36, 10, 36, 36, 36, 36, 36, 36, 36, 36,
+         5, 36, 36,  5, 10, 36, 36, 36, 36, 36,
+        36, 36, 36, 36, 36, 36, 36, 36, 36,  0,
+        36,  0, 36, 36,  0, 36, 36, 36, 36, 36,
+         0, 36, 36, 36, 36, 36,  0, 36, 36, 36,
+        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
+        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
+        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
+        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
+        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
+        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
+        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
+        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
+        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
+        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
+        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
+        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
+        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
+        36, 36, 36, 36, 36, 36
+    };
+
+    unsigned hval;
+    char c;
+
+    hval = val_len + name_len;
+
+    switch (hval)
+    {
+    default:
+        if (name_len > 9)
+            c = name[9];
+        else
+            c = val[9 - name_len];
+        hval += asso_values[(unsigned char)c];
+    /*FALLTHROUGH*/
+    case 9:
+    case 8:
+        if (name_len > 7)
+            c = name[7];
+        else
+            c = val[7 - name_len];
+        hval += asso_values[(unsigned char)c];
+    /*FALLTHROUGH*/
+    case 7:
+    case 6:
+        break;
+    }
+    return hval;
+}
+
+
+/* -1 means not found */
+static int
+find_in_static_full (const char *name, unsigned name_len, const char *val,
+                                                            unsigned val_len)
+{
+    enum {
+        TOTAL_KEYWORDS = 14,
+        MIN_WORD_LENGTH = 6,
+        MAX_WORD_LENGTH = 28,
+        MIN_HASH_VALUE = 6,
+        MAX_HASH_VALUE = 35
+    };
+
+    static const struct { const char *name; unsigned name_len; int id; }
+    wordlist[] = {
+        {"",0,0},{"",0,0},{"",0,0},{"",0,0},{"",0,0},{"",0,0},
+        {":path/",5,4},{"",0,0},{"",0,0},{"",0,0},{":status404",7,13},
+        {":schemehttp",7,6},{":schemehttps",7,7},{"",0,0},
+        {":status304",7,11},{":status204",7,9},{":path/index.html",5,5},
+        {"",0,0},{"",0,0},{":status206",7,10},{":status400",7,12},
+        {":methodPOST",7,3},{"",0,0},{"",0,0},{"",0,0},{":status200",7,8},
+        {"",0,0},{"",0,0},{"accept-encodinggzip,deflate",15,16},
+        {"",0,0},{":methodGET",7,2},{"",0,0},{"",0,0},{"",0,0},{"",0,0},
+        {":status500",7,14}
+    };
+
+    const char *s;
+    int key, len;
+
+    len = name_len + val_len;
+    if (len <= MAX_WORD_LENGTH && len >= MIN_WORD_LENGTH)
+    {
+        key = hash_hpack_full(name, name_len, val, val_len);
+        if (key <= MAX_HASH_VALUE && key >= 0)
+        {
+            s = wordlist[key].name;
+            if (*name == *s
+                && name_len == wordlist[key].name_len
+                && 0 == memcmp(name + 1, wordlist[key].name + 1, name_len - 1)
+                && 0 == memcmp(val, wordlist[key].name + name_len, val_len))
             {
-                switch (*(val + 2))
-                {
-                    case '0':
-                        i = 7;
-                        break;
-                    case '4':
-                        i = 8;
-                        break;
-                    case '6':
-                        i = 9;
-                        break;
-                    default:
-                        break;
-                }
+                return wordlist[key].id;
             }
-            break;
-        case '3':
-            i = 10;
-            break;
-        case '4':
-            if (val_len == 3)
-            {
-                switch (*(val + 2))
-                {
-                    case '0':
-                        i = 11;
-                        break;
-                    case '4':
-                        i = 12;
-                    default:
-                        break;
-                }
-            }
-            break;
-        case '5':
-            i = 13;
-            break;
-        case 'g':
-            i = 15;
-            break;
-        default:
-            break;
+        }
     }
 
-    if (i > 0 && static_table[i].val_len == val_len
-            && static_table[i].name_len == name_len
-            && memcmp(val, static_table[i].val, val_len) == 0
-            && memcmp(name, static_table[i].name, name_len) == 0)
+    return -1;
+}
+
+
+static int
+hash_hpack_header (const char *str, unsigned len)
+{
+    static const unsigned char asso_values[] =
     {
-        *val_matched = 1;
-        return i + 1;
+        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89, 89, 89, 30, 89,
+        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89, 89, 15, 89,  0,
+        50,  0, 45, 10, 15,  0, 89, 10, 25, 10,
+        30, 89, 25, 89,  0, 25, 15,  0, 15, 40,
+        89,  5, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+        89, 89, 89, 89, 89, 89
+    };
+    return len
+         + asso_values[(unsigned char)str[len - 1]]
+         + asso_values[(unsigned char)str[0]];
+}
+
+
+static int
+find_in_static_headers (const char *str, unsigned len)
+{
+    enum {
+        TOTAL_KEYWORDS = 52,
+        MIN_WORD_LENGTH = 3,
+        MAX_WORD_LENGTH = 27,
+        MIN_HASH_VALUE = 5,
+        MAX_HASH_VALUE = 88
+    };
+
+    static const struct { const char *key; unsigned len; int id; }
+    wordlist[] =
+    {
+        {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0}, {"range",5,50},
+        {"cookie",6,32}, {"referer",7,51}, {"if-range",8,42}, {"",0,0},
+        {"",0,0}, {"retry-after",11,53}, {"content-type",12,31},
+        {"content-range",13,30}, {"etag",4,34}, {"",0,0},
+        {"content-language",16,27}, {"if-modified-since",17,40}, {"age",3,21},
+        {"if-unmodified-since",19,43}, {"",0,0}, {"expect",6,35},
+        {"refresh",7,52}, {"if-match",8,39}, {"vary",4,59},
+        {"user-agent",10,58}, {"content-encoding",16,26}, {"",0,0},
+        {"if-none-match",13,41}, {"content-length",14,28},
+        {"accept-language",15,17}, {"server",6,54}, {"expires",7,36},
+        {"via",3,60}, {"host",4,38}, {"set-cookie",10,55}, {"accept",6,19},
+        {":scheme",7,6}, {"cache-control",13,24}, {"link",4,45},
+        {"accept-encoding",15,16}, {"",0,0}, {"transfer-encoding",17,57},
+        {"proxy-authenticate",18,48}, {"accept-charset",14,15},
+        {":authority",10,1}, {"content-location",16,29}, {"max-forwards",12,47},
+        {"",0,0}, {"content-disposition",19,25}, {":path",5,4}, {"",0,0},
+        {"",0,0}, {"accept-ranges",13,18}, {"date",4,33},
+        {"strict-transport-security",25,56}, {"www-authenticate",16,61},
+        {"",0,0}, {"authorization",13,23}, {"from",4,37}, {"allow",5,22},
+        {"",0,0}, {":status",7,8}, {"location",8,46}, {"",0,0}, {"",0,0},
+        {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0},
+        {"access-control-allow-origin",27,20}, {"",0,0},
+        {"proxy-authorization",19,49}, {"",0,0}, {"",0,0}, {"",0,0},
+        {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0},
+        {"",0,0}, {"",0,0}, {"",0,0}, {":method",7,2},
+        {"last-modified",13,44}
+    };
+
+    const char *s;
+    int key;
+
+    if (len <= MAX_WORD_LENGTH && len >= MIN_WORD_LENGTH)
+    {
+        key = hash_hpack_header(str, len);
+        if (key <= MAX_HASH_VALUE && key >= 0)
+        {
+            s = wordlist[key].key;
+            if (*str == *s
+                && len == wordlist[key].len
+                && 0 == memcmp(str + 1, s + 1, len - 1))
+            {
+                return wordlist[key].id;
+            }
+        }
     }
 
-    //macth name only checking
-    i = -1;
-    switch (*name)
-    {
-        case ':':
-            switch (*(name + 1))
-            {
-                case 'a':
-                    i = 0;
-                    break;
-                case 'm':
-                    i = 1;
-                    break;
-                case 'p':
-                    i = 3;
-                    break;
-                case 's':
-                    if (*(name + 2) == 'c') //:scheme
-                        i = 5;
-                    else
-                        i = 7;
-                    break;
-                default:
-                    break;
-            }
-            break;
-        case 'a':
-            switch (name_len)
-            {
-                case 3:
-                    i = 20; //age
-                    break;
-                case 5:
-                    i = 21; //allow
-                    break;
-                case 6:
-                    i = 18; //accept
-                    break;
-                case 13:
-                    if (*(name + 1) == 'u')
-                        i = 22; //authorization
-                    else
-                        i = 17; //accept-ranges
-                    break;
-                case 14:
-                    i  = 14; //accept-charset
-                    break;
-                case 15:
-                    if (*(name + 7) == 'l')
-                        i = 16; //accept-language,
-                    else
-                        i = 15;// accept-encoding
-                    break;
-                case 27:
-                    i = 19;//access-control-allow-origin
-                    break;
-                default:
-                    break;
-            }
-            break;
-        case 'c':
-            switch (name_len)
-            {
-                case 6:
-                    i = 31; //cookie
-                    break;
-                case 12:
-                    i = 30; //content-type
-                    break;
-                case 13:
-                    if (*(name + 1) == 'a')
-                        i = 23; //cache-control
-                    else
-                        i = 29; //content-range
-                    break;
-                case 14:
-                    i = 27; //content-length
-                    break;
-                case 16:
-                    switch (*(name + 9))
-                    {
-                        case 'n':
-                            i = 25 ;//content-encoding
-                            break;
-                        case 'a':
-                            i = 26; //content-language
-                            break;
-                        case 'o':
-                            i = 28; //content-location
-                        default:
-                            break;
-                    }
-                    break;
-                case 19:
-                    i = 24; //content-disposition
-                    break;
-            }
-            break;
-        case 'd':
-            i = 32 ;//date
-            break;
-        case 'e':
-            switch (name_len)
-            {
-                case 4:
-                    i = 33; //etag
-                    break;
-                case 6:
-                    i = 34;
-                    break;
-                case 7:
-                    i = 35;
-                    break;
-                default:
-                    break;
-            }
-            break;
-        case 'f':
-            i = 36; //from
-            break;
-        case 'h':
-            i = 37; //host
-            break;
-        case 'i':
-            switch (name_len)
-            {
-                case 8:
-                    if (*(name + 3) == 'm')
-                        i = 38; //if-match
-                    else
-                        i = 41; //if-range
-                    break;
-                case 13:
-                    i = 40; //if-none-match
-                    break;
-                case 17:
-                    i = 39; //if-modified-since
-                    break;
-                case 19:
-                    i = 42; //if-unmodified-since
-                    break;
-                default:
-                    break;
-            }
-            break;
-        case 'l':
-            switch (name_len)
-            {
-                case 4:
-                    i = 44; //link
-                    break;
-                case 8:
-                    i = 45; //location
-                    break;
-                case 13:
-                    i = 43; //last-modified
-                    break;
-                default:
-                    break;
-            }
-            break;
-        case 'm':
-            i = 46; //max-forwards
-            break;
-        case 'p':
-            if (name_len == 18)
-                i = 47; //proxy-authenticate
-            else
-                i = 48; //proxy-authorization
-            break;
-        case 'r':
-            if (name_len >= 5)
-            {
-                switch (*(name + 4))
-                {
-                    case 'e':
-                        if (name_len == 5)
-                            i = 49; //range
-                        else
-                            i = 51; //refresh
-                        break;
-                    case 'r':
-                        i = 50; //referer
-                        break;
-                    case 'y':
-                        i = 52; //retry-after
-                        break;
-                    default:
-                        break;
-                }
-            }
-            break;
-        case 's':
-            switch (name_len)
-            {
-                case 6:
-                    i = 53; //server
-                    break;
-                case 10:
-                    i = 54; //set-cookie
-                    break;
-                case 25:
-                    i = 55; //strict-transport-security
-                    break;
-                default:
-                    break;
-            }
-            break;
-        case 't':
-            i = 56;//transfer-encoding
-            break;
-        case 'u':
-            i = 57; //user-agent
-            break;
-        case 'v':
-            if (name_len == 4)
-                i = 58;
-            else
-                i = 59;
-            break;
-        case 'w':
-            i = 60;
-            break;
-        default:
-            break;
-    }
-
-    if (i >= 0
-            && static_table[i].name_len == name_len
-            && memcmp(name, static_table[i].name, name_len) == 0)
-        return i + 1;
-
-    return 0;
+    return -1;
 }
 
 
@@ -597,16 +489,17 @@ static struct enc_search_result
 qenc_find_entry_in_static_table (const char *name, unsigned name_len,
                                  const char *value, unsigned value_len)
 {
-    unsigned static_table_id;
-    int val_matched;
+    int id;
 
-    static_table_id = lsqpack_enc_get_stx_tab_id(name, name_len, value,
-                                                    value_len, &val_matched);
-    if (static_table_id > 0)
-        return (struct enc_search_result) { 1, TT_STATIC, static_table_id,
-                                                        val_matched, NULL, };
-    else
-        return (struct enc_search_result) { 0, 0, 0, 0, NULL, };
+    id = find_in_static_full(name, name_len, value, value_len);
+    if (id > 0)
+        return (struct enc_search_result) { 1, TT_STATIC, id, 1, NULL, };
+
+    id = find_in_static_headers(name, name_len);
+    if (id > 0)
+        return (struct enc_search_result) { 1, TT_STATIC, id, 0, NULL, };
+
+    return (struct enc_search_result) { 0, 0, 0, 0, NULL, };
 }
 
 
@@ -616,16 +509,14 @@ qenc_find_entry_in_either_table (struct lsqpack_enc *enc, int risk,
         unsigned value_len)
 {
     struct lsqpack_enc_table_entry *entry;
-    unsigned name_hash, nameval_hash, buckno, static_table_id;
+    unsigned name_hash, nameval_hash, buckno;
     XXH32_state_t hash_state;
-    int val_matched;
+    int id;
 
     /* First, look for a match in the static table: */
-    static_table_id = lsqpack_enc_get_stx_tab_id(name, name_len, value,
-                                                    value_len, &val_matched);
-    if (static_table_id > 0 && val_matched)
-        return (struct enc_search_result) { 1, TT_STATIC,
-                                            static_table_id, 1, NULL, };
+    id = find_in_static_full(name, name_len, value, value_len);
+    if (id > 0)
+        return (struct enc_search_result) { 1, TT_STATIC, id, 1, NULL, };
 
     /* Search by name and value: */
     XXH32_reset(&hash_state, (uintptr_t) enc);
@@ -655,12 +546,9 @@ qenc_find_entry_in_either_table (struct lsqpack_enc *enc, int risk,
                                                 entry->ete_id, 1, entry, };
         }
 
-    /* Name/value match is not found, but if the caller found a matching
-     * static table entry, no need to continue to search:
-     */
-    if (static_table_id > 0)
-        return (struct enc_search_result) { 1, TT_STATIC,
-                                            static_table_id, 0, NULL, };
+    id = find_in_static_headers(name, name_len);
+    if (id > 0)
+        return (struct enc_search_result) { 1, TT_STATIC, id, 0, NULL, };
 
     /* Search by name only: */
     buckno = BUCKNO(enc->qpe_nbits, name_hash);
