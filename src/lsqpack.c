@@ -979,18 +979,6 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     if (hea_buf == hea_buf_end)
         return LQES_NOBUF_HEAD;
 
-    use_dyn_table = enc_use_dynamic_table(enc);
-
-    index = !(flags & LQEF_NO_INDEX)
-        && use_dyn_table
-        && enc->qpe_ins_count < LSQPACK_MAX_ABS_ID
-        && enc_has_or_can_evict_at_least(enc, ENTRY_COST(name_len, value_len));
-
-  restart:
-    risk = enc->qpe_cur_header.n_risked > 0
-        || enc->qpe_cur_header.others_at_risk
-        || enc->qpe_cur_streams_at_risk < enc->qpe_max_risked_streams;
-
     /* Look for a full match in the static table */
     static_id = find_in_static_full(name, name_len, value, value_len);
     if (static_id > 0)
@@ -1005,6 +993,18 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         goto execute_program;
     }
 
+    use_dyn_table = enc_use_dynamic_table(enc);
+
+    index = !(flags & LQEF_NO_INDEX)
+        && use_dyn_table
+        && enc->qpe_ins_count < LSQPACK_MAX_ABS_ID
+        && enc_has_or_can_evict_at_least(enc, ENTRY_COST(name_len, value_len));
+
+    risk = enc->qpe_cur_header.n_risked > 0
+        || enc->qpe_cur_header.others_at_risk
+        || enc->qpe_cur_streams_at_risk < enc->qpe_max_risked_streams;
+
+  restart:
     /* Look for a full match in the dynamic table */
     if (use_dyn_table)
     {
