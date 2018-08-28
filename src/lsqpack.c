@@ -927,6 +927,7 @@ static int
 enc_has_or_can_evict_at_least (struct lsqpack_enc *enc, size_t new_entry_size)
 {
     const struct lsqpack_enc_table_entry *entry;
+    const struct lsqpack_header_info *hinfo;
     lsqpack_abs_id_t min_id;
     size_t avail;
 
@@ -934,7 +935,17 @@ enc_has_or_can_evict_at_least (struct lsqpack_enc *enc, size_t new_entry_size)
     if (avail >= new_entry_size)
         return 1;
 
-    min_id = 0; /* TODO */
+    /* XXX Traversal of all header infos on each insertion.  Maybe bite the
+     * bullet and do the min-heap?
+     */
+    min_id = 0;
+    TAILQ_FOREACH(hinfo, &enc->qpe_hinfos, qhi_next)
+        if (min_id == 0 ||
+            (hinfo->qhi_min_id != 0 && hinfo->qhi_min_id < min_id))
+        {
+            min_id = hinfo->qhi_min_id;
+        }
+
     STAILQ_FOREACH(entry, &enc->qpe_all_entries, ete_next_all)
         if (entry->ete_id < min_id)
         {
