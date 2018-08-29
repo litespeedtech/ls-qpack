@@ -980,8 +980,13 @@ qenc_duplicable_entry (const struct lsqpack_enc *enc,
                        const struct lsqpack_enc_table_entry *const entry)
 {
     const struct lsqpack_enc_table_entry *el;
-    float fraction;
+    float fill, fraction;
     unsigned off;
+
+    fill = (float) (enc->qpe_cur_capacity + ETE_SIZE(entry))
+                                        / (float) enc->qpe_max_capacity;
+    if (fill < 0.8)
+        return 0;
 
     off = 0;
     STAILQ_FOREACH(el, &enc->qpe_all_entries, ete_next_all)
