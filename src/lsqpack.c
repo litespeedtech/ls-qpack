@@ -814,7 +814,6 @@ lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
     }
     enc->qpe_cur_header.n_risked = 0;
     enc->qpe_cur_header.base_idx = enc->qpe_ins_count;
-    enc->qpe_cur_header.search_cutoff = 0;
 
     /* Check if there are other header blocks with the same stream ID that
      * are at risk.
@@ -899,6 +898,7 @@ struct encode_program
 {
     enum enc_stream_action {        /* What to do on encoder stream */
         EEA_NONE,
+        EEA_DUP,
         EEA_INS_NAMEREF_STATIC,
         EEA_INS_NAMEREF_DYNAMIC,
         EEA_INS_LIT,
@@ -923,21 +923,15 @@ struct encode_program
 };
 
 
-static int
-enc_has_or_can_evict_at_least (struct lsqpack_enc *enc, size_t new_entry_size)
+/* XXX Traversal of all header infos on each insertion.  Maybe bite the
+ * bullet and do the min-heap?
+ */
+static lsqpack_abs_id_t
+qenc_min_reffed_id (const struct lsqpack_enc *enc)
 {
-    const struct lsqpack_enc_table_entry *entry;
     const struct lsqpack_header_info *hinfo;
     lsqpack_abs_id_t min_id;
-    size_t avail;
 
-    avail = enc->qpe_max_capacity - enc->qpe_cur_capacity;
-    if (avail >= new_entry_size)
-        return 1;
-
-    /* XXX Traversal of all header infos on each insertion.  Maybe bite the
-     * bullet and do the min-heap?
-     */
     min_id = 0;
     TAILQ_FOREACH(hinfo, &enc->qpe_hinfos, qhi_next)
         if (min_id == 0 ||
@@ -946,20 +940,60 @@ enc_has_or_can_evict_at_least (struct lsqpack_enc *enc, size_t new_entry_size)
             min_id = hinfo->qhi_min_id;
         }
 
+    return min_id;
+}
+
+
+static int
+qenc_has_or_can_evict_at_least (const struct lsqpack_enc *enc,
+                                                size_t new_entry_size)
+{
+    const struct lsqpack_enc_table_entry *entry;
+    lsqpack_abs_id_t min_id;
+    size_t avail;
+
+    avail = enc->qpe_max_capacity - enc->qpe_cur_capacity;
+    if (avail >= new_entry_size)
+        return 1;
+
+    min_id = qenc_min_reffed_id(enc);
+    if (!min_id)    /* Everything can be evicted */
+        return new_entry_size <= enc->qpe_max_capacity;
+
     STAILQ_FOREACH(entry, &enc->qpe_all_entries, ete_next_all)
         if (entry->ete_id < min_id)
         {
             avail += ETE_SIZE(entry);
             if (avail >= new_entry_size)
-            {
-                enc->qpe_cur_header.search_cutoff = entry->ete_id;
                 return 1;
-            }
         }
         else
-            return 0;
+            break;
 
-    return 0;
+    assert(entry);
+    return avail >= new_entry_size;
+}
+
+
+static int
+qenc_duplicable_entry (const struct lsqpack_enc *enc,
+                       const struct lsqpack_enc_table_entry *const entry)
+{
+    const struct lsqpack_enc_table_entry *el;
+    float fraction;
+    unsigned off;
+
+    off = 0;
+    STAILQ_FOREACH(el, &enc->qpe_all_entries, ete_next_all)
+        if (el == entry)
+            break;
+        else
+            off += ETE_SIZE(el);
+
+    assert(el);
+    fraction = (float) off / (float) enc->qpe_max_capacity;
+    return fraction < 0.2f
+        && qenc_has_or_can_evict_at_least(enc, ETE_SIZE(entry));
 }
 
 
@@ -974,14 +1008,16 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     unsigned char *const enc_buf_end = enc_buf + *enc_sz_p;
     unsigned char *const hea_buf_end = hea_buf + *hea_sz_p;
     struct lsqpack_enc_table_entry *entry, *new_entry;
+    struct lsqpack_enc_table_entry *candidates[2];
     struct encode_program prog;
-    int index, risk, use_dyn_table, static_id;
+    int index, risk, use_dyn_table, static_id, enough_room;
     unsigned name_hash, nameval_hash, buckno;
     XXH32_state_t hash_state;
 
     size_t enc_sz, hea_sz;
     unsigned char *dst;
     lsqpack_abs_id_t id;
+    unsigned n_cand;
     int r;
 
     /* Encoding always outputs at least a byte to the header block.  If
@@ -1009,7 +1045,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     index = !(flags & LQEF_NO_INDEX)
         && use_dyn_table
         && enc->qpe_ins_count < LSQPACK_MAX_ABS_ID
-        && enc_has_or_can_evict_at_least(enc, ENTRY_COST(name_len, value_len));
+        ;
 
     risk = enc->qpe_cur_header.n_risked > 0
         || enc->qpe_cur_header.others_at_risk
@@ -1031,26 +1067,66 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
          * that's not too old (eviction blocking) and also not too young
          * (header blocking).
          */
+        n_cand = 0;
         STAILQ_FOREACH(entry, &enc->qpe_buckets[buckno].by_nameval,
                                                             ete_next_nameval)
             if (nameval_hash == entry->ete_nameval_hash &&
                 name_len == entry->ete_name_len &&
                 value_len == entry->ete_val_len &&
-                (risk || entry->ete_id <= enc->qpe_max_acked_id) &&
-                (enc->qpe_cur_header.search_cutoff == 0
-                    || entry->ete_id > enc->qpe_cur_header.search_cutoff) &&
                 0 == memcmp(name, ETE_NAME(entry), name_len) &&
                 0 == memcmp(value, ETE_VALUE(entry), value_len))
             {
-                id = entry->ete_id;
+                candidates[ n_cand++ ] = entry;
+                if (n_cand >= sizeof(candidates) / sizeof(candidates[0]))
+                    break;
+            }
+
+        switch (n_cand)
+        {
+        case 1:
+            if (!risk && entry->ete_id > enc->qpe_max_acked_id)
+                break;
+            entry = candidates[0];
+            id = entry->ete_id;
+            if (index && qenc_duplicable_entry(enc, entry))
+                prog = (struct encode_program) {
+                            .ep_enc_action = EEA_DUP,
+                            .ep_hea_action = EHA_INDEXED_NEW,
+                            .ep_tab_action = ETA_NEW,
+                            .ep_flags      = EPF_REF_FOUND | EPF_REF_NEW,
+                };
+            else
                 prog = (struct encode_program) {
                             .ep_enc_action = EEA_NONE,
                             .ep_hea_action = EHA_INDEXED_DYN,
                             .ep_tab_action = ETA_NOOP,
                             .ep_flags      = EPF_REF_FOUND,
                 };
-                goto execute_program;
-            }
+            goto execute_program;
+        case 2:
+            /* The order holds due to the way hash table is structured: */
+            assert(candidates[1]->ete_id > candidates[0]->ete_id);
+            if (risk)
+                /* TODO: make this smarter?  Perhaps it may be preferable
+                 * to use an acknowledged entry if it is not in the "about
+                 * to be evicted" range?
+                 */
+                entry = candidates[1];
+            else if (candidates[1]->ete_id <= enc->qpe_max_acked_id)
+                entry = candidates[1];
+            else if (candidates[0]->ete_id <= enc->qpe_max_acked_id)
+                entry = candidates[0];
+            else
+                break;
+            id = entry->ete_id;
+            prog = (struct encode_program) {
+                        .ep_enc_action = EEA_NONE,
+                        .ep_hea_action = EHA_INDEXED_DYN,
+                        .ep_tab_action = ETA_NOOP,
+                        .ep_flags      = EPF_REF_FOUND,
+            };
+            goto execute_program;
+        }
     }
 
     /* Look for name-only match in the static table */
@@ -1064,12 +1140,20 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
             [1][1] = { EEA_INS_NAMEREF_STATIC, EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
 #undef A
         };
+        if (index)
+            enough_room = qenc_has_or_can_evict_at_least(enc,
+                                             ENTRY_COST(name_len, value_len));
         id = static_id;
-        prog = programs[index][risk];
+        prog = programs[index && enough_room][risk];
         goto execute_program;
     }
 
     /* Look for name-only match in the dynamic table */
+    /* TODO We may want to duplicate a dynamic entry whose name matches.
+     * In that case, we'd follow similar logic as above: select candidates
+     * and pick among them based on some factors.
+     */
+    enough_room = -1;
     if (use_dyn_table)
     {
         static const struct encode_program programs[2] = {
@@ -1081,12 +1165,16 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
             if (name_hash == entry->ete_name_hash &&
                 name_len == entry->ete_name_len &&
                 (risk || entry->ete_id <= enc->qpe_max_acked_id) &&
-                (enc->qpe_cur_header.search_cutoff == 0
-                    || entry->ete_id > enc->qpe_cur_header.search_cutoff) &&
+                (!index ||
+                    (enough_room < 0 ?
+                        (enough_room = qenc_has_or_can_evict_at_least(enc,
+                                             ENTRY_COST(name_len, value_len)))
+                                : enough_room))
+                &&
                 0 == memcmp(name, ETE_NAME(entry), name_len))
             {
                 id = entry->ete_id;
-                prog = programs[index];
+                prog = programs[index && enough_room];
                 goto execute_program;
             }
     }
@@ -1100,12 +1188,24 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
             [1][1] = { EEA_INS_LIT,     EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
 #undef A
         };
-        prog = programs[index][risk];
+        if (index && enough_room < 0)
+            enough_room = qenc_has_or_can_evict_at_least(enc,
+                                             ENTRY_COST(name_len, value_len));
+        prog = programs[index && enough_room][risk];
     }
 
   execute_program:
     switch (prog.ep_enc_action)
     {
+    case EEA_DUP:
+        dst = enc_buf;
+        *dst = 0;
+        id = enc->qpe_ins_count - id;
+        dst = lsqpack_enc_int(dst, enc_buf_end, id, 5);
+        if (dst <= enc_buf)
+            return LQES_NOBUF_ENC;
+        enc_sz = dst - enc_buf;
+        break;
     case EEA_INS_NAMEREF_STATIC:
         dst = enc_buf;
         *dst = 0x80 | 0x40;
