@@ -1325,15 +1325,18 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         if (index && (enough_room = qenc_has_or_can_evict_at_least(enc,
                                              ENTRY_COST(name_len, value_len))))
         {
-            static const struct encode_program programs[2][2] = {
+            static const struct encode_program programs[2][2][2] = {
 #define A 0 ... 1
-                [0][A] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
-                [1][0] = { EEA_INS_NAMEREF_STATIC, EHA_LIT_WITH_NAME_STAT, ETA_NEW,  0, },
-                [1][1] = { EEA_INS_NAMEREF_STATIC, EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
+                [0][A][A] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
+                [1][0][0] = { EEA_INS_NAMEREF_STATIC, EHA_LIT_WITH_NAME_STAT, ETA_NEW,  0, },
+                [1][0][1] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
+                [1][1][0] = { EEA_INS_NAMEREF_STATIC, EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
+                [1][1][1] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },   /* Invalid state */
 #undef A
             };
             seen = qenc_hist_seen(enc->qpe_hist, nameval_hash);
-            prog = programs[seen][risk];
+            assert(!(seen && risk && (use_dyn_table && n_cand > 0)));
+            prog = programs[seen][risk][use_dyn_table && n_cand > 0];
         }
         else
             prog = (struct encode_program) { EEA_NONE, EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, };
@@ -1378,16 +1381,19 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                                             ENTRY_COST(name_len, value_len)))
              : enough_room))
     {
-        static const struct encode_program programs[2][2] = {
+        static const struct encode_program programs[2][2][2] = {
 #define A 0 ... 1
-            [0][A] = { EEA_NONE,        EHA_LIT,                ETA_NOOP, 0, },
-            [1][0] = { EEA_INS_LIT,     EHA_LIT,                ETA_NEW,  0, },
-            [1][1] = { EEA_INS_LIT,     EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
+            [0][A][A] = { EEA_NONE,        EHA_LIT,                ETA_NOOP, 0, },
+            [1][0][0] = { EEA_INS_LIT,     EHA_LIT,                ETA_NEW,  0, },
+            [1][0][1] = { EEA_NONE,        EHA_LIT,                ETA_NOOP, 0, },
+            [1][1][0] = { EEA_INS_LIT,     EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
+            [1][1][1] = { EEA_NONE,        EHA_LIT,                ETA_NOOP, 0, },  /* Invalid state */
 #undef A
         };
         if (seen < 0)
             seen = qenc_hist_seen(enc->qpe_hist, nameval_hash);
-        prog = programs[seen][risk];
+        assert(!(seen && risk && (use_dyn_table && n_cand > 0)));
+        prog = programs[seen][risk][use_dyn_table && n_cand > 0];
     }
     else
         prog = (struct encode_program) { EEA_NONE, EHA_LIT, ETA_NOOP, 0, };
