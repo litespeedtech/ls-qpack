@@ -1194,9 +1194,9 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         switch (n_cand)
         {
         case 1:
+            entry = candidates[0];
             if (!risk && entry->ete_id > enc->qpe_max_acked_id)
                 break;
-            entry = candidates[0];
             id = entry->ete_id;
             if (index && qenc_duplicable_entry(enc, entry))
                 prog = (struct encode_program) {
