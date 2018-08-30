@@ -31,6 +31,9 @@ SOFTWARE.
 #include <stdlib.h>
 #include <string.h>
 #include <sys/queue.h>
+#if LSQPACK_DEVEL_MODE
+#include <inttypes.h>
+#endif
 
 #include "lsqpack.h"
 #include XXH_HEADER_NAME
@@ -49,6 +52,18 @@ SOFTWARE.
 #define DYNAMIC_ENTRY_OVERHEAD 32u
 
 #define MAX_QUIC_STREAM_ID ((1ull << 62) - 1)
+
+#if LSQPACK_DEVEL_MODE
+#   define ELOG(a...) do {                                  \
+        if (enc->qpe_log)                                   \
+        {                                                   \
+            fprintf(enc->qpe_log, "qenc: ");                \
+            fprintf(enc->qpe_log, a);                       \
+        }                                                   \
+    } while (0)
+#else
+#   define ELOG(a...)
+#endif
 
 /* Entries in the encoder's dynamic table are hashed 1) by name and 2) by
  * name and value.  Instead of having two arrays of buckets, the encoder
@@ -186,7 +201,7 @@ enc_use_dynamic_table (const struct lsqpack_enc *enc)
 
 int
 lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
-    unsigned max_risked_streams)
+    unsigned max_risked_streams, enum lsqpack_enc_opts enc_opts)
 {
     struct lsqpack_double_enc_head *buckets;
     unsigned nbits = 2;
@@ -217,8 +232,18 @@ lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
     enc->qpe_max_risked_streams = max_risked_streams;
     enc->qpe_buckets      = buckets;
     enc->qpe_nbits        = nbits;
+    enc->qpe_opts         = enc_opts;
     return 0;
 }
+
+
+#if LSQPACK_DEVEL_MODE
+void
+lsqpack_enc_log (struct lsqpack_enc *enc, FILE *out)
+{
+    enc->qpe_log = out;
+}
+#endif
 
 
 void
@@ -677,6 +702,9 @@ qenc_drop_oldest_entry (struct lsqpack_enc *enc)
 
     entry = STAILQ_FIRST(&enc->qpe_all_entries);
     assert(entry);
+    ELOG("drop entry %u (`%.*s': `%.*s')\n", entry->ete_id,
+        (int) entry->ete_name_len, ETE_NAME(entry),
+        (int) entry->ete_val_len, ETE_VALUE(entry));
     STAILQ_REMOVE_HEAD(&enc->qpe_all_entries, ete_next_all);
     buckno = BUCKNO(enc->qpe_nbits, entry->ete_nameval_hash);
     assert(entry == STAILQ_FIRST(&enc->qpe_buckets[buckno].by_nameval));
@@ -791,6 +819,10 @@ lsqpack_enc_push_entry (struct lsqpack_enc *enc, const char *name,
 
     enc->qpe_cur_capacity += ENTRY_COST(name_len, value_len);
     ++enc->qpe_nelem;
+    ELOG("pushed entry %u (`%.*s': `%.*s'), nelem: %u; capacity: %u\n",
+        entry->ete_id, (int) entry->ete_name_len, ETE_NAME(entry),
+        (int) entry->ete_val_len, ETE_VALUE(entry), enc->qpe_nelem,
+        enc->qpe_cur_capacity);
     qenc_remove_overflow_entries(enc);
     return entry;
 }
@@ -805,6 +837,8 @@ lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
 
     if (enc->qpe_flags & LSQPACK_ENC_HEADER)
         return -1;
+
+    ELOG("Start header for stream %"PRIu64"\n", stream_id);
 
     enc->qpe_cur_header.hinfo = enc_alloc_hinfo(enc);
     if (enc->qpe_cur_header.hinfo)
@@ -923,6 +957,37 @@ struct encode_program
 };
 
 
+#if LSQPACK_DEVEL_MODE
+static const char *const eea2str[] =
+{
+    [EEA_NONE] = "EEA_NONE",
+    [EEA_DUP] = "EEA_DUP",
+    [EEA_INS_NAMEREF_STATIC] = "EEA_INS_NAMEREF_STATIC",
+    [EEA_INS_NAMEREF_DYNAMIC] = "EEA_INS_NAMEREF_DYNAMIC",
+    [EEA_INS_LIT] = "EEA_INS_LIT",
+};
+
+
+static const char *const eha2str[] =
+{
+    [EHA_INDEXED_NEW] = "EHA_INDEXED_NEW",
+    [EHA_INDEXED_STAT] = "EHA_INDEXED_STAT",
+    [EHA_INDEXED_DYN] = "EHA_INDEXED_DYN",
+    [EHA_LIT_WITH_NAME_STAT] = "EHA_LIT_WITH_NAME_STAT",
+    [EHA_LIT_WITH_NAME_DYN] = "EHA_LIT_WITH_NAME_DYN",
+    [EHA_LIT_WITH_NAME_NEW] = "EHA_LIT_WITH_NAME_NEW",
+    [EHA_LIT] = "EHA_LIT",
+};
+
+
+static const char *const eta2str[] =
+{
+    [ETA_NOOP] = "ETA_NOOP",
+    [ETA_NEW] = "ETA_NEW",
+};
+#endif
+
+
 /* XXX Traversal of all header infos on each insertion.  Maybe bite the
  * bullet and do the min-heap?
  */
@@ -982,6 +1047,9 @@ qenc_duplicable_entry (const struct lsqpack_enc *enc,
     const struct lsqpack_enc_table_entry *el;
     float fill, fraction;
     unsigned off;
+
+    if (!(enc->qpe_opts & LSQPACK_ENC_OPT_DUP))
+        return 0;
 
     fill = (float) (enc->qpe_cur_capacity + ETE_SIZE(entry))
                                         / (float) enc->qpe_max_capacity;
@@ -1200,6 +1268,9 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     }
 
   execute_program:
+    ELOG("program: %s; %s; %s; flags: 0x%X\n",
+        eea2str[ prog.ep_enc_action ], eha2str[ prog.ep_hea_action ],
+        eta2str[ prog.ep_tab_action ], prog.ep_flags);
     switch (prog.ep_enc_action)
     {
     case EEA_DUP:

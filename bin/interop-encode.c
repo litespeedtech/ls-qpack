@@ -41,6 +41,8 @@ usage (const char *name)
 "                 acknowledged, non-zero means header blocks are acknowledged\n"
 "                 immediately.  Default value is 0.\n"
 "   -n          Process annotations.\n"
+"   -S          Server mode.\n"
+"   -D          Allow \"Duplicate\" instructions.\n"
 "   -v          Verbose: print various messages to stderr.\n"
 "\n"
 "   -h          Print this help screen and exit\n"
@@ -113,6 +115,7 @@ main (int argc, char **argv)
     char *line, *end, *tab;
     ssize_t pref_sz;
     enum lsqpack_enc_status st;
+    enum lsqpack_enc_opts enc_opts = 0;
     size_t enc_sz, hea_sz, enc_off, hea_off;
     int header_opened;
     unsigned arg;
@@ -121,10 +124,16 @@ main (int argc, char **argv)
     char line_buf[0x1000];
     unsigned char enc_buf[0x1000], hea_buf[0x1000], pref_buf[0x20];
 
-    while (-1 != (opt = getopt(argc, argv, "a:i:no:s:t:hv")))
+    while (-1 != (opt = getopt(argc, argv, "DSa:i:no:s:t:hv")))
     {
         switch (opt)
         {
+        case 'S':
+            enc_opts |= LSQPACK_ENC_OPT_SERVER;
+            break;
+        case 'D':
+            enc_opts |= LSQPACK_ENC_OPT_DUP;
+            break;
         case 'n':
             ++process_annotations;
             break;
@@ -172,11 +181,16 @@ main (int argc, char **argv)
         }
     }
 
-    if (0 != lsqpack_enc_init(&encoder, dyn_table_size, max_risked_streams))
+    if (0 != lsqpack_enc_init(&encoder, dyn_table_size, max_risked_streams,
+                                                                    enc_opts))
     {
         perror("lsqpack_enc_init");
         exit(EXIT_FAILURE);
     }
+
+#if LSQPACK_DEVEL_MODE
+    lsqpack_enc_log(&encoder, stderr);
+#endif
 
     lineno = 0;
     stream_id = 0;

@@ -55,9 +55,28 @@ typedef ssize_t (*lsqpack_stream_write_f)(void *stream, void *buf, size_t sz);
 typedef void (*lsqpack_stream_wantread_f)(void *stream, int wantread);
 typedef void (*lsqpack_stream_wantwrite_f)(void *stream, int wantwrite);
 
+enum lsqpack_enc_opts
+{
+    /**
+     * Client and server follow different heuristics.  The encoder is either
+     * in one or the other mode.
+     */
+    LSQPACK_ENC_OPT_SERVER  = 1 << 0,
+
+    /**
+     * Enable emitting dup instructions.
+     */
+    LSQPACK_ENC_OPT_DUP     = 1 << 1,
+};
+
 int
 lsqpack_enc_init (struct lsqpack_enc *, unsigned dyn_table_size,
-    unsigned max_risked_streams);
+    unsigned max_risked_streams, enum lsqpack_enc_opts);
+
+#if LSQPACK_DEVEL_MODE
+void
+lsqpack_enc_log (struct lsqpack_enc *, FILE *);
+#endif
 
 /** Start a new header block.  Return 0 on success or -1 on error. */
 int
@@ -244,6 +263,7 @@ struct lsqpack_enc
     enum {
         LSQPACK_ENC_HEADER  = 1 << 0,
     }                           qpe_flags;
+    enum lsqpack_enc_opts       qpe_opts;
 
     unsigned                    qpe_cur_capacity;
     unsigned                    qpe_max_capacity;
@@ -302,6 +322,9 @@ struct lsqpack_enc
      */
     unsigned long               qpe_bytes_in;
     unsigned long               qpe_bytes_out;
+#if LSQPACK_DEVEL_MODE
+    FILE                       *qpe_log;
+#endif
 };
 
 struct lsqpack_arr
