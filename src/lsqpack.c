@@ -1321,24 +1321,22 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     static_id = find_in_static_headers(name, name_len);
     if (static_id > 0)
     {
-        static const struct encode_program programs[2][2] = {
-#define A 0 ... 1
-            [0][A] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
-            [1][0] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
-            [1][1] = { EEA_INS_NAMEREF_STATIC, EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
-#undef A
-        };
-        if (index)
-        {
-            enough_room = qenc_has_or_can_evict_at_least(enc,
-                                             ENTRY_COST(name_len, value_len));
-            if (enough_room)
-                seen = qenc_hist_seen(enc->qpe_hist, nameval_hash);
-            else
-                seen = 0;
-        }
         id = static_id;
-        prog = programs[index && enough_room][seen];
+        if (index && (enough_room = qenc_has_or_can_evict_at_least(enc,
+                                             ENTRY_COST(name_len, value_len))))
+        {
+            static const struct encode_program programs[2][2] = {
+#define A 0 ... 1
+                [0][A] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
+                [1][0] = { EEA_INS_NAMEREF_STATIC, EHA_LIT_WITH_NAME_STAT, ETA_NEW,  0, },
+                [1][1] = { EEA_INS_NAMEREF_STATIC, EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
+#undef A
+            };
+            seen = qenc_hist_seen(enc->qpe_hist, nameval_hash);
+            prog = programs[seen][risk];
+        }
+        else
+            prog = (struct encode_program) { EEA_NONE, EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, };
         goto execute_program;
     }
 
@@ -1383,7 +1381,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         static const struct encode_program programs[2][2] = {
 #define A 0 ... 1
             [0][A] = { EEA_NONE,        EHA_LIT,                ETA_NOOP, 0, },
-            [1][0] = { EEA_INS_LIT,     EHA_LIT,                ETA_NOOP, 0, },
+            [1][0] = { EEA_INS_LIT,     EHA_LIT,                ETA_NEW,  0, },
             [1][1] = { EEA_INS_LIT,     EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
 #undef A
         };
