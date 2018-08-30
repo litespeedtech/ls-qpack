@@ -702,9 +702,10 @@ qenc_drop_oldest_entry (struct lsqpack_enc *enc)
 
     entry = STAILQ_FIRST(&enc->qpe_all_entries);
     assert(entry);
-    ELOG("drop entry %u (`%.*s': `%.*s')\n", entry->ete_id,
-        (int) entry->ete_name_len, ETE_NAME(entry),
-        (int) entry->ete_val_len, ETE_VALUE(entry));
+    ELOG("drop entry %u (`%.*s': `%.*s'), nelem: %u; capacity: %u\n",
+        entry->ete_id, (int) entry->ete_name_len, ETE_NAME(entry),
+        (int) entry->ete_val_len, ETE_VALUE(entry), enc->qpe_nelem - 1,
+        enc->qpe_cur_capacity - ETE_SIZE(entry));
     STAILQ_REMOVE_HEAD(&enc->qpe_all_entries, ete_next_all);
     buckno = BUCKNO(enc->qpe_nbits, entry->ete_nameval_hash);
     assert(entry == STAILQ_FIRST(&enc->qpe_buckets[buckno].by_nameval));
@@ -719,11 +720,48 @@ qenc_drop_oldest_entry (struct lsqpack_enc *enc)
 }
 
 
+#if LSQPACK_DEVEL_MODE
+static float
+qenc_effective_fill (const struct lsqpack_enc *enc)
+{
+    struct lsqpack_enc_table_entry *entry, *dup;
+    unsigned dups_size = 0;
+
+    STAILQ_FOREACH(entry, &enc->qpe_all_entries, ete_next_all)
+        for (dup = STAILQ_NEXT(entry, ete_next_all); dup;
+                                        dup = STAILQ_NEXT(dup, ete_next_all))
+            if (dup->ete_name_len == entry->ete_name_len &&
+                dup->ete_val_len == entry->ete_val_len &&
+                0 == memcmp(ETE_NAME(dup), ETE_NAME(entry),
+                                    dup->ete_name_len + dup->ete_val_len))
+            {
+                dups_size += ETE_SIZE(dup);
+                break;
+            }
+
+    return (float) (enc->qpe_cur_capacity - dups_size)
+                                        / (float) enc->qpe_max_capacity;
+}
+#endif
+
+
 static void
 qenc_remove_overflow_entries (struct lsqpack_enc *enc)
 {
     while (enc->qpe_cur_capacity > enc->qpe_max_capacity)
         qenc_drop_oldest_entry(enc);
+#if LSQPACK_DEVEL_MODE
+    if (enc->qpe_log)
+    {
+        if (enc->qpe_opts & LSQPACK_ENC_OPT_DUP)
+            ELOG("fill: %.2f; effective fill: %.2f\n",
+                (float) enc->qpe_cur_capacity / (float) enc->qpe_max_capacity,
+                qenc_effective_fill(enc));
+        else
+            ELOG("fill: %.2f\n",
+                (float) enc->qpe_cur_capacity / (float) enc->qpe_max_capacity);
+    }
+#endif
 }
 
 
@@ -1092,6 +1130,9 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     lsqpack_abs_id_t id;
     unsigned n_cand;
     int r;
+
+    ELOG("encode `%.*s': `%.*s'\n", (int) name_len, name,
+                                                (int) value_len, value);
 
     /* Encoding always outputs at least a byte to the header block.  If
      * no bytes are available, encoding cannot proceed.
