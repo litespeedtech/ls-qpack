@@ -221,6 +221,7 @@ main (int argc, char **argv)
                     exit(EXIT_FAILURE);
                 }
                 if (ack_mode == ACK_IMMEDIATE
+                    && !(2 == pref_sz && pref_buf[0] == 0 && pref_buf[1] == 0)
                     && 0 != ack_stream(&encoder, stream_id))
                 {
                     fprintf(stderr, "acking stream %u failed: %s", stream_id,
@@ -308,6 +309,7 @@ main (int argc, char **argv)
             exit(EXIT_FAILURE);
         }
         if (ack_mode == ACK_IMMEDIATE
+            && !(2 == pref_sz && pref_buf[0] == 0 && pref_buf[1] == 0)
             && 0 != ack_stream(&encoder, stream_id))
         {
             fprintf(stderr, "acking stream %u failed: %s", stream_id,
