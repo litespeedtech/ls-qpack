@@ -1177,10 +1177,6 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         XXH32_update(&hash_state,  value, value_len);
         nameval_hash = XXH32_digest(&hash_state);
         buckno = BUCKNO(enc->qpe_nbits, nameval_hash);
-        /* TODO there could be several matching entries.  We want to pick one
-         * that's not too old (eviction blocking) and also not too young
-         * (header blocking).
-         */
         n_cand = 0;
         STAILQ_FOREACH(entry, &enc->qpe_buckets[buckno].by_nameval,
                                                             ete_next_nameval)
