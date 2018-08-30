@@ -199,11 +199,77 @@ enc_use_dynamic_table (const struct lsqpack_enc *enc)
     return enc->qpe_cur_header.hinfo != NULL;
 }
 
+
+struct lsqpack_enc_hist
+{
+    unsigned    ehi_idx;
+    unsigned    ehi_nels;
+    int         ehi_wrapped;
+    unsigned    ehi_els[0];
+};
+
+
+static struct lsqpack_enc_hist *
+qenc_hist_new (unsigned nelem)
+{
+    struct lsqpack_enc_hist *hist;
+
+    hist = malloc(sizeof(*hist) + sizeof(hist->ehi_els[0]) * (nelem + 1));
+    if (!hist)
+        return NULL;
+
+    hist->ehi_nels    = nelem;
+    hist->ehi_idx     = 0;
+    hist->ehi_wrapped = 0;
+    return hist;
+}
+
+
+static void
+qenc_hist_add (struct lsqpack_enc_hist *hist, unsigned hash)
+{
+    hist->ehi_els[ hist->ehi_idx ] = hash;
+    hist->ehi_idx = (hist->ehi_idx + 1) % hist->ehi_nels;
+    hist->ehi_wrapped |= hist->ehi_idx == 0;
+}
+
+
+static int
+qenc_hist_seen (struct lsqpack_enc_hist *hist, unsigned hash)
+{
+    const unsigned *el;
+    unsigned prev_idx;
+
+    if (hist->ehi_wrapped)
+    {
+        prev_idx = hist->ehi_idx > 0 ? hist->ehi_idx - 1 : hist->ehi_nels - 1;
+        assert(hist->ehi_els[ prev_idx ] == hash);
+        for (el = hist->ehi_els; *el != hash; ++el)
+            ;
+        if (el < &hist->ehi_els[ prev_idx ])
+            return 1;
+        hist->ehi_els[ hist->ehi_nels ] = hash;
+        for (++el; *el != hash; ++el)
+            ;
+        return el < &hist->ehi_els[ hist->ehi_nels ];
+    }
+    else
+    {
+        prev_idx = hist->ehi_idx - 1;
+        assert(hist->ehi_els[ prev_idx ] == hash);
+        for (el = hist->ehi_els; *el != hash; ++el)
+            ;
+        return el < &hist->ehi_els[ prev_idx ];
+    }
+}
+
+
 int
 lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
     unsigned max_risked_streams, enum lsqpack_enc_opts enc_opts)
 {
     struct lsqpack_double_enc_head *buckets;
+    struct lsqpack_enc_hist *hist;
     unsigned nbits = 2;
     unsigned i;
 
@@ -214,9 +280,16 @@ lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
         return -1;
     }
 
+    hist = qenc_hist_new(dyn_table_size / DYNAMIC_ENTRY_OVERHEAD);
+    if (!hist)
+        return -1;
+
     buckets = malloc(sizeof(buckets[0]) * N_BUCKETS(nbits));
     if (!buckets)
+    {
+        free(hist);
         return -1;
+    }
 
     for (i = 0; i < N_BUCKETS(nbits); ++i)
     {
@@ -233,6 +306,7 @@ lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
     enc->qpe_buckets      = buckets;
     enc->qpe_nbits        = nbits;
     enc->qpe_opts         = enc_opts;
+    enc->qpe_hist         = hist;
     return 0;
 }
 
@@ -265,6 +339,7 @@ lsqpack_enc_cleanup (struct lsqpack_enc *enc)
     }
 
     free(enc->qpe_buckets);
+    free(enc->qpe_hist);
 }
 
 
@@ -1121,7 +1196,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     struct lsqpack_enc_table_entry *entry, *new_entry;
     struct lsqpack_enc_table_entry *candidates[2];
     struct encode_program prog;
-    int index, risk, use_dyn_table, static_id, enough_room;
+    int index, risk, use_dyn_table, static_id, enough_room, seen;
     unsigned name_hash, nameval_hash, buckno;
     XXH32_state_t hash_state;
 
@@ -1165,17 +1240,20 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         || enc->qpe_cur_header.others_at_risk
         || enc->qpe_cur_streams_at_risk < enc->qpe_max_risked_streams;
 
+    XXH32_reset(&hash_state, (uintptr_t) enc);
+    XXH32_update(&hash_state, &name_len, sizeof(name_len));
+    XXH32_update(&hash_state, name, name_len);
+    name_hash = XXH32_digest(&hash_state);
+    XXH32_update(&hash_state,  &value_len, sizeof(value_len));
+    XXH32_update(&hash_state,  value, value_len);
+    nameval_hash = XXH32_digest(&hash_state);
+
+    qenc_hist_add(enc->qpe_hist, nameval_hash);
+
   restart:
     /* Look for a full match in the dynamic table */
     if (use_dyn_table)
     {
-        XXH32_reset(&hash_state, (uintptr_t) enc);
-        XXH32_update(&hash_state, &name_len, sizeof(name_len));
-        XXH32_update(&hash_state, name, name_len);
-        name_hash = XXH32_digest(&hash_state);
-        XXH32_update(&hash_state,  &value_len, sizeof(value_len));
-        XXH32_update(&hash_state,  value, value_len);
-        nameval_hash = XXH32_digest(&hash_state);
         buckno = BUCKNO(enc->qpe_nbits, nameval_hash);
         n_cand = 0;
         STAILQ_FOREACH(entry, &enc->qpe_buckets[buckno].by_nameval,
@@ -1245,19 +1323,24 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     {
         static const struct encode_program programs[2][2] = {
 #define A 0 ... 1
-            [0][A] = { EEA_NONE,        EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
-            [1][0] = { EEA_INS_NAMEREF_STATIC, EHA_LIT_WITH_NAME_STAT, ETA_NEW,  0, },
+            [0][A] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
+            [1][0] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
             [1][1] = { EEA_INS_NAMEREF_STATIC, EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
 #undef A
         };
         if (index)
+        {
             enough_room = qenc_has_or_can_evict_at_least(enc,
                                              ENTRY_COST(name_len, value_len));
+            if (enough_room)
+                seen = qenc_hist_seen(enc->qpe_hist, nameval_hash);
+        }
         id = static_id;
-        prog = programs[index && enough_room][risk];
+        prog = programs[index && enough_room][seen];
         goto execute_program;
     }
 
+    seen = -1;
     /* Look for name-only match in the dynamic table */
     /* TODO We may want to duplicate a dynamic entry whose name matches.
      * In that case, we'd follow similar logic as above: select candidates

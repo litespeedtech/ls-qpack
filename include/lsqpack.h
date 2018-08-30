@@ -325,6 +325,7 @@ struct lsqpack_enc
 #if LSQPACK_DEVEL_MODE
     FILE                       *qpe_log;
 #endif
+    struct lsqpack_enc_hist    *qpe_hist;
 };
 
 struct lsqpack_arr
