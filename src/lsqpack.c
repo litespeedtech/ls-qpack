@@ -1334,6 +1334,8 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                                              ENTRY_COST(name_len, value_len));
             if (enough_room)
                 seen = qenc_hist_seen(enc->qpe_hist, nameval_hash);
+            else
+                seen = 0;
         }
         id = static_id;
         prog = programs[index && enough_room][seen];
@@ -1373,19 +1375,24 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     }
 
     /* No matches found */
+    if (index && (enough_room < 0 ?
+            (enough_room = qenc_has_or_can_evict_at_least(enc,
+                                            ENTRY_COST(name_len, value_len)))
+             : enough_room))
     {
         static const struct encode_program programs[2][2] = {
 #define A 0 ... 1
             [0][A] = { EEA_NONE,        EHA_LIT,                ETA_NOOP, 0, },
-            [1][0] = { EEA_INS_LIT,     EHA_LIT,                ETA_NEW,  0, },
+            [1][0] = { EEA_INS_LIT,     EHA_LIT,                ETA_NOOP, 0, },
             [1][1] = { EEA_INS_LIT,     EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
 #undef A
         };
-        if (index && enough_room < 0)
-            enough_room = qenc_has_or_can_evict_at_least(enc,
-                                             ENTRY_COST(name_len, value_len));
-        prog = programs[index && enough_room][risk];
+        if (seen < 0)
+            seen = qenc_hist_seen(enc->qpe_hist, nameval_hash);
+        prog = programs[seen][risk];
     }
+    else
+        prog = (struct encode_program) { EEA_NONE, EHA_LIT, ETA_NOOP, 0, };
 
   execute_program:
     ELOG("program: %s; %s; %s; flags: 0x%X\n",
