@@ -438,7 +438,7 @@ find_in_static_full (const char *name, unsigned name_len, const char *val,
         {":status304",7,11},{":status204",7,9},{":path/index.html",5,5},
         {"",0,0},{"",0,0},{":status206",7,10},{":status400",7,12},
         {":methodPOST",7,3},{"",0,0},{"",0,0},{"",0,0},{":status200",7,8},
-        {"",0,0},{"",0,0},{"accept-encodinggzip,deflate",15,16},
+        {"",0,0},{"",0,0},{"accept-encodinggzip, deflate",15,16},
         {"",0,0},{":methodGET",7,2},{"",0,0},{"",0,0},{"",0,0},{"",0,0},
         {":status500",7,14}
     };
