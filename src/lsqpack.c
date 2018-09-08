@@ -1407,8 +1407,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     case EEA_DUP:
         dst = enc_buf;
         *dst = 0;
-        id = enc->qpe_ins_count - id;
-        dst = lsqpack_enc_int(dst, enc_buf_end, id, 5);
+        dst = lsqpack_enc_int(dst, enc_buf_end, enc->qpe_ins_count - id, 5);
         if (dst <= enc_buf)
             return LQES_NOBUF_ENC;
         enc_sz = dst - enc_buf;
@@ -1429,8 +1428,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     case EEA_INS_NAMEREF_DYNAMIC:
         dst = enc_buf;
         *dst = 0x80;
-        id = enc->qpe_ins_count - id;
-        dst = lsqpack_enc_int(dst, enc_buf_end, id, 6);
+        dst = lsqpack_enc_int(dst, enc_buf_end, enc->qpe_ins_count - id, 6);
         if (dst <= enc_buf)
             return LQES_NOBUF_ENC;
         r = lsqpack_enc_enc_str(7, dst, enc_buf_end - dst,
@@ -1476,9 +1474,8 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
   post_base_idx:
         *dst = 0x10;
         assert(id > enc->qpe_cur_header.base_idx);
-        /* XXX: id modification -- bug? */
-        id -= enc->qpe_cur_header.base_idx;
-        dst = lsqpack_enc_int(dst, hea_buf_end, id, 4);
+        dst = lsqpack_enc_int(dst, hea_buf_end,
+                                        id - enc->qpe_cur_header.base_idx, 4);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         hea_sz = dst - hea_buf;
@@ -1513,8 +1510,8 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
  post_base_name_ref:
         *dst = (((flags & LQEF_NO_INDEX) > 0) << 3);
         assert(id > enc->qpe_cur_header.base_idx);
-        id -= enc->qpe_cur_header.base_idx;
-        dst = lsqpack_enc_int(dst, hea_buf_end, id, 3);
+        dst = lsqpack_enc_int(dst, hea_buf_end,
+                                        id - enc->qpe_cur_header.base_idx, 3);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         r = lsqpack_enc_enc_str(7, dst, hea_buf_end - dst,
@@ -1530,8 +1527,8 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         *dst = 0x40
                | (((flags & LQEF_NO_INDEX) > 0) << 5)
                ;
-        id = enc->qpe_cur_header.base_idx - id;
-        dst = lsqpack_enc_int(dst, hea_buf_end, id, 4);
+        dst = lsqpack_enc_int(dst, hea_buf_end,
+                                        enc->qpe_cur_header.base_idx - id, 4);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         r = lsqpack_enc_enc_str(7, dst, hea_buf_end - dst,
@@ -1590,13 +1587,13 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     if (prog.ep_flags & EPF_REF_FOUND)
     {
         ++entry->ete_n_reffd;
-        enc->qpe_cur_header.n_risked += enc->qpe_max_acked_id < id;
+        enc->qpe_cur_header.n_risked += enc->qpe_max_acked_id < entry->ete_id;
         if (enc->qpe_cur_header.hinfo->qhi_min_id == 0
-                || enc->qpe_cur_header.hinfo->qhi_min_id > id)
-            enc->qpe_cur_header.hinfo->qhi_min_id = id;
+                || enc->qpe_cur_header.hinfo->qhi_min_id > entry->ete_id)
+            enc->qpe_cur_header.hinfo->qhi_min_id = entry->ete_id;
         if (enc->qpe_cur_header.hinfo->qhi_max_id == 0
-                || enc->qpe_cur_header.hinfo->qhi_max_id < id)
-            enc->qpe_cur_header.hinfo->qhi_max_id = id;
+                || enc->qpe_cur_header.hinfo->qhi_max_id < entry->ete_id)
+            enc->qpe_cur_header.hinfo->qhi_max_id = entry->ete_id;
     }
 
     enc->qpe_bytes_in += name_len + value_len;
