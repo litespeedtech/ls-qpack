@@ -1476,6 +1476,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
   post_base_idx:
         *dst = 0x10;
         assert(id > enc->qpe_cur_header.base_idx);
+        /* XXX: id modification -- bug? */
         id -= enc->qpe_cur_header.base_idx;
         dst = lsqpack_enc_int(dst, hea_buf_end, id, 4);
         if (dst <= hea_buf)
@@ -1486,7 +1487,8 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         if (id > enc->qpe_cur_header.base_idx)
             goto post_base_idx;
         *dst = 0x80;
-        dst = lsqpack_enc_int(dst, hea_buf_end, id, 6);
+        dst = lsqpack_enc_int(dst, hea_buf_end,
+                                        enc->qpe_cur_header.base_idx - id, 6);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         hea_sz = dst - hea_buf;
@@ -2677,7 +2679,8 @@ parse_header_data (struct lsqpack_dec *dec,
                 if (IHF.is_static)
                     r = hset_add_static_entry(dec, read_ctx, IHF.value);
                 else
-                    r = hset_add_dynamic_entry(dec, read_ctx, IHF.value);
+                    r = hset_add_dynamic_entry(dec, read_ctx,
+                                    read_ctx->hbrc_base_index - IHF.value);
                 if (r == 0)
                 {
                     read_ctx->hbrc_parse_ctx_u.data.state
