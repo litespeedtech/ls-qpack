@@ -112,7 +112,6 @@ header_block_done (void *buf_p, struct lsqpack_header_set *set)
     fprintf(s_out, "\n");
 
     lsqpack_dec_destroy_header_set(set);
-    TAILQ_REMOVE(&bufs, buf, next_buf);
     free(buf);
 }
 
@@ -283,6 +282,7 @@ main (int argc, char **argv)
 
     while ((buf = TAILQ_FIRST(&bufs)))
     {
+        TAILQ_REMOVE(&bufs, buf, next_buf);
         if (buf->stream_id == 0)
         {
             r = lsqpack_dec_enc_in(&decoder, buf->buf, buf->size - buf->off);
@@ -291,7 +291,6 @@ main (int argc, char **argv)
                 fprintf(stderr, "encoder in error\n");
                 exit(EXIT_FAILURE);
             }
-            TAILQ_REMOVE(&bufs, buf, next_buf);
             free(buf);
             if (s_verbose)
                 lsqpack_dec_print_table(&decoder, stderr);
@@ -305,15 +304,12 @@ main (int argc, char **argv)
                 exit(EXIT_FAILURE);
             }
         }
-        else
-        {
-            r = lsqpack_dec_header_read(&decoder, buf);
-            if (r != 0)
-            {
-                fprintf(stderr, "header_read error\n");
-                exit(EXIT_FAILURE);
-            }
-        }
+    }
+
+    if (!TAILQ_EMPTY(&bufs))
+    {
+        fprintf(stderr, "some streams reamain\n");
+        exit(EXIT_FAILURE);
     }
 
     lsqpack_dec_cleanup(&decoder);
