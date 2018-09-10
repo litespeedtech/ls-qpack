@@ -1475,7 +1475,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         *dst = 0x10;
         assert(id > enc->qpe_cur_header.base_idx);
         dst = lsqpack_enc_int(dst, hea_buf_end,
-                                        id - enc->qpe_cur_header.base_idx, 4);
+                                    id - enc->qpe_cur_header.base_idx - 1, 4);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         hea_sz = dst - hea_buf;
@@ -3147,7 +3147,7 @@ parse_header_data (struct lsqpack_dec *dec,
             if (r == 0)
             {
                 r = hset_add_dynamic_entry(dec, read_ctx,
-                                        IPBI.value + read_ctx->hbrc_base_index);
+                                IPBI.value + read_ctx->hbrc_base_index + 1);
                 if (r == 0)
                 {
                     read_ctx->hbrc_parse_ctx_u.data.state
