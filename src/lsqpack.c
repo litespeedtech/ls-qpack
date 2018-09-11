@@ -1507,11 +1507,12 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         hea_sz = dst - hea_buf;
         break;
     case EHA_LIT_WITH_NAME_NEW:
+        id = enc->qpe_ins_count + 1;
  post_base_name_ref:
         *dst = (((flags & LQEF_NO_INDEX) > 0) << 3);
         assert(id > enc->qpe_cur_header.base_idx);
         dst = lsqpack_enc_int(dst, hea_buf_end,
-                                        id - enc->qpe_cur_header.base_idx, 3);
+                                    id - enc->qpe_cur_header.base_idx - 1, 3);
         if (dst <= hea_buf)
             return LQES_NOBUF_HEAD;
         r = lsqpack_enc_enc_str(7, dst, hea_buf_end - dst,
