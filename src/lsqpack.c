@@ -1630,8 +1630,12 @@ enc_proc_header_ack (struct lsqpack_enc *enc, uint64_t stream_id)
     if (!acked)
         return -1;
 
-    /* TODO: update minimum referenced */
-    /* TODO: update maximum acked */
+    if (acked->qhi_max_id > enc->qpe_max_acked_id)
+    {
+        enc->qpe_max_acked_id = acked->qhi_max_id;
+        ELOG("max acked ID is now %u\n", enc->qpe_max_acked_id);
+    }
+
     enc_free_hinfo(enc, acked);
     return 0;
 }
