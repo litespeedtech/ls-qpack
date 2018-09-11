@@ -2555,44 +2555,41 @@ lsqpack_huff_decode (const unsigned char *src, int src_len,
 
     switch (state->resume)
     {
-    case 1: goto ck1;
-    case 2: goto ck2;
-    case 3: goto ck3;
-    }
-
-    state->status.state = 0;
-    state->status.eos   = 1;
-
-  ck1:
-    while (p_src != src_end)
-    {
-        if (p_dst == dst_end)
+    case 0:
+        state->status.state = 0;
+        state->status.eos   = 1;
+    case 1:
+        while (p_src != src_end)
         {
-            state->resume = 2;
-            return (struct huff_decode_retval) {
-                            .status = HUFF_DEC_END_DST,
-                            .n_dst  = dst_len,
-                            .n_src  = p_src - src,
-            };
+            if (p_dst == dst_end)
+            {
+                state->resume = 2;
+                return (struct huff_decode_retval) {
+                                .status = HUFF_DEC_END_DST,
+                                .n_dst  = dst_len,
+                                .n_src  = p_src - src,
+                };
+            }
+    case 2:
+            if ((p_dst = qdec_huff_dec4bits(*p_src >> 4, p_dst, &state->status))
+                    == NULL)
+                return (struct huff_decode_retval) {
+                                                .status = HUFF_DEC_ERROR, };
+            if (p_dst == dst_end)
+            {
+                state->resume = 3;
+                return (struct huff_decode_retval) {
+                                .status = HUFF_DEC_END_DST,
+                                .n_dst  = dst_len,
+                                .n_src  = p_src - src,
+                };
+            }
+    case 3:
+            if ((p_dst = qdec_huff_dec4bits(*p_src & 0xf, p_dst, &state->status))
+                    == NULL)
+                return (struct huff_decode_retval) { .status = HUFF_DEC_ERROR, };
+            ++p_src;
         }
-  ck2:
-        if ((p_dst = qdec_huff_dec4bits(*p_src >> 4, p_dst, &state->status))
-                == NULL)
-            return (struct huff_decode_retval) { .status = HUFF_DEC_ERROR, };
-        if (p_dst == dst_end)
-        {
-            state->resume = 3;
-            return (struct huff_decode_retval) {
-                            .status = HUFF_DEC_END_DST,
-                            .n_dst  = dst_len,
-                            .n_src  = p_src - src,
-            };
-        }
-  ck3:
-        if ((p_dst = qdec_huff_dec4bits(*p_src & 0xf, p_dst, &state->status))
-                == NULL)
-            return (struct huff_decode_retval) { .status = HUFF_DEC_ERROR, };
-        ++p_src;
     }
 
     if (final)
