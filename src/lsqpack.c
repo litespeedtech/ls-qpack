@@ -2973,7 +2973,12 @@ parse_header_data (struct lsqpack_dec *dec,
                                                         &LFONR.dec_int_state);
             if (r == 0)
             {
-                if (LFONR.is_huffman)
+                LFONR.str_len = value;
+                LFONR.nread = 0;
+                LFONR.str_off = 0;
+                if (0 == LFONR.str_len)
+                    goto lfonr_insert_entry;
+                else if (LFONR.is_huffman)
                 {
                     LFONR.dec_huff_state.resume = 0;
                     read_ctx->hbrc_parse_ctx_u.data.state
@@ -2984,9 +2989,6 @@ parse_header_data (struct lsqpack_dec *dec,
                     read_ctx->hbrc_parse_ctx_u.data.state
                                         = DATA_STATE_READ_LFONR_VAL_PLAIN;
                 }
-                LFONR.nread = 0;
-                LFONR.str_off = 0;
-                LFONR.str_len = value;
                 break;
             }
             else if (r == -1)
@@ -3051,6 +3053,7 @@ parse_header_data (struct lsqpack_dec *dec,
             buf += size;
             if (LFONR.str_off == LFONR.str_len)
             {
+  lfonr_insert_entry:
                 read_ctx->hbrc_parse_ctx_u.data.state
                                     = DATA_STATE_NEXT_INSTRUCTION;
                 r = hset_add_literal_entry(read_ctx,
@@ -3102,27 +3105,36 @@ parse_header_data (struct lsqpack_dec *dec,
                                                         &LFPBNR.dec_int_state);
             if (r == 0)
             {
-                if (LFPBNR.is_huffman)
-                {
-                    LFPBNR.nalloc = value + value / 2;
-                    LFPBNR.dec_huff_state.resume = 0;
-                    read_ctx->hbrc_parse_ctx_u.data.state
-                                        = DATA_STATE_LFPBNR_READ_VAL_HUFFMAN;
-                }
-                else
-                {
-                    LFPBNR.nalloc = value;
-                    read_ctx->hbrc_parse_ctx_u.data.state
-                                        = DATA_STATE_LFPBNR_READ_VAL_PLAIN;
-                }
                 LFPBNR.val_len = value;
                 LFPBNR.nread = 0;
                 LFPBNR.val_off = 0;
-                LFPBNR.value = malloc(LFPBNR.nalloc);
-                if (LFPBNR.value)
-                    break;
+                if (LFPBNR.val_len)
+                {
+                    if (LFPBNR.is_huffman)
+                    {
+                        LFPBNR.nalloc = value + value / 2;
+                        LFPBNR.dec_huff_state.resume = 0;
+                        read_ctx->hbrc_parse_ctx_u.data.state
+                                            = DATA_STATE_LFPBNR_READ_VAL_HUFFMAN;
+                    }
+                    else
+                    {
+                        LFPBNR.nalloc = value;
+                        read_ctx->hbrc_parse_ctx_u.data.state
+                                            = DATA_STATE_LFPBNR_READ_VAL_PLAIN;
+                    }
+                    LFPBNR.value = malloc(LFPBNR.nalloc);
+                    if (LFPBNR.value)
+                        break;
+                    else
+                        return RHS_ERROR;
+                }
                 else
-                    return RHS_ERROR;
+                {
+                    LFPBNR.value = NULL;
+                    LFPBNR.nalloc = 0;
+                    goto lfpbnr_insert_entry;
+                }
             }
             else if (r == -1)
                 return RHS_NEED;
@@ -3179,6 +3191,7 @@ parse_header_data (struct lsqpack_dec *dec,
             buf += size;
             if (LFPBNR.val_off == LFPBNR.val_len)
             {
+  lfpbnr_insert_entry:
                 read_ctx->hbrc_parse_ctx_u.data.state
                                     = DATA_STATE_NEXT_INSTRUCTION;
                 r = hset_add_dynamic_nameref_entry(read_ctx,
