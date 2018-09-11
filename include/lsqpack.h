@@ -67,6 +67,11 @@ enum lsqpack_enc_opts
      * Enable emitting dup instructions.
      */
     LSQPACK_ENC_OPT_DUP     = 1 << 1,
+
+    /**
+     * Index aggressively: ignore history
+     */
+    LSQPACK_ENC_OPT_IX_AGGR = 1 << 2,
 };
 
 int
@@ -326,6 +331,10 @@ struct lsqpack_enc
     FILE                       *qpe_log;
 #endif
     struct lsqpack_enc_hist    *qpe_hist;
+    void                      (*qpe_hist_add)(struct lsqpack_enc_hist *,
+                                                                    unsigned);
+    int                       (*qpe_hist_seen)(struct lsqpack_enc_hist *,
+                                                                    unsigned);
 };
 
 struct lsqpack_arr

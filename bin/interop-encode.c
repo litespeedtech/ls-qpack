@@ -43,6 +43,7 @@ usage (const char *name)
 "   -n          Process annotations.\n"
 "   -S          Server mode.\n"
 "   -D          Allow \"Duplicate\" instructions.\n"
+"   -A          Aggressive indexing.\n"
 "   -v          Verbose: print various messages to stderr.\n"
 "\n"
 "   -h          Print this help screen and exit\n"
@@ -124,7 +125,7 @@ main (int argc, char **argv)
     char line_buf[0x1000];
     unsigned char enc_buf[0x1000], hea_buf[0x1000], pref_buf[0x20];
 
-    while (-1 != (opt = getopt(argc, argv, "DSa:i:no:s:t:hv")))
+    while (-1 != (opt = getopt(argc, argv, "ADSa:i:no:s:t:hv")))
     {
         switch (opt)
         {
@@ -133,6 +134,9 @@ main (int argc, char **argv)
             break;
         case 'D':
             enc_opts |= LSQPACK_ENC_OPT_DUP;
+            break;
+        case 'A':
+            enc_opts |= LSQPACK_ENC_OPT_IX_AGGR;
             break;
         case 'n':
             ++process_annotations;

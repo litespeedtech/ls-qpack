@@ -264,6 +264,19 @@ qenc_hist_seen (struct lsqpack_enc_hist *hist, unsigned hash)
 }
 
 
+static void
+qenc_hist_add_noop (struct lsqpack_enc_hist *hist, unsigned hash)
+{
+}
+
+
+static int
+qenc_hist_seen_yes (struct lsqpack_enc_hist *hist, unsigned hash)
+{
+    return 1;
+}
+
+
 int
 lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
     unsigned max_risked_streams, enum lsqpack_enc_opts enc_opts)
@@ -280,9 +293,14 @@ lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
         return -1;
     }
 
-    hist = qenc_hist_new(dyn_table_size / DYNAMIC_ENTRY_OVERHEAD);
-    if (!hist)
-        return -1;
+    if (enc_opts & LSQPACK_ENC_OPT_IX_AGGR)
+        hist = NULL;
+    else
+    {
+        hist = qenc_hist_new(dyn_table_size / DYNAMIC_ENTRY_OVERHEAD);
+        if (!hist)
+            return -1;
+    }
 
     buckets = malloc(sizeof(buckets[0]) * N_BUCKETS(nbits));
     if (!buckets)
@@ -307,6 +325,16 @@ lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
     enc->qpe_nbits        = nbits;
     enc->qpe_opts         = enc_opts;
     enc->qpe_hist         = hist;
+    if (enc_opts & LSQPACK_ENC_OPT_IX_AGGR)
+    {
+        enc->qpe_hist_add  = qenc_hist_add_noop;
+        enc->qpe_hist_seen = qenc_hist_seen_yes;
+    }
+    else
+    {
+        enc->qpe_hist_add  = qenc_hist_add;
+        enc->qpe_hist_seen = qenc_hist_seen;
+    }
     return 0;
 }
 
@@ -1248,7 +1276,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     XXH32_update(&hash_state,  value, value_len);
     nameval_hash = XXH32_digest(&hash_state);
 
-    qenc_hist_add(enc->qpe_hist, nameval_hash);
+    enc->qpe_hist_add(enc->qpe_hist, nameval_hash);
 
   restart:
     /* Look for a full match in the dynamic table */
@@ -1334,7 +1362,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                 [1][1][1] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },   /* Invalid state */
 #undef A
             };
-            seen = qenc_hist_seen(enc->qpe_hist, nameval_hash);
+            seen = enc->qpe_hist_seen(enc->qpe_hist, nameval_hash);
             assert(!(seen && risk && (use_dyn_table && n_cand > 0)));
             prog = programs[seen][risk][use_dyn_table && n_cand > 0];
         }
@@ -1391,7 +1419,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
 #undef A
         };
         if (seen < 0)
-            seen = qenc_hist_seen(enc->qpe_hist, nameval_hash);
+            seen = enc->qpe_hist_seen(enc->qpe_hist, nameval_hash);
         assert(!(seen && risk && (use_dyn_table && n_cand > 0)));
         prog = programs[seen][risk][use_dyn_table && n_cand > 0];
     }
