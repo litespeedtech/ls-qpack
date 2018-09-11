@@ -70,6 +70,7 @@ my @header_sets = do {
 };
 
 for (@header_sets) {
+    no warnings 'uninitialized';
     print map "$$_[0]\t$$_[1]\n", @$_;
     print "\n";
 }
@@ -81,7 +82,14 @@ exit;
 #
 sub is_http2 {
     my $message = shift;
-    return $$message{headers}[0]{name} =~ /^[a-z:]/;
+    if (defined($$message{headers}[0])
+                                && defined($$message{headers}[0]{name})) {
+        return $$message{headers}[0]{name} =~ /^[a-z:]/;
+    } elsif (defined($$message{httpVersion})) {
+        return $$message{httpVersion} =~ m~HTTP/2~i;
+    } else {
+        return;
+    }
 }
 
 sub req_header_set {
@@ -116,6 +124,7 @@ sub req_header_set {
 
 sub resp_header_set {
     my $message = shift;
+    no warnings 'uninitialized';
     if (!is_http2($message)) {
         my @headers = map [ lc($$_{name}), $$_{value}, ],
                                                 @{ $$message{headers} };
