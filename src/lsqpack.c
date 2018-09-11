@@ -2910,6 +2910,17 @@ parse_header_data (struct lsqpack_dec *dec,
                 return RHS_ERROR;
             }
             break;
+        case DATA_STATE_READ_LFONR_NAME_PLAIN:
+            size = MIN((unsigned) (end - buf), LFONR.str_len - LFONR.str_off);
+            memcpy(LFONR.name + LFONR.str_off, buf, size);
+            buf += size;
+            if (LFONR.str_off >= LFONR.str_len)
+            {
+                LFONR.name_len = LFONR.str_len;
+                read_ctx->hbrc_parse_ctx_u.data.state
+                                    = DATA_STATE_BEGIN_READ_LFONR_VAL_LEN;
+            }
+            break;
         case DATA_STATE_BEGIN_READ_LFONR_VAL_LEN:
             LFONR.is_huffman = buf[0] & 0x80;
             prefix_bits = 7;
