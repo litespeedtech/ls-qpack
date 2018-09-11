@@ -30,7 +30,7 @@ use JSON qw(decode_json);
 use URI;
 
 my $key = 'request';
-my $limit;
+my ($limit, $split_cookie);
 
 GetOptions( "help" => sub {
     print <<USAGE;
@@ -39,6 +39,7 @@ Usage: $0 [options] [file.har] > file.qif
 Options:
     -requests       Print headers from requests.  This is the default.
     -responses      Print headers from responses.
+    -split-cookie   Split the Cookie: header.
     -limit N        Limit number of header sets to N.  The default
                       is no limit.
 
@@ -49,6 +50,7 @@ USAGE
 },
             "requests"  => sub { $key = "request", },
             "responses" => sub { $key = "response", },
+            "split-cookie" => \$split_cookie,
             "limit=i"   => \$limit,
 );
 
@@ -84,19 +86,31 @@ sub is_http2 {
 
 sub req_header_set {
     my $message = shift;
+    my @set;
     if (!is_http2($message)) {
         my @headers = map [ lc($$_{name}), $$_{value}, ],
                       grep $$_{name} ne 'Host', @{ $$message{headers} };
         my $uri = URI->new($$message{url});
-        return [
+        @set = (
             [ ':method',    $$message{method}, ],
             [ ':scheme',    $uri->scheme, ],
             [ ':authority', $uri->authority, ],
             [ ':path',      $uri->path_query, ],
             @headers,
-        ];
+        );
     } else {
-        return [ map [ $$_{name}, $$_{value}, ], @{ $$message{headers} } ]
+        @set = map [ $$_{name}, $$_{value}, ], @{ $$message{headers} };
+    }
+    if ($split_cookie) {
+        return [ map {
+                    if ('cookie' eq $$_[0]) {
+                        map [ 'cookie', $_, ], split /;\s+/, $$_[1]
+                    } else {
+                        $_
+                    }
+                 } @set ];
+    } else {
+        return \@set;
     }
 }
 
