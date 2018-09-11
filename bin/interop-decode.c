@@ -297,7 +297,7 @@ main (int argc, char **argv)
         }
         else if (buf->off == 0)
         {
-            r = lsqpack_dec_header_in(&decoder, buf, stream_id, buf->size);
+            r = lsqpack_dec_header_in(&decoder, buf, buf->stream_id, buf->size);
             if (r != 0)
             {
                 fprintf(stderr, "header_in error\n");
