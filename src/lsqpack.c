@@ -2768,27 +2768,38 @@ parse_header_data (struct lsqpack_dec *dec,
                                                         &LFINR.dec_int_state);
             if (r == 0)
             {
-                if (LFINR.is_huffman)
+                if (value)
                 {
-                    LFINR.nalloc = value + value / 2;
-                    LFINR.dec_huff_state.resume = 0;
-                    read_ctx->hbrc_parse_ctx_u.data.state
-                                        = DATA_STATE_LFINR_READ_VAL_HUFFMAN;
+                    if (LFINR.is_huffman)
+                    {
+                        LFINR.nalloc = value + value / 2;
+                        LFINR.dec_huff_state.resume = 0;
+                        read_ctx->hbrc_parse_ctx_u.data.state
+                                            = DATA_STATE_LFINR_READ_VAL_HUFFMAN;
+                    }
+                    else
+                    {
+                        LFINR.nalloc = value;
+                        read_ctx->hbrc_parse_ctx_u.data.state
+                                            = DATA_STATE_LFINR_READ_VAL_PLAIN;
+                    }
+                    LFINR.val_len = value;
+                    LFINR.nread = 0;
+                    LFINR.val_off = 0;
+                    LFINR.value = malloc(LFINR.nalloc);
+                    if (LFINR.value)
+                        break;
+                    else
+                        return RHS_ERROR;
                 }
                 else
                 {
-                    LFINR.nalloc = value;
-                    read_ctx->hbrc_parse_ctx_u.data.state
-                                        = DATA_STATE_LFINR_READ_VAL_PLAIN;
+                    LFINR.nalloc = 0;
+                    LFINR.value = NULL;
+                    LFINR.val_len = 0;
+                    LFINR.val_off = 0;
+                    goto lfinr_insert_entry;
                 }
-                LFINR.val_len = value;
-                LFINR.nread = 0;
-                LFINR.val_off = 0;
-                LFINR.value = malloc(LFINR.nalloc);
-                if (LFINR.value)
-                    break;
-                else
-                    return RHS_ERROR;
             }
             else if (r == -1)
                 return RHS_NEED;
@@ -2852,6 +2863,7 @@ parse_header_data (struct lsqpack_dec *dec,
             buf += size;
             if (LFINR.val_off == LFINR.val_len)
             {
+  lfinr_insert_entry:
                 read_ctx->hbrc_parse_ctx_u.data.state
                                     = DATA_STATE_NEXT_INSTRUCTION;
                 if (LFINR.is_static)
