@@ -3283,7 +3283,7 @@ parse_header_prefix (struct lsqpack_dec *dec,
             }
             else if (r == -1)
             {
-                read_ctx->hbrc_lr_nread += buf - end;
+                read_ctx->hbrc_lr_nread += end - buf;
                 if (read_ctx->hbrc_lr_nread < LSQPACK_UINT64_ENC_SZ)
                     return RHS_NEED;
                 else
