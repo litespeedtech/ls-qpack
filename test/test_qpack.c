@@ -118,7 +118,7 @@ static const struct qpack_header_block_test
         .qhbt_prefix_buf    = "\x01\x81",
         .qhbt_header_sz     = 1,
         .qhbt_header_buf    = {
-            0x10 | 1 /* Relative dynamic ID */,
+            0x10 | 0 /* Relative dynamic ID */,
         },
     },
 
@@ -191,7 +191,7 @@ static const struct qpack_header_block_test
         .qhbt_prefix_buf    = "\x01\x81",
         .qhbt_header_sz     = 1,
         .qhbt_header_buf    = {
-            0x10 | 1 /* Relative dynamic ID */,
+            0x10 | 0 /* Relative dynamic ID */,
         },
     },
 
@@ -212,7 +212,7 @@ run_header_test (const struct qpack_header_block_test *test)
     enum lsqpack_enc_status enc_st;
 
     s = lsqpack_enc_init(&enc, test->qhbt_table_size,
-                                test->qhbt_max_risked_streams, 0);
+                    test->qhbt_max_risked_streams, LSQPACK_ENC_OPT_IX_AGGR);
     assert(s == 0);
 
     s = lsqpack_enc_start_header(&enc, 0, 0);
