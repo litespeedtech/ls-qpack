@@ -8,7 +8,13 @@
                '0' .. '9', 'a' .. 'z', 'A' .. 'Z', split '', '/+*');
 
 sub randomify {
-    @val = split '', shift;
+    $val = shift;
+
+    if (exists($cached_vals{$val})) {
+        return $cached_vals{$val};
+    }
+
+    @val = split '', $val;
     $seen_eq = 0;
     for ($i = 0; $i < @val; ++$i)
     {
@@ -19,13 +25,17 @@ sub randomify {
             $val[$i] = $chars[ ($rand + ord($val[$i])) % (@chars - 1) + 1 ];
         }
     }
-    return join '', @val;
+
+    return $cached_vals{$val} = join '', @val;
 }
 
 while (<>) {
     chomp;
     if (m/^cookie\t(.*)/) {
         print "cookie\t", randomify($1), "\n";
+    } elsif (m/^set-cookie\t(.*)/) {
+        print "set-cookie\t", join('; ', map randomify($_),
+                                                    split /;\s+/, $1), "\n";
     } else {
         print $_, "\n";
     }
