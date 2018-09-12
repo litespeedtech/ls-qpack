@@ -1,11 +1,10 @@
 #!/usr/bin/env perl
 #
-# Given a QIF file, randomify cookie headers
+# Given a QIF file, randomize cookie headers
 #
-# Usage: randomify-cookies.pl input.qif > output.qif
+# Usage: randomize-cookies.pl input.qif > output.qif
 
-@chars = ('=', # '=' is special: we keep its position in the cookie
-               '0' .. '9', 'a' .. 'z', 'A' .. 'Z', split '', '/+*');
+@chars = ('0' .. '9', 'a' .. 'z', 'A' .. 'Z', split '', '/+*');
 
 sub randomify {
     $val = shift;
@@ -22,7 +21,7 @@ sub randomify {
         {
             $rand = $rand[$i] //= int(rand(@chars));
             # Output is a function of both position and value:
-            $val[$i] = $chars[ ($rand + ord($val[$i])) % (@chars - 1) + 1 ];
+            $val[$i] = $chars[ ($rand + ord($val[$i])) % @chars ];
         }
     }
 
