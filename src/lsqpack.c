@@ -200,12 +200,24 @@ enc_use_dynamic_table (const struct lsqpack_enc *enc)
 }
 
 
+union hist_el {
+    struct {
+        uint16_t name_hash,
+                 nameval_hash;
+    }                               he_pair;
+    /* This is *NOT* the same as the nameval hash.  The history keeps track
+     * of both name and nameval hashes.
+     */
+    uint32_t                        he_merged;
+};
+
+
 struct lsqpack_enc_hist
 {
-    unsigned    ehi_idx;
-    unsigned    ehi_nels;
-    int         ehi_wrapped;
-    unsigned    ehi_els[0];
+    unsigned        ehi_idx;
+    unsigned        ehi_nels;
+    int             ehi_wrapped;
+    union hist_el   ehi_els[0];
 };
 
 
@@ -226,38 +238,74 @@ qenc_hist_new (unsigned nelem)
 
 
 static void
-qenc_hist_add (struct lsqpack_enc_hist *hist, unsigned hash)
+qenc_hist_add (struct lsqpack_enc_hist *hist, unsigned name_hash,
+                                                    unsigned nameval_hash)
 {
-    hist->ehi_els[ hist->ehi_idx ] = hash;
+    hist->ehi_els[ hist->ehi_idx ].he_pair.name_hash = name_hash;
+    hist->ehi_els[ hist->ehi_idx ].he_pair.nameval_hash = nameval_hash;
     hist->ehi_idx = (hist->ehi_idx + 1) % hist->ehi_nels;
     hist->ehi_wrapped |= hist->ehi_idx == 0;
 }
 
 
 static int
-qenc_hist_seen (struct lsqpack_enc_hist *hist, unsigned hash)
+qenc_hist_seen_nameval (struct lsqpack_enc_hist *hist, unsigned name_hash,
+                                                        unsigned nameval_hash)
 {
-    const unsigned *el;
+    const union hist_el *el;
     unsigned prev_idx;
+    const union hist_el he = { .he_pair = { name_hash, nameval_hash, }};
 
     if (hist->ehi_wrapped)
     {
         prev_idx = hist->ehi_idx > 0 ? hist->ehi_idx - 1 : hist->ehi_nels - 1;
-        assert(hist->ehi_els[ prev_idx ] == hash);
-        for (el = hist->ehi_els; *el != hash; ++el)
+        assert(hist->ehi_els[ prev_idx ].he_merged == he.he_merged);
+        for (el = hist->ehi_els; el->he_merged != he.he_merged; ++el)
             ;
         if (el < &hist->ehi_els[ prev_idx ])
             return 1;
-        hist->ehi_els[ hist->ehi_nels ] = hash;
-        for (++el; *el != hash; ++el)
+        hist->ehi_els[ hist->ehi_nels ] = he;
+        for (++el; el->he_merged != he.he_merged; ++el)
             ;
         return el < &hist->ehi_els[ hist->ehi_nels ];
     }
     else
     {
         prev_idx = hist->ehi_idx - 1;
-        assert(hist->ehi_els[ prev_idx ] == hash);
-        for (el = hist->ehi_els; *el != hash; ++el)
+        assert(hist->ehi_els[ prev_idx ].he_merged == he.he_merged);
+        for (el = hist->ehi_els; el->he_merged != he.he_merged; ++el)
+            ;
+        return el < &hist->ehi_els[ prev_idx ];
+    }
+}
+
+
+static int
+qenc_hist_seen_name (struct lsqpack_enc_hist *hist, unsigned name_hash)
+{
+    const union hist_el *el;
+    unsigned prev_idx;
+
+    name_hash = (uint16_t) name_hash;
+
+    if (hist->ehi_wrapped)
+    {
+        prev_idx = hist->ehi_idx > 0 ? hist->ehi_idx - 1 : hist->ehi_nels - 1;
+        assert(hist->ehi_els[ prev_idx ].he_pair.name_hash == name_hash);
+        for (el = hist->ehi_els; el->he_pair.name_hash != name_hash; ++el)
+            ;
+        if (el < &hist->ehi_els[ prev_idx ])
+            return 1;
+        hist->ehi_els[ hist->ehi_nels ].he_pair.name_hash = name_hash;
+        for (++el; el->he_pair.name_hash != name_hash; ++el)
+            ;
+        return el < &hist->ehi_els[ hist->ehi_nels ];
+    }
+    else
+    {
+        prev_idx = hist->ehi_idx - 1;
+        assert(hist->ehi_els[ prev_idx ].he_pair.name_hash == name_hash);
+        for (el = hist->ehi_els; el->he_pair.name_hash != name_hash; ++el)
             ;
         return el < &hist->ehi_els[ prev_idx ];
     }
@@ -265,13 +313,20 @@ qenc_hist_seen (struct lsqpack_enc_hist *hist, unsigned hash)
 
 
 static void
-qenc_hist_add_noop (struct lsqpack_enc_hist *hist, unsigned hash)
+qenc_hist_add_noop (struct lsqpack_enc_hist *hist, unsigned a, unsigned b)
 {
 }
 
 
 static int
-qenc_hist_seen_yes (struct lsqpack_enc_hist *hist, unsigned hash)
+qenc_hist_seen_nameval_yes (struct lsqpack_enc_hist *hist, unsigned a, unsigned b)
+{
+    return 1;
+}
+
+
+static int
+qenc_hist_seen_name_yes (struct lsqpack_enc_hist *hist, unsigned a)
 {
     return 1;
 }
@@ -327,13 +382,15 @@ lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
     enc->qpe_hist         = hist;
     if (enc_opts & LSQPACK_ENC_OPT_IX_AGGR)
     {
-        enc->qpe_hist_add  = qenc_hist_add_noop;
-        enc->qpe_hist_seen = qenc_hist_seen_yes;
+        enc->qpe_hist_add          = qenc_hist_add_noop;
+        enc->qpe_hist_seen_nameval = qenc_hist_seen_nameval_yes;
+        enc->qpe_hist_seen_name    = qenc_hist_seen_name_yes;
     }
     else
     {
-        enc->qpe_hist_add  = qenc_hist_add;
-        enc->qpe_hist_seen = qenc_hist_seen;
+        enc->qpe_hist_add          = qenc_hist_add;
+        enc->qpe_hist_seen_nameval = qenc_hist_seen_nameval;
+        enc->qpe_hist_seen_name    = qenc_hist_seen_name;
     }
     return 0;
 }
@@ -1077,6 +1134,7 @@ struct encode_program
         EEA_INS_NAMEREF_STATIC,
         EEA_INS_NAMEREF_DYNAMIC,
         EEA_INS_LIT,
+        EEA_INS_LIT_NAME,
     }           ep_enc_action;
     enum hea_block_action {         /* What to output to header block */
         EHA_INDEXED_NEW,
@@ -1090,6 +1148,7 @@ struct encode_program
     enum dyn_table_action {         /* Any changes to the dynamic table */
         ETA_NOOP,
         ETA_NEW,
+        ETA_NEW_NAME,
     }           ep_tab_action;
     enum ref_flags {                /* Which entries to take references to */
         EPF_REF_FOUND   = 1 << 1,
@@ -1106,6 +1165,7 @@ static const char *const eea2str[] =
     [EEA_INS_NAMEREF_STATIC] = "EEA_INS_NAMEREF_STATIC",
     [EEA_INS_NAMEREF_DYNAMIC] = "EEA_INS_NAMEREF_DYNAMIC",
     [EEA_INS_LIT] = "EEA_INS_LIT",
+    [EEA_INS_LIT_NAME] = "EEA_INS_LIT_NAME",
 };
 
 
@@ -1125,6 +1185,7 @@ static const char *const eta2str[] =
 {
     [ETA_NOOP] = "ETA_NOOP",
     [ETA_NEW] = "ETA_NEW",
+    [ETA_NEW_NAME] = "ETA_NEW_NAME",
 };
 #endif
 
@@ -1224,7 +1285,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     struct lsqpack_enc_table_entry *entry, *new_entry;
     struct lsqpack_enc_table_entry *candidates[2];
     struct encode_program prog;
-    int index, risk, use_dyn_table, static_id, enough_room, seen;
+    int index, risk, use_dyn_table, static_id, enough_room, seen_nameval;
     unsigned name_hash, nameval_hash, buckno;
     XXH32_state_t hash_state;
 
@@ -1276,7 +1337,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     XXH32_update(&hash_state,  value, value_len);
     nameval_hash = XXH32_digest(&hash_state);
 
-    enc->qpe_hist_add(enc->qpe_hist, nameval_hash);
+    enc->qpe_hist_add(enc->qpe_hist, name_hash, nameval_hash);
 
   restart:
     /* Look for a full match in the dynamic table */
@@ -1362,16 +1423,16 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                 [1][1][1] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },   /* Invalid state */
 #undef A
             };
-            seen = enc->qpe_hist_seen(enc->qpe_hist, nameval_hash);
-            assert(!(seen && risk && (use_dyn_table && n_cand > 0)));
-            prog = programs[seen][risk][use_dyn_table && n_cand > 0];
+            seen_nameval = enc->qpe_hist_seen_nameval(enc->qpe_hist, name_hash, nameval_hash);
+            assert(!(seen_nameval && risk && (use_dyn_table && n_cand > 0)));
+            prog = programs[seen_nameval][risk][use_dyn_table && n_cand > 0];
         }
         else
             prog = (struct encode_program) { EEA_NONE, EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, };
         goto execute_program;
     }
 
-    seen = -1;
+    seen_nameval = -1;
     /* Look for name-only match in the dynamic table */
     /* TODO We may want to duplicate a dynamic entry whose name matches.
      * In that case, we'd follow similar logic as above: select candidates
@@ -1380,10 +1441,6 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     enough_room = -1;
     if (use_dyn_table)
     {
-        static const struct encode_program programs[2] = {
-            [0] = { EEA_NONE,        EHA_LIT_WITH_NAME_DYN,  ETA_NOOP, EPF_REF_FOUND, },
-            [1] = { EEA_INS_NAMEREF_DYNAMIC, EHA_LIT_WITH_NAME_NEW,  ETA_NEW,  EPF_REF_NEW|EPF_REF_FOUND, },
-        };
         buckno = BUCKNO(enc->qpe_nbits, name_hash);
         STAILQ_FOREACH(entry, &enc->qpe_buckets[buckno].by_name, ete_next_name)
             if (name_hash == entry->ete_name_hash &&
@@ -1398,30 +1455,45 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                 0 == memcmp(name, ETE_NAME(entry), name_len))
             {
                 id = entry->ete_id;
-                prog = programs[index && enough_room];
+                if (index && enough_room
+                        && enc->qpe_hist_seen_nameval(enc->qpe_hist,
+                                                      name_hash, nameval_hash))
+                    prog = (struct encode_program) { EEA_INS_NAMEREF_DYNAMIC,
+                                EHA_LIT_WITH_NAME_NEW, ETA_NEW,
+                                EPF_REF_NEW|EPF_REF_FOUND, };
+                else
+                    prog = (struct encode_program) { EEA_NONE,
+                            EHA_LIT_WITH_NAME_DYN, ETA_NOOP, EPF_REF_FOUND, };
                 goto execute_program;
             }
     }
 
     /* No matches found */
-    if (index && (enough_room < 0 ?
+    if (index
+            && (seen_nameval < 0 ? (seen_nameval
+                    = enc->qpe_hist_seen_nameval(enc->qpe_hist, name_hash,
+                                                nameval_hash)) : seen_nameval)
+            && (enough_room < 0 ?
             (enough_room = qenc_has_or_can_evict_at_least(enc,
-                                            ENTRY_COST(name_len, value_len)))
-             : enough_room))
+                            ENTRY_COST(name_len, value_len))) : enough_room))
     {
-        static const struct encode_program programs[2][2][2] = {
-#define A 0 ... 1
-            [0][A][A] = { EEA_NONE,        EHA_LIT,                ETA_NOOP, 0, },
-            [1][0][0] = { EEA_INS_LIT,     EHA_LIT,                ETA_NEW,  0, },
-            [1][0][1] = { EEA_NONE,        EHA_LIT,                ETA_NOOP, 0, },
-            [1][1][0] = { EEA_INS_LIT,     EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
-            [1][1][1] = { EEA_NONE,        EHA_LIT,                ETA_NOOP, 0, },  /* Invalid state */
-#undef A
+        static const struct encode_program programs[2][2] = {
+            [0][0] = { EEA_INS_LIT,     EHA_LIT,                ETA_NEW,  0, },
+            [0][1] = { EEA_NONE,        EHA_LIT,                ETA_NOOP, 0, },
+            [1][0] = { EEA_INS_LIT,     EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
+            [1][1] = { EEA_NONE,        EHA_LIT,                ETA_NOOP, 0, },  /* Invalid state */
         };
-        if (seen < 0)
-            seen = enc->qpe_hist_seen(enc->qpe_hist, nameval_hash);
-        assert(!(seen && risk && (use_dyn_table && n_cand > 0)));
-        prog = programs[seen][risk][use_dyn_table && n_cand > 0];
+        assert(!(seen_nameval && risk && (use_dyn_table && n_cand > 0)));
+        prog = programs[risk][use_dyn_table && n_cand > 0];
+    }
+    else if (index && enc->qpe_hist_seen_name(enc->qpe_hist, name_hash)
+                && qenc_has_or_can_evict_at_least(enc, ENTRY_COST(name_len, 0)))
+    {
+        static const struct encode_program programs[2] = {
+            [0] = { EEA_INS_LIT_NAME, EHA_LIT,               ETA_NEW_NAME, 0, },
+            [1] = { EEA_INS_LIT_NAME, EHA_LIT_WITH_NAME_NEW, ETA_NEW_NAME, EPF_REF_NEW, },
+        };
+        prog = programs[ risk ];
     }
     else
         prog = (struct encode_program) { EEA_NONE, EHA_LIT, ETA_NOOP, 0, };
@@ -1467,6 +1539,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         enc_sz = dst - enc_buf;
         break;
     case EEA_INS_LIT:
+    case EEA_INS_LIT_NAME:
         dst = enc_buf;
         *dst = 0x40;
         r = lsqpack_enc_enc_str(5, dst, enc_buf_end - dst,
@@ -1475,7 +1548,8 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
             return LQES_NOBUF_ENC;
         dst += r;
         r = lsqpack_enc_enc_str(7, dst, enc_buf_end - dst,
-                                (const unsigned char *) value, value_len);
+                        (const unsigned char *) value,
+                        prog.ep_enc_action == EEA_INS_LIT ? value_len : 0);
         if (r < 0)
             return LQES_NOBUF_ENC;
         dst += r;
@@ -1588,8 +1662,9 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     switch (prog.ep_tab_action)
     {
     case ETA_NEW:
+    case ETA_NEW_NAME:
         new_entry = lsqpack_enc_push_entry(enc, name, name_len, value,
-                                                                    value_len);
+                                prog.ep_tab_action == ETA_NEW ? value_len : 0);
         if (!new_entry)
         {   /* Push can only fail due to inability to allocate memory.
              * In this case, fall back on encoding without indexing.
@@ -3748,13 +3823,18 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 WINR.entry->dte_name_len = WINR.name_len;
                 WINR.nread = 0;
                 WINR.val_off = 0;
-                if (WINR.is_huffman)
+                if (WINR.val_len)
                 {
-                    dec->qpd_enc_state.resume = DEI_WINR_READ_VALUE_HUFFMAN;
-                    WINR.dec_huff_state.resume = 0;
+                    if (WINR.is_huffman)
+                    {
+                        dec->qpd_enc_state.resume = DEI_WINR_READ_VALUE_HUFFMAN;
+                        WINR.dec_huff_state.resume = 0;
+                    }
+                    else
+                        dec->qpd_enc_state.resume = DEI_WINR_READ_VALUE_PLAIN;
                 }
                 else
-                    dec->qpd_enc_state.resume = DEI_WINR_READ_VALUE_PLAIN;
+                    goto winr_insert_entry;
             }
             else if (r == -1)
                 return 0;
@@ -3826,6 +3906,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             buf += size;
             if (WINR.val_off == WINR.val_len)
             {
+  winr_insert_entry:
                 WINR.entry->dte_val_len = WINR.val_off;
                 WINR.entry->dte_refcnt = 1;
                 memcpy(DTE_NAME(WINR.entry), WINR.name, WINR.name_len);
@@ -3942,13 +4023,18 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             {
                 WONR.nread = 0;
                 WONR.str_off = 0;
-                if (WONR.is_huffman)
+                if (WONR.str_len)
                 {
-                    dec->qpd_enc_state.resume = DEI_WONR_READ_VALUE_HUFFMAN;
-                    WONR.dec_huff_state.resume = 0;
+                    if (WONR.is_huffman)
+                    {
+                        dec->qpd_enc_state.resume = DEI_WONR_READ_VALUE_HUFFMAN;
+                        WONR.dec_huff_state.resume = 0;
+                    }
+                    else
+                        dec->qpd_enc_state.resume = DEI_WONR_READ_VALUE_PLAIN;
                 }
                 else
-                    dec->qpd_enc_state.resume = DEI_WONR_READ_VALUE_PLAIN;
+                    goto wonr_insert_entry;
             }
             else if (r == -1)
                 return 0;
@@ -4014,6 +4100,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             buf += size;
             if (WONR.str_off == WONR.str_len)
             {
+  wonr_insert_entry:
                 WONR.entry->dte_val_len = WONR.str_off;
                 WONR.entry->dte_refcnt = 1;
                 r = lsqpack_dec_push_entry(dec, WONR.entry);

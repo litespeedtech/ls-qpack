@@ -332,9 +332,12 @@ struct lsqpack_enc
 #endif
     struct lsqpack_enc_hist    *qpe_hist;
     void                      (*qpe_hist_add)(struct lsqpack_enc_hist *,
-                                                                    unsigned);
-    int                       (*qpe_hist_seen)(struct lsqpack_enc_hist *,
-                                                                    unsigned);
+                                                        unsigned, unsigned);
+    int                       (*qpe_hist_seen_nameval)(
+                                    struct lsqpack_enc_hist *,
+                                                        unsigned, unsigned);
+    int                       (*qpe_hist_seen_name)(struct lsqpack_enc_hist *,
+                                                        unsigned);
 };
 
 struct lsqpack_arr
