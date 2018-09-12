@@ -87,6 +87,26 @@ write_enc_and_header_streams (int out, unsigned stream_id,
 }
 
 
+static unsigned s_saved_ins_count;
+static int
+ack_last_entry_id (struct lsqpack_enc *encoder)
+{
+    unsigned char *end_cmd;
+    unsigned char cmd[80];
+    unsigned val;
+
+    if (s_verbose)
+        fprintf(stderr, "ACK entry ID %u\n", encoder->qpe_ins_count);
+
+    cmd[0] = 0x00;
+    val = encoder->qpe_ins_count - s_saved_ins_count;
+    s_saved_ins_count = encoder->qpe_ins_count;
+    end_cmd = lsqpack_enc_int(cmd, cmd + sizeof(cmd), val, 6);
+    assert(end_cmd > cmd);
+    return lsqpack_enc_decoder_in(encoder, cmd, end_cmd - cmd);
+}
+
+
 static int
 ack_stream (struct lsqpack_enc *encoder, uint64_t stream_id)
 {
@@ -118,7 +138,7 @@ main (int argc, char **argv)
     enum lsqpack_enc_status st;
     enum lsqpack_enc_opts enc_opts = 0;
     size_t enc_sz, hea_sz, enc_off, hea_off;
-    int header_opened;
+    int header_opened, r;
     unsigned arg;
     enum { ACK_NEVER, ACK_IMMEDIATE, } ack_mode = ACK_NEVER;
     int process_annotations = 0;
@@ -224,13 +244,20 @@ main (int argc, char **argv)
                     fprintf(stderr, "end_header failed: %s", strerror(errno));
                     exit(EXIT_FAILURE);
                 }
-                if (ack_mode == ACK_IMMEDIATE
-                    && !(2 == pref_sz && pref_buf[0] == 0 && pref_buf[1] == 0)
-                    && 0 != ack_stream(&encoder, stream_id))
+                if (ack_mode == ACK_IMMEDIATE)
                 {
-                    fprintf(stderr, "acking stream %u failed: %s", stream_id,
-                                                                strerror(errno));
-                    exit(EXIT_FAILURE);
+                    if (!(2 == pref_sz && pref_buf[0] == 0 && pref_buf[1] == 0))
+                        r = ack_stream(&encoder, stream_id);
+                    else if (encoder.qpe_ins_count > s_saved_ins_count)
+                        r = ack_last_entry_id(&encoder);
+                    else
+                        r = 0;
+                    if (r != 0)
+                    {
+                        fprintf(stderr, "acking stream %u failed: %s", stream_id,
+                                                                    strerror(errno));
+                        exit(EXIT_FAILURE);
+                    }
                 }
                 if (s_verbose)
                     fprintf(stderr, "compression ratio: %.3f\n",

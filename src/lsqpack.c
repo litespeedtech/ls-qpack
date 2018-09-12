@@ -108,6 +108,7 @@ struct lsqpack_header_info
     unsigned                            qhi_seqno;
     lsqpack_abs_id_t                    qhi_min_id;
     lsqpack_abs_id_t                    qhi_max_id;
+    lsqpack_abs_id_t                    qhi_ins_id;
     signed char                         qhi_at_risk;
 };
 
@@ -1682,6 +1683,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                     || enc->qpe_cur_header.hinfo->qhi_min_id > new_entry->ete_id)
                 enc->qpe_cur_header.hinfo->qhi_min_id = new_entry->ete_id;
         }
+        enc->qpe_cur_header.hinfo->qhi_ins_id = new_entry->ete_id;
         break;
     default:
         assert(prog.ep_tab_action == ETA_NOOP);
@@ -1734,9 +1736,9 @@ enc_proc_header_ack (struct lsqpack_enc *enc, uint64_t stream_id)
     if (!acked)
         return -1;
 
-    if (acked->qhi_max_id > enc->qpe_max_acked_id)
+    if (acked->qhi_ins_id > enc->qpe_max_acked_id)
     {
-        enc->qpe_max_acked_id = acked->qhi_max_id;
+        enc->qpe_max_acked_id = acked->qhi_ins_id;
         ELOG("max acked ID is now %u\n", enc->qpe_max_acked_id);
     }
 
@@ -1746,11 +1748,29 @@ enc_proc_header_ack (struct lsqpack_enc *enc, uint64_t stream_id)
 
 
 static int
-enc_proc_table_synch (struct lsqpack_enc *enc, uint64_t abs_id)
+enc_proc_table_synch (struct lsqpack_enc *enc, uint64_t ins_count)
 {
-    if (abs_id > LSQPACK_MAX_ABS_ID)
+    lsqpack_abs_id_t max_acked;
+
+    max_acked = ins_count + enc->qpe_last_tss;
+    if (max_acked > enc->qpe_ins_count)
+    {
+        ELOG("TSS: max_acked %u is larger than number of inserts %u\n",
+            max_acked, enc->qpe_ins_count);
         return -1;
-    return -1;  /* TODO */
+    }
+
+    if (max_acked > enc->qpe_max_acked_id)
+    {
+        enc->qpe_last_tss = max_acked;
+        enc->qpe_max_acked_id = max_acked;
+        ELOG("max acked ID is now %u\n", enc->qpe_max_acked_id);
+    }
+    else
+    {
+        ELOG("duplicate TSS: %u\n", max_acked);
+    }
+    return 0;
 }
 
 
@@ -1861,14 +1881,14 @@ lsqpack_enc_decoder_in (struct lsqpack_enc *enc,
                 prefix_bits = 7;
                 enc->qpe_dec_stream_state.handler = enc_proc_header_ack;
             }
-            else if ((buf[0] & 0xC) == 0)   /* Table State Synchronize */
+            else if ((buf[0] & 0xC0) == 0)   /* Table State Synchronize */
             {
                 prefix_bits = 6;
                 enc->qpe_dec_stream_state.handler = enc_proc_table_synch;
             }
             else                            /* Stream Cancellation */
             {
-                assert((buf[0] & 0xC) == 0x40);
+                assert((buf[0] & 0xC0) == 0x40);
                 prefix_bits = 6;
                 enc->qpe_dec_stream_state.handler = enc_proc_stream_cancel;
             }
