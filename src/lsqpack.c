@@ -249,6 +249,12 @@ qenc_hist_add (struct lsqpack_enc_hist *hist, unsigned name_hash,
 }
 
 
+/* TODO: the number of history entries to search should be approximately
+ * equal to the average number of entries in the dynamic table instead of
+ * the maximum possible size.  We do not want to index entries that appear
+ * with a period longer than the number of entries: this means we will not
+ * be able to use those entries.
+ */
 static int
 qenc_hist_seen_nameval (struct lsqpack_enc_hist *hist, unsigned name_hash,
                                                         unsigned nameval_hash)
