@@ -265,6 +265,7 @@ struct lsqpack_enc
     lsqpack_abs_id_t            qpe_ins_count;
     lsqpack_abs_id_t            qpe_max_acked_id;
     lsqpack_abs_id_t            qpe_last_tss;
+    lsqpack_abs_id_t            qpe_drain_idx;
 
     enum {
         LSQPACK_ENC_HEADER  = 1 << 0,

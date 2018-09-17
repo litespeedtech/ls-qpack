@@ -968,8 +968,44 @@ qenc_effective_fill (const struct lsqpack_enc *enc)
 static void
 qenc_remove_overflow_entries (struct lsqpack_enc *enc)
 {
+    const struct lsqpack_enc_table_entry *entry;
+    unsigned off, count;
+    int dropped;
+
+    dropped = 0;
     while (enc->qpe_cur_capacity > enc->qpe_max_capacity)
+    {
         qenc_drop_oldest_entry(enc);
+        ++dropped;
+    }
+
+    /* Calculate draining index: */
+    if (dropped || enc->qpe_cur_capacity > enc->qpe_max_capacity * 3 / 4)
+    {
+        count = 0;
+        off = enc->qpe_max_capacity - enc->qpe_cur_capacity;
+        STAILQ_FOREACH(entry, &enc->qpe_all_entries, ete_next_all)
+        {
+            if (off < enc->qpe_max_capacity / 4)
+            {
+                ++count;
+                off += ETE_SIZE(entry);
+            }
+            else
+                break;
+        }
+        if (entry)
+        {
+            enc->qpe_drain_idx = entry->ete_id;
+            ELOG("set draining index to %u (%u entries)\n",
+                                        enc->qpe_drain_idx, count);
+        }
+        /*
+        else
+            assert(0);
+            */
+    }
+
 #if LSQPACK_DEVEL_MODE
     if (enc->qpe_log)
     {
@@ -1436,13 +1472,15 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                             .ep_tab_action = ETA_NEW,
                             .ep_flags      = EPF_REF_FOUND | EPF_REF_NEW,
                 };
-            else
+            else if (entry->ete_id >= enc->qpe_drain_idx)
                 prog = (struct encode_program) {
                             .ep_enc_action = EEA_NONE,
                             .ep_hea_action = EHA_INDEXED_DYN,
                             .ep_tab_action = ETA_NOOP,
                             .ep_flags      = EPF_REF_FOUND,
                 };
+            else
+                break;
             goto execute_program;
         case 2:
             /* The order holds due to the way hash table is structured: */
@@ -1455,7 +1493,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                 entry = candidates[1];
             else if (candidates[1]->ete_id <= enc->qpe_max_acked_id)
                 entry = candidates[1];
-            else if (candidates[0]->ete_id <= enc->qpe_max_acked_id)
+            else if (candidates[0]->ete_id >= enc->qpe_drain_idx)
                 entry = candidates[0];
             else
                 break;
@@ -1488,7 +1526,6 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
 #undef A
             };
             seen_nameval = enc->qpe_hist_seen_nameval(enc->qpe_hist, name_hash, nameval_hash);
-            assert(!(seen_nameval && risk && (use_dyn_table && n_cand > 0)));
             prog = programs[seen_nameval][risk][use_dyn_table && n_cand > 0];
         }
         else
@@ -1508,6 +1545,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         buckno = BUCKNO(enc->qpe_nbits, name_hash);
         STAILQ_FOREACH(entry, &enc->qpe_buckets[buckno].by_name, ete_next_name)
             if (name_hash == entry->ete_name_hash &&
+                entry->ete_id >= enc->qpe_drain_idx &&
                 name_len == entry->ete_name_len &&
                 (risk || entry->ete_id <= enc->qpe_max_acked_id) &&
                 (!index ||
@@ -1547,7 +1585,6 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
             [1][0] = { EEA_INS_LIT,     EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
             [1][1] = { EEA_NONE,        EHA_LIT,                ETA_NOOP, 0, },  /* Invalid state */
         };
-        assert(!(seen_nameval && risk && (use_dyn_table && n_cand > 0)));
         prog = programs[risk][use_dyn_table && n_cand > 0];
     }
     else if (index && enc->qpe_hist_seen_name(enc->qpe_hist, name_hash)
