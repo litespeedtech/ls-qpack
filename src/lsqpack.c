@@ -1243,11 +1243,10 @@ qenc_has_or_can_evict_at_least (const struct lsqpack_enc *enc,
         return 1;
 
     min_id = qenc_min_reffed_id(enc);
-    if (!min_id)    /* Everything can be evicted */
-        return new_entry_size <= enc->qpe_max_capacity;
 
     STAILQ_FOREACH(entry, &enc->qpe_all_entries, ete_next_all)
-        if (entry->ete_id < min_id)
+        if ((min_id == 0 || entry->ete_id < min_id)
+                && entry->ete_id <= enc->qpe_max_acked_id)
         {
             avail += ETE_SIZE(entry);
             if (avail >= new_entry_size)
@@ -1256,7 +1255,6 @@ qenc_has_or_can_evict_at_least (const struct lsqpack_enc *enc,
         else
             break;
 
-    assert(entry);
     return avail >= new_entry_size;
 }
 
