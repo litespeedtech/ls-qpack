@@ -218,7 +218,7 @@ struct lsqpack_enc_hist
     unsigned        ehi_idx;
     unsigned        ehi_nels;
     int             ehi_wrapped;
-    union hist_el   ehi_els[0];
+    union hist_el  *ehi_els;
 };
 
 
@@ -227,9 +227,16 @@ qenc_hist_new (unsigned nelem)
 {
     struct lsqpack_enc_hist *hist;
 
-    hist = malloc(sizeof(*hist) + sizeof(hist->ehi_els[0]) * (nelem + 1));
+    hist = malloc(sizeof(*hist));
     if (!hist)
         return NULL;
+
+    hist->ehi_els = malloc(sizeof(hist->ehi_els[0]) * (nelem + 1));
+    if (!hist->ehi_els)
+    {
+        free(hist);
+        return NULL;
+    };
 
     hist->ehi_nels    = nelem;
     hist->ehi_idx     = 0;
@@ -246,6 +253,35 @@ qenc_hist_add (struct lsqpack_enc_hist *hist, unsigned name_hash,
     hist->ehi_els[ hist->ehi_idx ].he_pair.nameval_hash = nameval_hash;
     hist->ehi_idx = (hist->ehi_idx + 1) % hist->ehi_nels;
     hist->ehi_wrapped |= hist->ehi_idx == 0;
+}
+
+
+static void
+qenc_grow_history (struct lsqpack_enc_hist *hist)
+{
+    union hist_el *els;
+    unsigned nelem;
+
+    nelem = hist->ehi_nels + 4;
+    els = malloc(sizeof(els[0]) * (nelem + 1));
+    if (!els)
+        return; /* Doing nothing is the correct graceful fallback */
+
+    assert(hist->ehi_wrapped);
+    if (hist->ehi_wrapped)
+    {
+        memcpy(els, hist->ehi_els + hist->ehi_idx,
+                sizeof(els[0]) * (hist->ehi_nels - hist->ehi_idx));
+        memcpy(els + (hist->ehi_nels - hist->ehi_idx), hist->ehi_els,
+                sizeof(els[0]) * hist->ehi_idx);
+        hist->ehi_wrapped = 0;
+        hist->ehi_idx = hist->ehi_nels;
+    }
+    else
+        memcpy(els, hist->ehi_els, hist->ehi_idx);
+    hist->ehi_nels = nelem;
+    free(hist->ehi_els);
+    hist->ehi_els = els;
 }
 
 
@@ -367,7 +403,11 @@ lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
     buckets = malloc(sizeof(buckets[0]) * N_BUCKETS(nbits));
     if (!buckets)
     {
-        free(hist);
+        if (hist)
+        {
+            free(hist->ehi_els);
+            free(hist);
+        }
         return -1;
     }
 
@@ -431,6 +471,7 @@ lsqpack_enc_cleanup (struct lsqpack_enc *enc)
     }
 
     free(enc->qpe_buckets);
+    free(enc->qpe_hist->ehi_els);
     free(enc->qpe_hist);
 }
 
@@ -1064,6 +1105,7 @@ lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
         enc->qpe_cur_header.hinfo->qhi_seqno     = seqno;
     }
     enc->qpe_cur_header.n_risked = 0;
+    enc->qpe_cur_header.n_headers = 0;
     enc->qpe_cur_header.base_idx = enc->qpe_ins_count;
 
     /* Check if there are other header blocks with the same stream ID that
@@ -1353,6 +1395,11 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     XXH32_update(&hash_state,  &value_len, sizeof(value_len));
     XXH32_update(&hash_state,  value, value_len);
     nameval_hash = XXH32_digest(&hash_state);
+
+    ++enc->qpe_cur_header.n_headers;
+    if (enc->qpe_hist
+            && enc->qpe_cur_header.n_headers > enc->qpe_hist->ehi_nels)
+        qenc_grow_history(enc->qpe_hist);
 
     enc->qpe_hist_add(enc->qpe_hist, name_hash, nameval_hash);
 
