@@ -818,17 +818,29 @@ qenc_huffman_enc (const unsigned char *src, const unsigned char *const src_end,
 }
 
 
+static unsigned
+qenc_enc_str_size (const unsigned char *str, unsigned str_len)
+{
+    unsigned const char *const end = str + str_len;
+    unsigned enc_size_bits, enc_size_bytes;
+
+    enc_size_bits = 0;
+    while (str < end)
+        enc_size_bits += encode_table[ *str++ ].bits;
+    enc_size_bytes = enc_size_bits / 8 + ((enc_size_bits & 7) != 0);
+
+    return enc_size_bytes;
+}
+
+
 int
 lsqpack_enc_enc_str (unsigned prefix_bits, unsigned char *const dst,
         size_t dst_len, const unsigned char *str, unsigned str_len)
 {
     unsigned char *p;
-    unsigned i, enc_size_bits, enc_size_bytes, len_size;
+    unsigned enc_size_bytes, len_size;
 
-    enc_size_bits = 0;
-    for (i = 0; i < str_len; ++i)
-        enc_size_bits += encode_table[ str[i] ].bits;
-    enc_size_bytes = enc_size_bits / 8 + ((enc_size_bits & 7) != 0);
+    enc_size_bytes = qenc_enc_str_size(str, str_len);
 
     if (enc_size_bytes < str_len)
     {
@@ -1506,6 +1518,33 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         prog = (struct encode_program) { EEA_NONE, EHA_LIT, ETA_NOOP, 0, };
 
   execute_program:
+    if (((1 << prog.ep_enc_action) &
+            ((1 << EEA_INS_NAMEREF_STATIC)  |
+             (1 << EEA_INS_NAMEREF_DYNAMIC) |
+             (1 << EEA_INS_LIT)             |
+             (1 << EEA_INS_LIT_NAME)))
+         &&
+        ((1 << prog.ep_hea_action) &
+            ((1 << EHA_LIT)                 |
+             (1 << EHA_LIT_WITH_NAME_STAT)  |
+             (1 << EHA_LIT_WITH_NAME_DYN)   |
+             (1 << EHA_LIT_WITH_NAME_NEW))))
+    {
+        unsigned bytes_out, bytes_in;
+        bytes_out = enc->qpe_bytes_out
+                  + qenc_enc_str_size((unsigned char *) name, name_len)
+                  + qenc_enc_str_size((unsigned char *) value, value_len)
+                  ;
+        bytes_in = enc->qpe_bytes_in + name_len + value_len;
+        if ((float) bytes_out / (float) bytes_in > 0.95)
+        {
+            assert(index);
+            index = 0;
+            ELOG("double lit would result in ratio > 0.95, reset\n");
+            goto restart;
+        }
+    }
+
     ELOG("program: %s; %s; %s; flags: 0x%X\n",
         eea2str[ prog.ep_enc_action ], eha2str[ prog.ep_hea_action ],
         eta2str[ prog.ep_tab_action ], prog.ep_flags);
