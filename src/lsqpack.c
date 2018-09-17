@@ -106,6 +106,7 @@ struct lsqpack_header_info
     TAILQ_ENTRY(lsqpack_header_info)    qhi_next;
     uint64_t                            qhi_stream_id;
     unsigned                            qhi_seqno;
+    unsigned                            qhi_bytes_inserted;
     lsqpack_abs_id_t                    qhi_min_id;
     lsqpack_abs_id_t                    qhi_max_id;
     lsqpack_abs_id_t                    qhi_ins_id;
@@ -197,7 +198,9 @@ enc_free_hinfo (struct lsqpack_enc *enc, struct lsqpack_header_info *hinfo)
 static int
 enc_use_dynamic_table (const struct lsqpack_enc *enc)
 {
-    return enc->qpe_cur_header.hinfo != NULL;
+    return enc->qpe_cur_header.hinfo != NULL
+        && enc->qpe_cur_header.hinfo->qhi_bytes_inserted
+                                                < enc->qpe_max_capacity / 2;
 }
 
 
@@ -1800,6 +1803,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
             index = 0;
             goto restart;
         }
+        enc->qpe_cur_header.hinfo->qhi_bytes_inserted += ETE_SIZE(new_entry);
         if (prog.ep_flags & EPF_REF_NEW)
         {
             ++new_entry->ete_n_reffd;
