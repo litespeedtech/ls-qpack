@@ -3489,8 +3489,12 @@ parse_header_prefix (struct lsqpack_dec *dec,
             if (r == 0)
             {
                 if (BI.sign)
+                {
+                    if (read_ctx->hbrc_largest_ref < BI.value)
+                        return RHS_ERROR;   /* Negative base index */
                     read_ctx->hbrc_base_index = read_ctx->hbrc_largest_ref
                                                                     - BI.value;
+                }
                 else
                     read_ctx->hbrc_base_index = read_ctx->hbrc_largest_ref
                                                                     + BI.value;
