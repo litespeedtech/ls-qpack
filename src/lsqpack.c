@@ -2952,7 +2952,7 @@ parse_header_data (struct lsqpack_dec *dec,
             {
                 prefix_bits = 3;
                 LFONR.is_never = buf[0] & 0x10;
-                LFONR.is_huffman = buf[0] & 0x04;
+                LFONR.is_huffman = buf[0] & 0x08;
                 LFONR.dec_int_state.resume = 0;
                 LFONR.name = NULL;
                 read_ctx->hbrc_parse_ctx_u.data.state
@@ -3233,6 +3233,7 @@ parse_header_data (struct lsqpack_dec *dec,
             size = MIN((unsigned) (end - buf), LFONR.str_len - LFONR.str_off);
             memcpy(LFONR.name + LFONR.str_off, buf, size);
             buf += size;
+            LFONR.str_off += size;
             if (LFONR.str_off >= LFONR.str_len)
             {
                 LFONR.name_len = LFONR.str_len;
