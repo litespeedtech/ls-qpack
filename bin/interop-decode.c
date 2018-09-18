@@ -83,7 +83,13 @@ wantread_header_block (void *buf_p, int wantread)
     struct buf *buf = buf_p;
     buf->wantread = wantread;
     if (wantread)
-        lsqpack_dec_header_read(buf->dec, buf);
+    {
+        if (0 != lsqpack_dec_header_read(buf->dec, buf))
+        {
+            fprintf(stderr, "error parsing stream %"PRIu64"\n", buf->stream_id);
+            exit(EXIT_FAILURE);
+        }
+    }
 }
 
 
@@ -129,6 +135,7 @@ main (int argc, char **argv)
     int r;
     uint64_t stream_id;
     uint32_t size;
+    size_t off;         /* For debugging */
     struct buf *buf;
     unsigned lineno;
     char *line, *end;
@@ -201,6 +208,7 @@ main (int argc, char **argv)
                  NULL, NULL, read_header_block, wantread_header_block,
                  header_block_done);
 
+    off = 0;
     while (1)
     {
         nr = read(in, &stream_id, sizeof(stream_id));
@@ -208,9 +216,11 @@ main (int argc, char **argv)
             break;
         if (nr != sizeof(stream_id))
             goto read_err;
+        off += nr;
         nr = read(in, &size, sizeof(size));
         if (nr != sizeof(size))
             goto read_err;
+        off += nr;
 #if __BYTE_ORDER == __LITTLE_ENDIAN
         stream_id = bswap_64(stream_id);
         size = bswap_32(size);
@@ -225,6 +235,7 @@ main (int argc, char **argv)
         nr = read(in, buf->buf, size);
         if (nr != size)
             goto read_err;
+        off += nr;
         buf->dec = &decoder;
         buf->stream_id = stream_id;
         buf->size = size;
