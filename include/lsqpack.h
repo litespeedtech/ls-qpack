@@ -48,6 +48,7 @@ typedef unsigned lsqpack_abs_id_t;
 #define LSQPACK_MAX_MAX_RISKED_STREAMS ((1 << 16) - 1)
 
 struct lsqpack_enc;
+struct lsqpack_enc_hist_if;
 struct lsqpack_dec;
 
 typedef ssize_t (*lsqpack_stream_read_f)(void *stream, const unsigned char **buf, size_t sz);
@@ -67,16 +68,12 @@ enum lsqpack_enc_opts
      * Enable emitting dup instructions.
      */
     LSQPACK_ENC_OPT_DUP     = 1 << 1,
-
-    /**
-     * Index aggressively: ignore history
-     */
-    LSQPACK_ENC_OPT_IX_AGGR = 1 << 2,
 };
 
 int
 lsqpack_enc_init (struct lsqpack_enc *, unsigned dyn_table_size,
-    unsigned max_risked_streams, enum lsqpack_enc_opts);
+    unsigned max_risked_streams, enum lsqpack_enc_opts,
+    const struct lsqpack_enc_hist_if *);
 
 #if LSQPACK_DEVEL_MODE
 void
@@ -257,6 +254,19 @@ struct lsqpack_dec_int_state
     uint64_t    val;
 };
 
+struct lsqpack_enc_hist_if
+{
+    void *      (*hist_new)(unsigned nelem);
+    void        (*hist_grow)(void *);
+    unsigned    (*hist_size)(void *);
+    void        (*hist_add)(void *, unsigned, unsigned);
+    int         (*hist_seen_nameval)(void *, unsigned, unsigned);
+    int         (*hist_seen_name)(void *, unsigned);
+    void        (*hist_destroy)(void *);
+};
+
+extern const struct lsqpack_enc_hist_if lsqpack_enc_hist_aggr;
+
 struct lsqpack_enc
 {
     /* The number of all the entries in the dynamic table that have been
@@ -334,14 +344,9 @@ struct lsqpack_enc
 #if LSQPACK_DEVEL_MODE
     FILE                       *qpe_log;
 #endif
-    struct lsqpack_enc_hist    *qpe_hist;
-    void                      (*qpe_hist_add)(struct lsqpack_enc_hist *,
-                                                        unsigned, unsigned);
-    int                       (*qpe_hist_seen_nameval)(
-                                    struct lsqpack_enc_hist *,
-                                                        unsigned, unsigned);
-    int                       (*qpe_hist_seen_name)(struct lsqpack_enc_hist *,
-                                                        unsigned);
+    void                       *qpe_hist;
+    const struct lsqpack_enc_hist_if
+                               *qpe_hif;
 };
 
 struct lsqpack_arr
