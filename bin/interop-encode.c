@@ -17,6 +17,7 @@
 #include <inttypes.h>
 
 #include "lsqpack.h"
+#include XXH_HEADER_NAME
 
 static int s_verbose;
 
@@ -40,6 +41,7 @@ usage (const char *name)
 "   -a MODE     Header acknowledgement mode.  0 means headers are never\n"
 "                 acknowledged, non-zero means header blocks are acknowledged\n"
 "                 immediately.  Default value is 0.\n"
+"   -r FILE     Load Oracle from file.\n"
 "   -n          Process annotations.\n"
 "   -S          Server mode.\n"
 "   -D          Do not emit \"Duplicate\" instructions.\n"
@@ -50,6 +52,122 @@ usage (const char *name)
     , name, LSQPACK_DEF_MAX_RISKED_STREAMS, LSQPACK_DEF_DYN_TABLE_SIZE);
 }
 
+
+static unsigned s_oracle[0x1000];
+static unsigned s_ora_nelem;
+
+static int
+load_oracle (const char *filename)
+{
+    FILE *file;
+    char *line, *val;
+    unsigned lineno;
+    unsigned name_len, value_len, nameval_hash;
+    XXH32_state_t hash_state;
+    char line_buf[0x1000];
+
+    file = fopen(filename, "r");
+    if (!file)
+        return -1;
+
+    lineno = 0;
+    while ((line = fgets(line_buf, sizeof(line_buf), file)))
+    {
+        ++lineno;
+        if (s_ora_nelem >= sizeof(s_oracle) / sizeof(s_oracle[0]) - 1)
+        {
+            fprintf(stderr, "oracle out of room\n");
+            return -1;
+        }
+        val = strchr(line, '\n');
+        if (val)
+            *val = '\0';
+        val = strchr(line, '\t');
+        if (!val)
+        {
+            fprintf(stderr, "No tab on %s:%u\n", filename, lineno);
+            return -1;
+        }
+        name_len = val - line;
+        ++val;
+        value_len = strlen(val);
+
+        XXH32_reset(&hash_state, 0);
+        XXH32_update(&hash_state, &name_len, sizeof(name_len));
+        XXH32_update(&hash_state, line, name_len);
+        XXH32_update(&hash_state, &value_len, sizeof(value_len));
+        XXH32_update(&hash_state, val, value_len);
+        nameval_hash = XXH32_digest(&hash_state);
+        s_oracle[ s_ora_nelem++ ] = nameval_hash;
+    }
+
+    fclose(file);
+}
+
+
+static void *
+ora_hist_new (unsigned nelem)
+{
+    return (void *) 1;
+}
+
+
+static void
+ora_hist_destroy (void *histp)
+{
+}
+
+
+static void
+ora_hist_add (void *histp, unsigned name_hash, unsigned nameval_hash)
+{
+}
+
+
+static void
+ora_hist_grow (void *histp)
+{
+}
+
+
+static int
+ora_hist_seen_nameval (void *histp, unsigned name_hash,
+                                                    unsigned nameval_hash)
+{
+    unsigned *p;
+
+    s_oracle[ s_ora_nelem ] = nameval_hash;
+    for (p = s_oracle; *p != nameval_hash; ++p)
+        ;
+
+    return p != &s_oracle[ s_ora_nelem ];
+}
+
+
+static unsigned
+ora_hist_size (void *histp)
+{
+    return 0;
+}
+
+
+static int
+ora_hist_seen_name (void *histp, unsigned name_hash)
+{
+    return 0;
+}
+
+
+static const struct lsqpack_enc_hist_if oracle_hif =
+{
+    .hist_new           = ora_hist_new,
+    .hist_grow          = ora_hist_grow,
+    .hist_size          = ora_hist_size,
+    .hist_add           = ora_hist_add,
+    .hist_seen_nameval  = ora_hist_seen_nameval,
+    .hist_seen_name     = ora_hist_seen_name,
+    .hist_destroy       = ora_hist_destroy,
+};
 
 /* XXX For brevity, we assume that write(2) is successful. */
 static void
@@ -146,7 +264,7 @@ main (int argc, char **argv)
     char line_buf[0x1000];
     unsigned char enc_buf[0x1000], hea_buf[0x1000], pref_buf[0x20];
 
-    while (-1 != (opt = getopt(argc, argv, "ADSa:i:no:s:t:hv")))
+    while (-1 != (opt = getopt(argc, argv, "ADSa:i:no:r:s:t:hv")))
     {
         switch (opt)
         {
@@ -158,6 +276,11 @@ main (int argc, char **argv)
             break;
         case 'A':
             hif = &lsqpack_enc_hist_aggr;
+            break;
+        case 'r':
+            if (0 != load_oracle(optarg))
+                exit(EXIT_FAILURE);
+            hif = &oracle_hif;
             break;
         case 'n':
             ++process_annotations;
