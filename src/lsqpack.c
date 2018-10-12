@@ -225,8 +225,12 @@ struct lsqpack_header_info
     lsqpack_abs_id_t                    qhi_min_id;
     lsqpack_abs_id_t                    qhi_max_id;
     lsqpack_abs_id_t                    qhi_ins_id;
+    /* TODO FIXME qhi_at_risk is never set */
     signed char                         qhi_at_risk;
 };
+
+/* Absolute index starts with 1.  0 indicates that the value is not set */
+#define HINFO_IDS_SET(hinfo) ((hinfo)->qhi_max_id != 0)
 
 /* Header info structures are kept in a list of arrays, which is faster than
  * searching through a linked list whose elements may be all over the place
@@ -1371,7 +1375,7 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
     if (!(enc->qpe_flags & LSQPACK_ENC_HEADER))
         return -1;
 
-    if (enc->qpe_cur_header.hinfo && enc->qpe_cur_header.hinfo->qhi_max_id)
+    if (enc->qpe_cur_header.hinfo && HINFO_IDS_SET(enc->qpe_cur_header.hinfo))
     {
         end = buf + sz;
 
@@ -1561,6 +1565,25 @@ qenc_duplicable_entry (const struct lsqpack_enc *enc,
     fraction = (float) off / (float) enc->qpe_max_capacity;
     return fraction < 0.2f
         && qenc_has_or_can_evict_at_least(enc, ETE_SIZE(entry));
+}
+
+
+static void
+qenc_maybe_update_hinfo_min_max (struct lsqpack_header_info *hinfo,
+                                                    lsqpack_abs_id_t dyn_id)
+{
+    if (HINFO_IDS_SET(hinfo))
+    {
+        if (dyn_id > hinfo->qhi_max_id)
+            hinfo->qhi_max_id = dyn_id;
+        else if (dyn_id < hinfo->qhi_min_id)
+            hinfo->qhi_min_id = dyn_id;
+    }
+    else
+    {
+        hinfo->qhi_max_id = dyn_id;
+        hinfo->qhi_min_id = dyn_id;
+    }
 }
 
 
@@ -2001,12 +2024,11 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         if (prog.ep_flags & EPF_REF_NEW)
         {
             ++new_entry->ete_n_reffd;
-            assert(new_entry->ete_id > enc->qpe_cur_header.hinfo->qhi_max_id);
-            enc->qpe_cur_header.hinfo->qhi_max_id = new_entry->ete_id;
             ++enc->qpe_cur_header.n_risked;
-            if (enc->qpe_cur_header.hinfo->qhi_min_id == 0
-                    || enc->qpe_cur_header.hinfo->qhi_min_id > new_entry->ete_id)
-                enc->qpe_cur_header.hinfo->qhi_min_id = new_entry->ete_id;
+            if (HINFO_IDS_SET(enc->qpe_cur_header.hinfo))
+                assert(new_entry->ete_id > enc->qpe_cur_header.hinfo->qhi_max_id);
+            qenc_maybe_update_hinfo_min_max(enc->qpe_cur_header.hinfo,
+                                                            new_entry->ete_id);
         }
         enc->qpe_cur_header.hinfo->qhi_ins_id = new_entry->ete_id;
         break;
@@ -2019,12 +2041,8 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     {
         ++entry->ete_n_reffd;
         enc->qpe_cur_header.n_risked += enc->qpe_max_acked_id < entry->ete_id;
-        if (enc->qpe_cur_header.hinfo->qhi_min_id == 0
-                || enc->qpe_cur_header.hinfo->qhi_min_id > entry->ete_id)
-            enc->qpe_cur_header.hinfo->qhi_min_id = entry->ete_id;
-        if (enc->qpe_cur_header.hinfo->qhi_max_id == 0
-                || enc->qpe_cur_header.hinfo->qhi_max_id < entry->ete_id)
-            enc->qpe_cur_header.hinfo->qhi_max_id = entry->ete_id;
+        qenc_maybe_update_hinfo_min_max(enc->qpe_cur_header.hinfo,
+                                                            entry->ete_id);
     }
 
     enc->qpe_bytes_in += name_len + value_len;
