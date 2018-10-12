@@ -1144,7 +1144,7 @@ lsqpack_enc_push_entry (struct lsqpack_enc *enc, const char *name,
     if (!entry)
         return NULL;
 
-    XXH32_reset(&hash_state, 0);
+    XXH32_reset(&hash_state, (uintptr_t) enc);
     XXH32_update(&hash_state, &name_len, sizeof(name_len));
     XXH32_update(&hash_state, name, name_len);
     name_hash = XXH32_digest(&hash_state);
@@ -1481,7 +1481,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         || enc->qpe_cur_header.others_at_risk
         || enc->qpe_cur_streams_at_risk < enc->qpe_max_risked_streams;
 
-    XXH32_reset(&hash_state, 0);
+    XXH32_reset(&hash_state, (uintptr_t) enc);
     XXH32_update(&hash_state, &name_len, sizeof(name_len));
     XXH32_update(&hash_state, name, name_len);
     name_hash = XXH32_digest(&hash_state);
