@@ -2103,6 +2103,11 @@ enc_proc_table_synch (struct lsqpack_enc *enc, uint64_t ins_count)
 {
     lsqpack_abs_id_t max_acked;
 
+    if (ins_count == 0)
+    {
+        ELOG("TSS=0 is an error\n");
+        return -1;
+    }
     max_acked = ins_count + enc->qpe_last_tss;
     if (max_acked > enc->qpe_ins_count)
     {
