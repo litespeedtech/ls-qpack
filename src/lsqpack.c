@@ -474,8 +474,11 @@ lsqpack_enc_cleanup (struct lsqpack_enc *enc)
     }
 
     free(enc->qpe_buckets);
-    free(enc->qpe_hist->ehi_els);
-    free(enc->qpe_hist);
+    if (enc->qpe_hist)
+    {
+        free(enc->qpe_hist->ehi_els);
+        free(enc->qpe_hist);
+    }
 }
 
 
