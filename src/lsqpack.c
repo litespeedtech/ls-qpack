@@ -40,7 +40,122 @@ SOFTWARE.
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
-#define QPACK_STATIC_TABLE_SIZE   61
+struct static_table_entry
+{
+    const char       *name;
+    const char       *val;
+    unsigned          name_len;
+    unsigned          val_len;
+};
+
+/* [draft-ietf-quic-qpack-03] Appendix A */
+static const struct static_table_entry static_table[] =
+{
+    {":authority", "", 10, 0,},
+    {":path", "/", 5, 1,},
+    {"age", "0", 3, 1,},
+    {"content-disposition", "", 19, 0,},
+    {"content-length", "0", 14, 1,},
+    {"cookie", "", 6, 0,},
+    {"date", "", 4, 0,},
+    {"etag", "", 4, 0,},
+    {"if-modified-since", "", 17, 0,},
+    {"if-none-match", "", 13, 0,},
+    {"last-modified", "", 13, 0,},
+    {"link", "", 4, 0,},
+    {"location", "", 8, 0,},
+    {"referer", "", 7, 0,},
+    {"set-cookie", "", 10, 0,},
+    {":method", "CONNECT", 7, 7,},
+    {":method", "DELETE", 7, 6,},
+    {":method", "GET", 7, 3,},
+    {":method", "HEAD", 7, 4,},
+    {":method", "OPTIONS", 7, 7,},
+    {":method", "POST", 7, 4,},
+    {":method", "PUT", 7, 3,},
+    {":scheme", "http", 7, 4,},
+    {":scheme", "https", 7, 5,},
+    {":status", "103", 7, 3,},
+    {":status", "200", 7, 3,},
+    {":status", "304", 7, 3,},
+    {":status", "404", 7, 3,},
+    {":status", "503", 7, 3,},
+    {"accept", "*/*", 6, 3,},
+    {"accept", "application/dns-message", 6, 23,},
+    {"accept-encoding", "gzip, deflate, br", 15, 17,},
+    {"accept-ranges", "bytes", 13, 5,},
+    {"access-control-allow-headers", "cache-control", 28, 13,},
+    {"access-control-allow-headers", "content-type", 28, 12,},
+    {"access-control-allow-origin", "*", 27, 1,},
+    {"cache-control", "max-age=0", 13, 9,},
+    {"cache-control", "max-age=2592000", 13, 15,},
+    {"cache-control", "max-age=604800", 13, 14,},
+    {"cache-control", "no-cache", 13, 8,},
+    {"cache-control", "no-store", 13, 8,},
+    {"cache-control", "public, max-age=31536000", 13, 24,},
+    {"content-encoding", "br", 16, 2,},
+    {"content-encoding", "gzip", 16, 4,},
+    {"content-type", "application/dns-message", 12, 23,},
+    {"content-type", "application/javascript", 12, 22,},
+    {"content-type", "application/json", 12, 16,},
+    {"content-type", "application/x-www-form-urlencoded", 12, 33,},
+    {"content-type", "image/gif", 12, 9,},
+    {"content-type", "image/jpeg", 12, 10,},
+    {"content-type", "image/png", 12, 9,},
+    {"content-type", "text/css", 12, 8,},
+    {"content-type", "text/html; charset=utf-8", 12, 24,},
+    {"content-type", "text/plain", 12, 10,},
+    {"content-type", "text/plain;charset=utf-8", 12, 24,},
+    {"range", "bytes=0-", 5, 8,},
+    {"strict-transport-security", "max-age=31536000", 25, 16,},
+    {"strict-transport-security", "max-age=31536000; includesubdomains",
+                                                                25, 35,},
+    {"strict-transport-security",
+                "max-age=31536000; includesubdomains; preload", 25, 44,},
+    {"vary", "accept-encoding", 4, 15,},
+    {"vary", "origin", 4, 6,},
+    {"x-content-type-options", "nosniff", 22, 7,},
+    {"x-xss-protection", "1; mode=block", 16, 13,},
+    {":status", "100", 7, 3,},
+    {":status", "204", 7, 3,},
+    {":status", "206", 7, 3,},
+    {":status", "302", 7, 3,},
+    {":status", "400", 7, 3,},
+    {":status", "403", 7, 3,},
+    {":status", "421", 7, 3,},
+    {":status", "425", 7, 3,},
+    {":status", "500", 7, 3,},
+    {"accept-language", "", 15, 0,},
+    {"access-control-allow-credentials", "FALSE", 32, 5,},
+    {"access-control-allow-credentials", "TRUE", 32, 4,},
+    {"access-control-allow-headers", "*", 28, 1,},
+    {"access-control-allow-methods", "get", 28, 3,},
+    {"access-control-allow-methods", "get, post, options", 28, 18,},
+    {"access-control-allow-methods", "options", 28, 7,},
+    {"access-control-expose-headers", "content-length", 29, 14,},
+    {"access-control-request-headers", "content-type", 30, 12,},
+    {"access-control-request-method", "get", 29, 3,},
+    {"access-control-request-method", "post", 29, 4,},
+    {"alt-svc", "clear", 7, 5,},
+    {"authorization", "", 13, 0,},
+    {"content-security-policy",
+            "script-src 'none'; object-src 'none'; base-uri 'none'", 23, 53,},
+    {"early-data", "1", 10, 1,},
+    {"expect-ct", "", 9, 0,},
+    {"forwarded", "", 9, 0,},
+    {"if-range", "", 8, 0,},
+    {"origin", "", 6, 0,},
+    {"purpose", "prefetch", 7, 8,},
+    {"server", "", 6, 0,},
+    {"timing-allow-origin", "*", 19, 1,},
+    {"upgrade-insecure-requests", "1", 25, 1,},
+    {"user-agent", "", 10, 0,},
+    {"x-forwarded-for", "", 15, 0,},
+    {"x-frame-options", "deny", 15, 4,},
+    {"x-frame-options", "sameorigin", 15, 10,},
+};
+
+#define QPACK_STATIC_TABLE_SIZE (sizeof(static_table) / sizeof(static_table[0]))
 
 /* RFC 7541, Section 4.1:
  *
@@ -482,48 +597,37 @@ lsqpack_enc_cleanup (struct lsqpack_enc *enc)
 }
 
 
-struct static_table_entry
-{
-    const char       *name;
-    const char       *val;
-    unsigned          name_len;
-    unsigned          val_len;
-};
-
-static const struct static_table_entry static_table[QPACK_STATIC_TABLE_SIZE];
-
-
 static int
-hash_hpack_full (const char *name, int name_len, const char *val, int val_len)
+hash_qpack_full (const char *name, int name_len, const char *val, int val_len)
 {
     static const unsigned char asso_values[] =
     {
-        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
-        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
-        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
-        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
-        36, 36, 36, 36, 36, 36, 36, 36, 10, 36,
-         5,  4,  0, 15,  4, 36, 36, 36, 36, 36,
-        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
-        36, 10, 36, 36, 36, 36, 36, 36, 36, 36,
-         5, 36, 36,  5, 10, 36, 36, 36, 36, 36,
-        36, 36, 36, 36, 36, 36, 36, 36, 36,  0,
-        36,  0, 36, 36,  0, 36, 36, 36, 36, 36,
-         0, 36, 36, 36, 36, 36,  0, 36, 36, 36,
-        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
-        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
-        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
-        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
-        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
-        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
-        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
-        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
-        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
-        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
-        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
-        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
-        36, 36, 36, 36, 36, 36, 36, 36, 36, 36,
-        36, 36, 36, 36, 36, 36
+        87, 87, 87, 87, 87, 87, 87, 87, 87, 87,
+        87, 87, 87, 87, 87, 87, 87, 87, 87, 87,
+        87, 87, 87, 87, 87, 87, 87, 87, 87, 87,
+        87, 87, 87, 87, 87, 87, 87, 87, 87, 7,
+        87, 87, 34, 87, 87, 72, 87, 29, 0, 48,
+        19, 42, 3, 6, 54, 1, 0, 87, 87, 39,
+        87, 87, 87, 87, 87, 87, 87, 87, 35, 32,
+        37, 34, 87, 87, 39, 35, 87, 87, 87, 87,
+        87, 87, 34, 29, 29, 87, 87, 87, 87, 87,
+        87, 87, 87, 87, 87, 87, 87, 3, 87, 2,
+        4, 0, 0, 6, 8, 24, 51, 14, 3, 35,
+        15, 87, 3, 0, 0, 0, 0, 2, 87, 0,
+        87, 12, 4, 87, 87, 87, 87, 87, 87, 87,
+        87, 87, 87, 87, 87, 87, 87, 87, 87, 87,
+        87, 87, 87, 87, 87, 87, 87, 87, 87, 87,
+        87, 87, 87, 87, 87, 87, 87, 87, 87, 87,
+        87, 87, 87, 87, 87, 87, 87, 87, 87, 87,
+        87, 87, 87, 87, 87, 87, 87, 87, 87, 87,
+        87, 87, 87, 87, 87, 87, 87, 87, 87, 87,
+        87, 87, 87, 87, 87, 87, 87, 87, 87, 87,
+        87, 87, 87, 87, 87, 87, 87, 87, 87, 87,
+        87, 87, 87, 87, 87, 87, 87, 87, 87, 87,
+        87, 87, 87, 87, 87, 87, 87, 87, 87, 87,
+        87, 87, 87, 87, 87, 87, 87, 87, 87, 87,
+        87, 87, 87, 87, 87, 87, 87, 87, 87, 87,
+        87, 87, 87, 87, 87, 87, 87, 87, 87
     };
 
     unsigned hval;
@@ -534,25 +638,40 @@ hash_hpack_full (const char *name, int name_len, const char *val, int val_len)
     switch (hval)
     {
     default:
-        if (name_len > 9)
-            c = name[9];
+        if (name_len > 17)
+            c = name[17];
         else
-            c = val[9 - name_len];
-        hval += asso_values[(unsigned char)c];
-    /*FALLTHROUGH*/
+            c = val[17 - name_len];
+        hval += asso_values[(unsigned char) c];
+     /*FALLTHROUGH*/ case 17:
+    case 16:
+    case 15:
+    case 14:
+    case 13:
+    case 12:
+    case 11:
+    case 10:
     case 9:
     case 8:
         if (name_len > 7)
             c = name[7];
         else
             c = val[7 - name_len];
-        hval += asso_values[(unsigned char)c];
-    /*FALLTHROUGH*/
-    case 7:
+        hval += asso_values[(unsigned char) c + 3];
+     /*FALLTHROUGH*/ case 7:
     case 6:
+    case 5:
+    case 4:
         break;
     }
-    return hval;
+
+    if (val_len)
+        c = val[ val_len - 1 ];
+    else
+        /* Caller checks MIN_WORD_LENGTH, so we know name_len > 0 */
+        c = name[ name_len - 1 ];
+
+    return hval + asso_values[(unsigned char) c];
 }
 
 
@@ -562,24 +681,70 @@ find_in_static_full (const char *name, unsigned name_len, const char *val,
                                                             unsigned val_len)
 {
     enum {
-        TOTAL_KEYWORDS = 14,
-        MIN_WORD_LENGTH = 6,
-        MAX_WORD_LENGTH = 28,
-        MIN_HASH_VALUE = 6,
-        MAX_HASH_VALUE = 35
+        TOTAL_KEYWORDS = 78,
+        MIN_WORD_LENGTH = 4,
+        MAX_WORD_LENGTH = 76,
+        MIN_HASH_VALUE = 4,
+        MAX_HASH_VALUE = 86
     };
 
     static const struct { const char *name; unsigned name_len; int id; }
     wordlist[] = {
-        {"",0,0},{"",0,0},{"",0,0},{"",0,0},{"",0,0},{"",0,0},
-        {":path/",5,4},{"",0,0},{"",0,0},{"",0,0},{":status404",7,13},
-        {":schemehttp",7,6},{":schemehttps",7,7},{"",0,0},
-        {":status304",7,11},{":status204",7,9},{":path/index.html",5,5},
-        {"",0,0},{"",0,0},{":status206",7,10},{":status400",7,12},
-        {":methodPOST",7,3},{"",0,0},{"",0,0},{"",0,0},{":status200",7,8},
-        {"",0,0},{"",0,0},{"accept-encodinggzip, deflate",15,16},
-        {"",0,0},{":methodGET",7,2},{"",0,0},{"",0,0},{"",0,0},{"",0,0},
-        {":status500",7,14}
+        {"", 0, 0}, {"", 0, 0}, {"", 0, 0}, {"", 0, 0}, {"age0", 3, 2},
+        {"", 0, 0}, {"", 0, 0}, {"", 0, 0}, {"", 0, 0}, {"", 0, 0},
+        {":status500", 7, 71}, {":status400", 7, 67}, {"alt-svcclear", 7, 83},
+        {":status100", 7, 63}, {":status404", 7, 27},
+        {"content-length0", 14, 4}, {":status200", 7, 25},
+        {":status425", 7, 70}, {"content-encodingbr", 16, 42},
+        {":status204", 7, 64}, {"accept-rangesbytes", 13, 32},
+        {"cache-controlno-store", 13, 40}, {"content-typetext/css", 12, 51},
+        {"purposeprefetch", 7, 91}, {"cache-controlno-cache", 13, 39},
+        {"cache-controlmax-age=0", 13, 36}, {":schemehttps", 7, 23},
+        {"content-encodinggzip", 16, 43}, {":schemehttp", 7, 22},
+        {"x-content-type-optionsnosniff", 22, 61},
+        {"cache-controlmax-age=604800", 13, 38},
+        {"cache-controlmax-age=2592000", 13, 37},
+        {"access-control-request-methodget", 29, 81},
+        {"access-control-request-methodpost", 29, 82},
+        {"access-control-allow-methodsget", 28, 76}, {":path/", 5, 1},
+        {"content-typeapplication/javascript", 12, 45},
+        {"content-typeapplication/dns-message", 12, 44},
+        {"access-control-allow-methodsoptions", 28, 78},
+        {"content-typetext/plain;charset=utf-8", 12, 54},
+        {"content-typetext/plain", 12, 53},
+        {"strict-transport-securitymax-age=31536000", 25, 56},
+        {"access-control-request-headerscontent-type", 30, 80},
+        {"access-control-allow-headerscontent-type", 28, 34},
+        {"content-typetext/html; charset=utf-8", 12, 52},
+        {"content-typeapplication/json", 12, 46},
+        {"x-frame-optionsdeny", 15, 97},
+        {"access-control-allow-headerscache-control", 28, 33},
+        {"varyaccept-encoding", 4, 59},
+        {"access-control-allow-methodsget, post, options", 28, 77},
+        {"content-typeimage/gif", 12, 48},
+        {"content-typeapplication/x-www-form-urlencoded", 12, 47},
+        {":status503", 7, 28}, {":status403", 7, 68},
+        {"access-control-expose-headerscontent-length", 29, 79},
+        {":status103", 7, 24}, {"content-typeimage/png", 12, 50},
+        {"content-typeimage/jpeg", 12, 49},
+        {"acceptapplication/dns-message", 6, 30}, {":status421", 7, 69},
+        {"strict-transport-securitymax-age=31536000; includesubdomains", 25, 57},
+        {"cache-controlpublic, max-age=31536000", 13, 41}, {"accept*/*", 6, 29},
+        {"early-data1", 10, 86}, {"accept-encodinggzip, deflate, br", 15, 31},
+        {"access-control-allow-origin*", 27, 35},
+        {"access-control-allow-headers*", 28, 75},
+        {":status304", 7, 26}, {":methodPUT", 7, 21}, {":methodPOST", 7, 20},
+        {":status206", 7, 65}, {"access-control-allow-credentialsTRUE", 32, 74},
+        {"access-control-allow-credentialsFALSE", 32, 73},
+        {"strict-transport-securitymax-age=31536000; includesubdomains; preload", 25, 58},
+        {"upgrade-insecure-requests1", 25, 94},
+        {"x-frame-optionssameorigin", 15, 98}, {"varyorigin", 4, 60},
+        {":methodOPTIONS", 7, 19}, {":methodGET", 7, 17},
+        {":methodDELETE", 7, 16}, {":methodCONNECT", 7, 15},
+        {":methodHEAD", 7, 18}, {"timing-allow-origin*", 19, 93},
+        {":status302", 7, 66}, {"x-xss-protection1; mode=block", 16, 62},
+        {"rangebytes=0-", 5, 55},
+        {"content-security-policyscript-src 'none'; object-src 'none'; base-uri 'none'", 23, 85}
     };
 
     const char *s;
@@ -588,7 +753,7 @@ find_in_static_full (const char *name, unsigned name_len, const char *val,
     len = name_len + val_len;
     if (len <= MAX_WORD_LENGTH && len >= MIN_WORD_LENGTH)
     {
-        key = hash_hpack_full(name, name_len, val, val_len);
+        key = hash_qpack_full(name, name_len, val, val_len);
         if (key <= MAX_HASH_VALUE && key >= 0)
         {
             s = wordlist[key].name;
@@ -607,83 +772,113 @@ find_in_static_full (const char *name, unsigned name_len, const char *val,
 
 
 static int
-hash_hpack_header (const char *str, unsigned len)
+hash_qpack_header (const char *str, unsigned len)
 {
     static const unsigned char asso_values[] =
     {
-        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89, 89, 89, 30, 89,
-        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89, 89, 15, 89,  0,
-        50,  0, 45, 10, 15,  0, 89, 10, 25, 10,
-        30, 89, 25, 89,  0, 25, 15,  0, 15, 40,
-        89,  5, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
-        89, 89, 89, 89, 89, 89
+        65, 65, 65, 65, 65, 65, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 65, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 65, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 65, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 26, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 65, 65, 65, 18, 65,
+        65, 65, 65, 65, 65, 65, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 65, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 65, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 65, 65, 2, 65, 2,
+        20, 2, 27, 36, 18, 33, 65, 27, 18, 17,
+        9, 24, 0, 65, 11, 0, 12, 28, 8, 65,
+        6, 10, 65, 65, 65, 65, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 65, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 65, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 65, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 65, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 65, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 65, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 65, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 65, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 65, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 65, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 65, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 65, 65, 65, 65, 65,
+        65, 65, 65, 65, 65, 65
     };
-    return len
-         + asso_values[(unsigned char)str[len - 1]]
-         + asso_values[(unsigned char)str[0]];
+
+    int hval = len;
+
+    switch (hval)
+    {
+    default:
+        hval += asso_values[(unsigned char) str[21]];
+     /*FALLTHROUGH*/ case 21:
+    case 20:
+    case 19:
+    case 18:
+    case 17:
+    case 16:
+    case 15:
+    case 14:
+    case 13:
+    case 12:
+    case 11:
+    case 10:
+    case 9:
+    case 8:
+    case 7:
+    case 6:
+    case 5:
+    case 4:
+    case 3:
+    case 2:
+    case 1:
+        hval += asso_values[(unsigned char) str[0]];
+        break;
+    }
+    return hval + asso_values[(unsigned char) str[len - 1]];
 }
 
 
 static int
 find_in_static_headers (const char *str, unsigned len)
 {
-    enum {
+    enum
+    {
         TOTAL_KEYWORDS = 52,
         MIN_WORD_LENGTH = 3,
-        MAX_WORD_LENGTH = 27,
-        MIN_HASH_VALUE = 5,
-        MAX_HASH_VALUE = 88
+        MAX_WORD_LENGTH = 32,
+        MIN_HASH_VALUE = 7,
+        MAX_HASH_VALUE = 64
     };
 
-    static const struct { const char *key; unsigned len; int id; }
-    wordlist[] =
-    {
-        {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0}, {"range",5,50},
-        {"cookie",6,32}, {"referer",7,51}, {"if-range",8,42}, {"",0,0},
-        {"",0,0}, {"retry-after",11,53}, {"content-type",12,31},
-        {"content-range",13,30}, {"etag",4,34}, {"",0,0},
-        {"content-language",16,27}, {"if-modified-since",17,40}, {"age",3,21},
-        {"if-unmodified-since",19,43}, {"",0,0}, {"expect",6,35},
-        {"refresh",7,52}, {"if-match",8,39}, {"vary",4,59},
-        {"user-agent",10,58}, {"content-encoding",16,26}, {"",0,0},
-        {"if-none-match",13,41}, {"content-length",14,28},
-        {"accept-language",15,17}, {"server",6,54}, {"expires",7,36},
-        {"via",3,60}, {"host",4,38}, {"set-cookie",10,55}, {"accept",6,19},
-        {":scheme",7,6}, {"cache-control",13,24}, {"link",4,45},
-        {"accept-encoding",15,16}, {"",0,0}, {"transfer-encoding",17,57},
-        {"proxy-authenticate",18,48}, {"accept-charset",14,15},
-        {":authority",10,1}, {"content-location",16,29}, {"max-forwards",12,47},
-        {"",0,0}, {"content-disposition",19,25}, {":path",5,4}, {"",0,0},
-        {"",0,0}, {"accept-ranges",13,18}, {"date",4,33},
-        {"strict-transport-security",25,56}, {"www-authenticate",16,61},
-        {"",0,0}, {"authorization",13,23}, {"from",4,37}, {"allow",5,22},
-        {"",0,0}, {":status",7,8}, {"location",8,46}, {"",0,0}, {"",0,0},
-        {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0},
-        {"access-control-allow-origin",27,20}, {"",0,0},
-        {"proxy-authorization",19,49}, {"",0,0}, {"",0,0}, {"",0,0},
-        {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0},
-        {"",0,0}, {"",0,0}, {"",0,0}, {":method",7,2},
-        {"last-modified",13,44}
+    static const struct { const char *name; unsigned len; int id; }
+    wordlist[] = {
+        {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0},
+        {"age",3,2}, {"",0,0}, {"purpose",7,91}, {"cookie",6,5},
+        {"alt-svc",7,83}, {"set-cookie",10,14}, {"",0,0},
+        {"early-data",10,86}, {"accept-ranges",13,32},
+        {"content-type",12,44}, {"server",6,92}, {"range",5,55},
+        {"accept-language",15,72}, {"accept",6,29},
+        {"x-frame-options",15,97}, {"vary",4,59}, {"expect-ct",9,87},
+        {"authorization",13,84}, {":status",7,24}, {"date",4,6},
+        {":scheme",7,22}, {"x-content-type-options",22,61},
+        {"referer",7,13}, {"content-disposition",19,3},
+        {"x-xss-protection",16,62}, {"x-forwarded-for",15,96},
+        {"cache-control",13,36}, {"content-length",14,4},
+        {"location",8,12}, {"access-control-allow-credentials",32,73},
+        {"content-security-policy",23,85}, {":authority",10,0},
+        {"origin",6,90}, {"timing-allow-origin",19,93}, {":path",5,1},
+        {"etag",4,7}, {"if-range",8,89},
+        {"access-control-request-headers",30,80}, {":method",7,15},
+        {"strict-transport-security",25,56},
+        {"access-control-allow-methods",28,76},
+        {"access-control-allow-headers",28,33},
+        {"link",4,11}, {"user-agent",10,95}, {"last-modified",13,10},
+        {"if-modified-since",17,8}, {"accept-encoding",15,31},
+        {"content-encoding",16,42}, {"upgrade-insecure-requests",25,94},
+        {"forwarded",9,88}, {"access-control-expose-headers",29,79},
+        {"",0,0}, {"",0,0}, {"",0,0}, {"",0,0},
+        {"access-control-allow-origin",27,35},
+        {"access-control-request-method",29,81}, {"if-none-match",13,9}
     };
 
     const char *s;
@@ -691,16 +886,12 @@ find_in_static_headers (const char *str, unsigned len)
 
     if (len <= MAX_WORD_LENGTH && len >= MIN_WORD_LENGTH)
     {
-        key = hash_hpack_header(str, len);
+        key = hash_qpack_header(str, len);
         if (key <= MAX_HASH_VALUE && key >= 0)
         {
-            s = wordlist[key].key;
-            if (*str == *s
-                && len == wordlist[key].len
-                && 0 == memcmp(str + 1, s + 1, len - 1))
-            {
+            s = wordlist[key].name;
+            if (*str == *s && !strcmp(str + 1, s + 1))
                 return wordlist[key].id;
-            }
         }
     }
 
@@ -1407,7 +1598,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
 
     /* Look for a full match in the static table */
     static_id = find_in_static_full(name, name_len, value, value_len);
-    if (static_id > 0)
+    if (static_id >= 0)
     {
         id = static_id;
         prog = (struct encode_program) {
@@ -1516,7 +1707,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
 
     /* Look for name-only match in the static table */
     static_id = find_in_static_headers(name, name_len);
-    if (static_id > 0)
+    if (static_id >= 0)
     {
         id = static_id;
         if (index && (enough_room = qenc_has_or_can_evict_at_least(enc,
@@ -2615,13 +2806,12 @@ hset_add_static_entry (struct lsqpack_dec *dec,
 {
     struct header_internal *hint;
 
-    if (idx > 0 && idx <= QPACK_STATIC_TABLE_SIZE
-                                    && (hint = allocate_hint(read_ctx)))
+    if (idx < QPACK_STATIC_TABLE_SIZE && (hint = allocate_hint(read_ctx)))
     {
-        hint->hi_uhead.qh_name      = static_table[idx - 1].name;
-        hint->hi_uhead.qh_value     = static_table[idx - 1].val;
-        hint->hi_uhead.qh_name_len  = static_table[idx - 1].name_len;
-        hint->hi_uhead.qh_value_len = static_table[idx - 1].val_len;
+        hint->hi_uhead.qh_name      = static_table[ idx ].name;
+        hint->hi_uhead.qh_value     = static_table[ idx ].val;
+        hint->hi_uhead.qh_name_len  = static_table[ idx ].name_len;
+        hint->hi_uhead.qh_value_len = static_table[ idx ].val_len;
         hint->hi_uhead.qh_flags     = 0;
         return 0;
     }
@@ -2662,8 +2852,8 @@ hset_add_static_nameref_entry (struct header_block_read_ctx *read_ctx,
 
     if ((hint = allocate_hint(read_ctx)))
     {
-        hint->hi_uhead.qh_name      = static_table[ idx - 1 ].name;
-        hint->hi_uhead.qh_name_len  = static_table[ idx - 1 ].name_len;
+        hint->hi_uhead.qh_name      = static_table[ idx ].name;
+        hint->hi_uhead.qh_name_len  = static_table[ idx ].name_len;
         hint->hi_uhead.qh_value     = value;
         hint->hi_uhead.qh_value_len = val_len;
         if (is_never)
@@ -2959,7 +3149,7 @@ parse_header_data (struct lsqpack_dec *dec,
             {
                 if (LFINR.is_static)
                 {
-                    if (value > 0 && value <= QPACK_STATIC_TABLE_SIZE)
+                    if (value < QPACK_STATIC_TABLE_SIZE)
                         LFINR.name_ref.static_idx = value;
                     else
                         return RHS_ERROR;
@@ -3930,10 +4120,10 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             {
                 if (WINR.is_static)
                 {
-                    if (WINR.name_idx < 1
-                                || WINR.name_idx > QPACK_STATIC_TABLE_SIZE)
+                    if (WINR.name_idx < QPACK_STATIC_TABLE_SIZE)
+                        WINR.reffed_entry = NULL;
+                    else
                         return -1;
-                    WINR.reffed_entry = NULL;
                 }
                 else
                 {
@@ -3963,8 +4153,9 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             {
                 if (WINR.is_static)
                 {
-                    WINR.name_len = static_table[WINR.name_idx - 1].name_len;
-                    WINR.name = static_table[WINR.name_idx - 1].name;
+                    /* TODO: check bounds */
+                    WINR.name_len = static_table[WINR.name_idx].name_len;
+                    WINR.name = static_table[WINR.name_idx].name;
                 }
                 else
                 {
@@ -4388,73 +4579,6 @@ lsqpack_dec_destroy_header_set (struct lsqpack_header_set *set)
     free(set);
 }
 
-
-#define NAME_VAL(a, b) (a), (b), sizeof(a) - 1, sizeof(b) - 1,
-
-static const struct static_table_entry static_table[QPACK_STATIC_TABLE_SIZE] =
-{
-    { NAME_VAL(":authority",                    "") },
-    { NAME_VAL(":method",                       "GET") },
-    { NAME_VAL(":method",                       "POST") },
-    { NAME_VAL(":path",                         "/") },
-    { NAME_VAL(":path",                         "/index.html") },
-    { NAME_VAL(":scheme",                       "http") },
-    { NAME_VAL(":scheme",                       "https") },
-    { NAME_VAL(":status",                       "200") },
-    { NAME_VAL(":status",                       "204") },
-    { NAME_VAL(":status",                       "206") },
-    { NAME_VAL(":status",                       "304") },
-    { NAME_VAL(":status",                       "400") },
-    { NAME_VAL(":status",                       "404") },
-    { NAME_VAL(":status",                       "500") },
-    { NAME_VAL("accept-charset",                "") },
-    { NAME_VAL("accept-encoding",               "gzip, deflate") },
-    { NAME_VAL("accept-language",               "") },
-    { NAME_VAL("accept-ranges",                 "") },
-    { NAME_VAL("accept",                        "") },
-    { NAME_VAL("access-control-allow-origin",   "") },
-    { NAME_VAL("age",                           "") },
-    { NAME_VAL("allow",                         "") },
-    { NAME_VAL("authorization",                 "") },
-    { NAME_VAL("cache-control",                 "") },
-    { NAME_VAL("content-disposition",           "") },
-    { NAME_VAL("content-encoding",              "") },
-    { NAME_VAL("content-language",              "") },
-    { NAME_VAL("content-length",                "") },
-    { NAME_VAL("content-location",              "") },
-    { NAME_VAL("content-range",                 "") },
-    { NAME_VAL("content-type",                  "") },
-    { NAME_VAL("cookie",                        "") },
-    { NAME_VAL("date",                          "") },
-    { NAME_VAL("etag",                          "") },
-    { NAME_VAL("expect",                        "") },
-    { NAME_VAL("expires",                       "") },
-    { NAME_VAL("from",                          "") },
-    { NAME_VAL("host",                          "") },
-    { NAME_VAL("if-match",                      "") },
-    { NAME_VAL("if-modified-since",             "") },
-    { NAME_VAL("if-none-match",                 "") },
-    { NAME_VAL("if-range",                      "") },
-    { NAME_VAL("if-unmodified-since",           "") },
-    { NAME_VAL("last-modified",                 "") },
-    { NAME_VAL("link",                          "") },
-    { NAME_VAL("location",                      "") },
-    { NAME_VAL("max-forwards",                  "") },
-    { NAME_VAL("proxy-authenticate",            "") },
-    { NAME_VAL("proxy-authorization",           "") },
-    { NAME_VAL("range",                         "") },
-    { NAME_VAL("referer",                       "") },
-    { NAME_VAL("refresh",                       "") },
-    { NAME_VAL("retry-after",                   "") },
-    { NAME_VAL("server",                        "") },
-    { NAME_VAL("set-cookie",                    "") },
-    { NAME_VAL("strict-transport-security",     "") },
-    { NAME_VAL("transfer-encoding",             "") },
-    { NAME_VAL("user-agent",                    "") },
-    { NAME_VAL("vary",                          "") },
-    { NAME_VAL("via",                           "") },
-    { NAME_VAL("www-authenticate",              "") }
-};
 
 
 static const struct encode_el encode_table[257] =

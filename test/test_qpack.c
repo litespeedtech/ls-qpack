@@ -53,7 +53,7 @@ static const struct qpack_header_block_test
         .qhbt_prefix_buf    = "\x00\x00",
         .qhbt_header_sz     = 1,
         .qhbt_header_buf    = {
-            0x80 | 0x40 | 2,
+            0x80 | 0x40 | 17,
         },
     },
 
@@ -68,9 +68,9 @@ static const struct qpack_header_block_test
         .qhbt_enc_sz        = 0,
         .qhbt_prefix_sz     = 2,
         .qhbt_prefix_buf    = "\x00\x00",
-        .qhbt_header_sz     = 7,
+        .qhbt_header_sz     = 8,
         .qhbt_header_buf    = {
-            0x40 | 0x20 | 0x10 | 2,
+            0x40 | 0x20 | 0x10 | 0x0F, 0x00,
             0x80 /* Huffman */ | 5 /* length */,
             0xa4, 0xa9, 0x9c, 0xf2, 0x7f,
         },
@@ -86,15 +86,15 @@ static const struct qpack_header_block_test
         },
         .qhbt_enc_sz        = 7,
         .qhbt_enc_buf       = {
-            0x80 | 0x40 /* static */ | 2 /* name index */,
+            0x80 | 0x40 /* static */ | 15 /* name index */,
             0x80 /* Huffman */ | 5 /* length */,
             0xa4, 0xa9, 0x9c, 0xf2, 0x7f,
         },
         .qhbt_prefix_sz     = 2,
         .qhbt_prefix_buf    = "\x00\x00",
-        .qhbt_header_sz     = 7,
+        .qhbt_header_sz     = 8,
         .qhbt_header_buf    = {
-            0x40 | 0x10 /* Static */ | 2,
+            0x40 | 0x10 /* Static */ | 15, 0x00,
             0x80 /* Huffman */ | 5 /* length */,
             0xa4, 0xa9, 0x9c, 0xf2, 0x7f,
         },
@@ -110,7 +110,7 @@ static const struct qpack_header_block_test
         },
         .qhbt_enc_sz        = 7,
         .qhbt_enc_buf       = {
-            0x80 | 0x40 /* static */ | 2 /* name index */,
+            0x80 | 0x40 /* static */ | 15 /* name index */,
             0x80 /* Huffman */ | 5 /* length */,
             0xa4, 0xa9, 0x9c, 0xf2, 0x7f,
         },

@@ -43,7 +43,7 @@ static const struct test_read_encoder_stream tests[] =
 {
 
     {   __LINE__,
-        "\xc1\x8b\xf1\xe3\xc2\xf5\x15\x31\xa2\x45\xcf\x64\xdf",
+        "\xc0\x8b\xf1\xe3\xc2\xf5\x15\x31\xa2\x45\xcf\x64\xdf",
         13,
         1,
         {
@@ -52,7 +52,7 @@ static const struct test_read_encoder_stream tests[] =
     },
 
     {   __LINE__,
-        "\xc1\x8b\xf1\xe3\xc2\xf5\x15\x31\xa2\x45\xcf\x64\xdf\x00",
+        "\xc0\x8b\xf1\xe3\xc2\xf5\x15\x31\xa2\x45\xcf\x64\xdf\x00",
         14,
         2,
         {
@@ -62,7 +62,7 @@ static const struct test_read_encoder_stream tests[] =
     },
 
     {   __LINE__,
-        "\xc1\x8b\xf1\xe3\xc2\xf5\x15\x31\xa2\x45\xcf\x64\xdf\x00\x20",
+        "\xc0\x8b\xf1\xe3\xc2\xf5\x15\x31\xa2\x45\xcf\x64\xdf\x00\x20",
         15,
         0,
         {
@@ -70,7 +70,7 @@ static const struct test_read_encoder_stream tests[] =
     },
 
     {   __LINE__,
-        "\xc1\x15" "Respect my authorata!",
+        "\xc0\x15" "Respect my authorata!",
         2 + sizeof("Respect my authorata!") - 1,
         1,
         {
