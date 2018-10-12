@@ -75,7 +75,16 @@ enum lsqpack_enc_opts
 };
 
 int
-lsqpack_enc_init (struct lsqpack_enc *, unsigned dyn_table_size,
+lsqpack_enc_init (struct lsqpack_enc *,
+    /**
+     * As specified by the decoder.  This value is used to calculate
+     * MaxEntries.
+     */
+    unsigned max_table_size,
+    /**
+     * Actual dynamic table size to use.
+     */
+    unsigned dyn_table_size,
     unsigned max_risked_streams, enum lsqpack_enc_opts);
 
 #if LSQPACK_DEVEL_MODE
@@ -274,6 +283,7 @@ struct lsqpack_enc
 
     unsigned                    qpe_cur_capacity;
     unsigned                    qpe_max_capacity;
+    unsigned                    qpe_max_entries;
 
     /* The maximum risked streams is the SETTINGS_QPACK_BLOCKED_STREAMS
      * setting.  Note that streams must be differentiated from headers.

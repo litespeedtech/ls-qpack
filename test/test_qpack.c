@@ -211,7 +211,7 @@ run_header_test (const struct qpack_header_block_test *test)
     int s;
     enum lsqpack_enc_status enc_st;
 
-    s = lsqpack_enc_init(&enc, test->qhbt_table_size,
+    s = lsqpack_enc_init(&enc, test->qhbt_table_size, test->qhbt_table_size,
                     test->qhbt_max_risked_streams, LSQPACK_ENC_OPT_IX_AGGR);
     assert(s == 0);
 

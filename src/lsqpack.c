@@ -498,13 +498,16 @@ qenc_hist_seen_name_yes (struct lsqpack_enc_hist *hist, unsigned a)
 
 
 int
-lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
-    unsigned max_risked_streams, enum lsqpack_enc_opts enc_opts)
+lsqpack_enc_init (struct lsqpack_enc *enc, unsigned max_table_size,
+    unsigned dyn_table_size, unsigned max_risked_streams,
+    enum lsqpack_enc_opts enc_opts)
 {
     struct lsqpack_double_enc_head *buckets;
     struct lsqpack_enc_hist *hist;
     unsigned nbits = 2;
     unsigned i;
+
+    assert(dyn_table_size <= max_table_size);
 
     if (dyn_table_size > LSQPACK_MAX_DYN_TABLE_SIZE ||
         max_risked_streams > LSQPACK_MAX_MAX_RISKED_STREAMS)
@@ -543,6 +546,7 @@ lsqpack_enc_init (struct lsqpack_enc *enc, unsigned dyn_table_size,
     STAILQ_INIT(&enc->qpe_all_entries);
     STAILQ_INIT(&enc->qpe_hinfo_arrs);
     TAILQ_INIT(&enc->qpe_hinfos);
+    enc->qpe_max_entries  = max_table_size / DYNAMIC_ENTRY_OVERHEAD;
     enc->qpe_max_capacity = dyn_table_size;
     enc->qpe_max_risked_streams = max_risked_streams;
     enc->qpe_buckets      = buckets;
@@ -1369,7 +1373,7 @@ ssize_t
 lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
 {
     unsigned char *dst, *end;
-    lsqpack_abs_id_t diff;
+    lsqpack_abs_id_t diff, encoded_largest_ref;
     unsigned sign;
 
     if (!(enc->qpe_flags & LSQPACK_ENC_HEADER))
@@ -1380,7 +1384,11 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
         end = buf + sz;
 
         *buf = 0;
-        dst = lsqpack_enc_int(buf, end, enc->qpe_cur_header.hinfo->qhi_max_id, 8);
+        encoded_largest_ref = enc->qpe_cur_header.hinfo->qhi_max_id
+                                                % (2 * enc->qpe_max_entries) + 1;
+        ELOG("LargestRef for stream %"PRIu64" is encoded as %u\n",
+            enc->qpe_cur_header.hinfo->qhi_stream_id, encoded_largest_ref);
+        dst = lsqpack_enc_int(buf, end, encoded_largest_ref, 8);
         if (dst <= buf)
             return 0;
 
@@ -3683,6 +3691,50 @@ parse_header_data (struct lsqpack_dec *dec,
 }
 
 
+/*
+ * From [draft-ietf-quic-qpack-03] Section 5.5.1:
+ *
+ *    if LargestReference > 0:
+ *       LargestReference -= 1
+ *       CurrentWrapped = TableLargestAbsoluteIndex mod 2*MaxEntries
+ *
+ *       if CurrentWrapped >= LargestReference + MaxEntries:
+ *          # Largest Reference wrapped around 1 extra time
+ *          LargestReference += 2*MaxEntries
+ *       else if CurrentWrapped + MaxEntries < LargestReference
+ *          # Decoder wrapped around 1 extra time
+ *          CurrentWrapped += 2*MaxEntries
+ *
+ *       LargestReference +=
+ *          (TableLargestAbsoluteIndex - CurrentWrapped)
+ */
+static lsqpack_abs_id_t
+qdec_decode_LR (const struct lsqpack_dec *dec, lsqpack_abs_id_t largest_ref)
+{
+    lsqpack_abs_id_t cur_wrapped;
+    unsigned max_entries;
+
+    if (largest_ref > 0)
+    {
+        max_entries = dec->qpd_max_capacity / DYNAMIC_ENTRY_OVERHEAD;
+        --largest_ref;
+        cur_wrapped = dec->qpd_ins_count % (2 * max_entries);
+
+        if (cur_wrapped >= largest_ref + max_entries)
+            largest_ref += 2 * max_entries;
+        else if (cur_wrapped + max_entries < largest_ref)
+            cur_wrapped += 2 * max_entries;
+
+        largest_ref += dec->qpd_ins_count - cur_wrapped;
+    }
+    /*
+    fprintf(stderr, "decoded LargestReference as %u\n", largest_ref);
+    */
+
+    return largest_ref;
+}
+
+
 static enum read_header_status
 parse_header_prefix (struct lsqpack_dec *dec,
         struct header_block_read_ctx *read_ctx, const unsigned char *buf,
@@ -3711,10 +3763,10 @@ parse_header_prefix (struct lsqpack_dec *dec,
             if (r == 0)
             {
                 read_ctx->hbrc_flags |= HBRC_HAVE_LARGEST_REF;
-                read_ctx->hbrc_largest_ref = LR.value;
+                read_ctx->hbrc_largest_ref = qdec_decode_LR(dec, LR.value);
                 read_ctx->hbrc_parse_ctx_u.prefix.state
                                         = PREFIX_STATE_BEGIN_READING_BASE_IDX;
-                if (LR.value > dec->qpd_ins_count)
+                if (read_ctx->hbrc_largest_ref > dec->qpd_ins_count)
                     return RHS_BLOCKED;
                 else
                     break;
