@@ -898,8 +898,12 @@ find_in_static_headers (const char *str, unsigned len)
         if (key <= MAX_HASH_VALUE && key >= 0)
         {
             s = wordlist[key].name;
-            if (*str == *s && !strcmp(str + 1, s + 1))
+            if (*str == *s
+                    && len == wordlist[key].len
+                    && 0 == memcmp(str + 1, s + 1, len - 1))
+            {
                 return wordlist[key].id;
+            }
         }
     }
 
