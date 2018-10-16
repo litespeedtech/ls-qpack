@@ -371,10 +371,13 @@ static void
 qenc_hist_add (struct lsqpack_enc_hist *hist, unsigned name_hash,
                                                     unsigned nameval_hash)
 {
-    hist->ehi_els[ hist->ehi_idx ].he_pair.name_hash = name_hash;
-    hist->ehi_els[ hist->ehi_idx ].he_pair.nameval_hash = nameval_hash;
-    hist->ehi_idx = (hist->ehi_idx + 1) % hist->ehi_nels;
-    hist->ehi_wrapped |= hist->ehi_idx == 0;
+    if (hist->ehi_nels)
+    {
+        hist->ehi_els[ hist->ehi_idx ].he_pair.name_hash = name_hash;
+        hist->ehi_els[ hist->ehi_idx ].he_pair.nameval_hash = nameval_hash;
+        hist->ehi_idx = (hist->ehi_idx + 1) % hist->ehi_nels;
+        hist->ehi_wrapped |= hist->ehi_idx == 0;
+    }
 }
 
 
@@ -383,6 +386,9 @@ qenc_grow_history (struct lsqpack_enc_hist *hist)
 {
     union hist_el *els;
     unsigned nelem;
+
+    if (0 == hist->ehi_nels)
+        return;
 
     nelem = hist->ehi_nels + 4;
     els = malloc(sizeof(els[0]) * (nelem + 1));
