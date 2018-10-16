@@ -153,6 +153,12 @@ lsqpack_enc_decoder_in (struct lsqpack_enc *, const unsigned char *, size_t);
 float
 lsqpack_enc_ratio (const struct lsqpack_enc *);
 
+/**
+ * Return maximum size needed to encode Header Data Prefix
+ */
+size_t
+lsqpack_enc_header_data_prefix_size (const struct lsqpack_enc *);
+
 void
 lsqpack_enc_cleanup (struct lsqpack_enc *);
 

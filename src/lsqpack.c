@@ -1373,6 +1373,30 @@ lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
 }
 
 
+/*
+ * Header data is prefixed with two integers, "Largest Reference" and
+ * "Base Index".
+ *
+ *   0   1   2   3   4   5   6   7
+ * +---+---+---+---+---+---+---+---+
+ * |     Largest Reference (8+)    |
+ * +---+---------------------------+
+ * | S |   Delta Base Index (7+)   |
+ * +---+---------------------------+
+ * |      Compressed Headers     ...
+ * +-------------------------------+
+ */
+size_t
+lsqpack_enc_header_data_prefix_size (const struct lsqpack_enc *enc)
+{
+    unsigned largest_ref_len, delta_base_idx_len;
+
+    largest_ref_len = lsqpack_val2len(2 * enc->qpe_max_entries, 8);
+    delta_base_idx_len = lsqpack_val2len(2 * enc->qpe_max_entries, 7);
+    return largest_ref_len + delta_base_idx_len;
+}
+
+
 ssize_t
 lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
 {
