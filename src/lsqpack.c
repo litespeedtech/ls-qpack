@@ -2877,7 +2877,8 @@ hset_add_static_entry (struct lsqpack_dec *dec,
         hint->hi_uhead.qh_value     = static_table[ idx ].val;
         hint->hi_uhead.qh_name_len  = static_table[ idx ].name_len;
         hint->hi_uhead.qh_value_len = static_table[ idx ].val_len;
-        hint->hi_uhead.qh_flags     = 0;
+        hint->hi_uhead.qh_static_id = idx;
+        hint->hi_uhead.qh_flags     = QH_ID_SET;
         return 0;
     }
     else
@@ -2921,10 +2922,11 @@ hset_add_static_nameref_entry (struct header_block_read_ctx *read_ctx,
         hint->hi_uhead.qh_name_len  = static_table[ idx ].name_len;
         hint->hi_uhead.qh_value     = value;
         hint->hi_uhead.qh_value_len = val_len;
+        hint->hi_uhead.qh_static_id = idx;
         if (is_never)
-            hint->hi_uhead.qh_flags = QH_NEVER;
+            hint->hi_uhead.qh_flags = QH_NEVER|QH_ID_SET;
         else
-            hint->hi_uhead.qh_flags = 0;
+            hint->hi_uhead.qh_flags = QH_ID_SET;
         hint->hi_flags = HI_OWN_VALUE;
         return 0;
     }
@@ -2946,6 +2948,7 @@ hset_add_dynamic_nameref_entry (struct header_block_read_ctx *read_ctx,
         hint->hi_uhead.qh_name_len  = entry->dte_name_len;
         hint->hi_uhead.qh_value     = value;
         hint->hi_uhead.qh_value_len = val_len;
+        hint->hi_uhead.qh_static_id = 0;
         if (is_never)
             hint->hi_uhead.qh_flags = QH_NEVER;
         else
@@ -2971,6 +2974,7 @@ hset_add_literal_entry (struct header_block_read_ctx *read_ctx,
         hint->hi_uhead.qh_name_len  = name_len;
         hint->hi_uhead.qh_value     = nameandval + name_len;
         hint->hi_uhead.qh_value_len = val_len;
+        hint->hi_uhead.qh_static_id = 0;
         if (is_never)
             hint->hi_uhead.qh_flags = QH_NEVER;
         else

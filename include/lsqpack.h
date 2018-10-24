@@ -171,9 +171,12 @@ struct lsqpack_header
     const char         *qh_value;
     unsigned            qh_name_len;
     unsigned            qh_value_len;
+    unsigned            qh_static_id;
     enum {
         /** Must be encoded with a literal representation */
         QH_NEVER    = 1 << 0,
+        /** qh_static_id is set */
+        QH_ID_SET   = 1 << 1,
     }                   qh_flags;
 };
 
