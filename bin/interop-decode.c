@@ -118,6 +118,7 @@ header_block_done (void *buf_p, struct lsqpack_header_set *set)
     fprintf(s_out, "\n");
 
     lsqpack_dec_destroy_header_set(set);
+    TAILQ_REMOVE(&bufs, buf, next_buf);
     free(buf);
 }
 
