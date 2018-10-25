@@ -176,7 +176,7 @@ main (int argc, char **argv)
             else
             {
                 recipe = fopen(optarg, "r");
-                if (!s_out)
+                if (!recipe)
                 {
                     fprintf(stderr, "cannot open `%s' for reading: %s\n",
                                                 optarg, strerror(errno));
