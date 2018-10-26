@@ -51,7 +51,7 @@ struct lsqpack_enc;
 struct lsqpack_dec;
 
 typedef ssize_t (*lsqpack_stream_read_f)(void *stream, const unsigned char **buf, size_t sz);
-typedef ssize_t (*lsqpack_stream_write_f)(void *stream, void *buf, size_t sz);
+typedef void (*lsqpack_stream_write_f)(void *stream, void *buf, size_t sz);
 typedef void (*lsqpack_stream_wantread_f)(void *stream, int wantread);
 typedef void (*lsqpack_stream_wantwrite_f)(void *stream, int wantwrite);
 
