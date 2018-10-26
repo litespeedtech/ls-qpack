@@ -3865,6 +3865,19 @@ max_to_read (const struct header_block_read_ctx *read_ctx)
 }
 
 
+static void
+qdec_send_header_ack (struct lsqpack_dec *dec, uint64_t stream_id)
+{
+    unsigned char buf[LSQPACK_UINT64_ENC_SZ];
+    unsigned char *end;
+
+    buf[0] = 0x80;
+    end = lsqpack_enc_int(buf, buf + sizeof(buf), stream_id, 7);
+    assert(end > buf);
+    dec->qpd_write_dec(dec->qpd_dec_stream, buf, end - buf);
+}
+
+
 static enum read_header_status
 qdec_read_header (struct lsqpack_dec *dec,
                                     struct header_block_read_ctx *read_ctx)
@@ -3896,6 +3909,9 @@ qdec_read_header (struct lsqpack_dec *dec,
         else
             return RHS_ERROR;
     }
+
+    if (read_ctx->hbrc_flags & HBRC_LARGEST_REF_SET)
+        qdec_send_header_ack(dec, read_ctx->hbrc_stream_id);
 
     return RHS_DONE;
 }
