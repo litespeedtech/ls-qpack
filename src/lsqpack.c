@@ -2340,199 +2340,181 @@ enum
     HPACK_HUFFMAN_FLAG_FAIL = 0x04,
 };
 
-#define lsqpack_arr_init(a) do {                                        \
-    memset((a), 0, sizeof(*(a)));                                       \
-} while (0)
 
-#define lsqpack_arr_cleanup(a) do {                                     \
-    free((a)->els);                                                     \
-    memset((a), 0, sizeof(*(a)));                                       \
-} while (0)
+#if LSQPACK_DEVEL_MODE
+#   define STATIC
+#else
+#   define STATIC static
+#endif
 
-#define lsqpack_arr_get(a, i) (                                         \
-    assert((i) < (a)->nelem),                                           \
-    (a)->els[(a)->off + (i)]                                            \
-)
-
-#define lsqpack_arr_shift(a) (                                          \
-    assert((a)->nelem > 0),                                             \
-    (a)->nelem -= 1,                                                    \
-    (a)->els[(a)->off++]                                                \
-)
-
-#define lsqpack_arr_pop(a) (                                            \
-    assert((a)->nelem > 0),                                             \
-    (a)->nelem -= 1,                                                    \
-    (a)->els[(a)->off + (a)->nelem]                                     \
-)
-
-#define lsqpack_arr_count(a) (+(a)->nelem)
-
-static int
-lsqpack_arr_push (struct lsqpack_arr *arr, uintptr_t val)
+STATIC unsigned
+ringbuf_count (const struct lsqpack_ringbuf *rbuf)
 {
-    uintptr_t *new_els;
-    unsigned n;
-
-    if (arr->off + arr->nelem < arr->nalloc)
+    if (rbuf->rb_nalloc)
     {
-        arr->els[arr->off + arr->nelem] = val;
-        ++arr->nelem;
-        return 0;
+        if (rbuf->rb_head >= rbuf->rb_tail)
+            return rbuf->rb_head - rbuf->rb_tail;
+        else
+            return rbuf->rb_nalloc - (rbuf->rb_tail - rbuf->rb_head);
     }
-
-    if (arr->off > arr->nalloc / 2)
-    {
-        memmove(arr->els, arr->els + arr->off,
-                                        sizeof(arr->els[0]) * arr->nelem);
-        arr->off = 0;
-        arr->els[arr->nelem] = val;
-        ++arr->nelem;
-        return 0;
-    }
-
-    if (arr->nalloc)
-        n = arr->nalloc * 2;
     else
-        n = 64;
-    new_els = malloc(n * sizeof(arr->els[0]));
-    if (!new_els)
-        return -1;
-    memcpy(new_els, arr->els + arr->off, sizeof(arr->els[0]) * arr->nelem);
-    free(arr->els);
-    arr->off = 0;
-    arr->els = new_els;
-    arr->nalloc = n;
-    arr->els[arr->off + arr->nelem] = val;
-    ++arr->nelem;
-    return 0;
+        return 0;
 }
 
 
-struct lsqpack_min_heap_elem
+STATIC int
+ringbuf_full (const struct lsqpack_ringbuf *rbuf)
 {
-    void                *mhe_hbrc;
-    lsqpack_abs_id_t     mhe_max_id;
+    return rbuf->rb_nalloc == 0
+        || (rbuf->rb_head + 1) % rbuf->rb_nalloc == rbuf->rb_tail;
+}
+
+
+STATIC int
+ringbuf_empty (const struct lsqpack_ringbuf *rbuf)
+{
+    return rbuf->rb_head == rbuf->rb_tail;
+}
+
+
+struct ringbuf_iter
+{
+    const struct lsqpack_ringbuf *rbuf;
+    unsigned next, end;
 };
 
 
-#define MHE_PARENT(i) ((i - 1) / 2)
-#define MHE_LCHILD(i) (2 * i + 1)
-#define MHE_RCHILD(i) (2 * i + 2)
-
-#define mh_count(heap) ((heap)->mh_nelem)
-
-static void
-mh_heapify (struct lsqpack_min_heap *heap, unsigned i)
+STATIC void *
+ringbuf_iter_next (struct ringbuf_iter *iter)
 {
-    struct lsqpack_min_heap_elem el;
-    unsigned smallest;
+    void *el;
 
-    assert(i < heap->mh_nelem);
-
-    if (MHE_LCHILD(i) < heap->mh_nelem)
+    if (iter->next != iter->rbuf->rb_head)
     {
-        if (heap->mh_elems[ MHE_LCHILD(i) ].mhe_max_id <
-                                    heap->mh_elems[ i ].mhe_max_id)
-            smallest = MHE_LCHILD(i);
-        else
-            smallest = i;
-        if (MHE_RCHILD(i) < heap->mh_nelem &&
-            heap->mh_elems[ MHE_RCHILD(i) ].mhe_max_id <
-                                    heap->mh_elems[ smallest ].mhe_max_id)
-            smallest = MHE_RCHILD(i);
+        el = iter->rbuf->rb_els[ iter->next ];
+        iter->next = (iter->next + 1) % iter->rbuf->rb_nalloc;
+        return el;
     }
     else
-        smallest = i;
+        return NULL;
+}
 
-    if (smallest != i)
+
+STATIC void *
+ringbuf_iter_first (struct ringbuf_iter *iter,
+                                        const struct lsqpack_ringbuf *rbuf)
+{
+    if (!ringbuf_empty(rbuf))
     {
-        el = heap->mh_elems[ smallest ];
-        heap->mh_elems[ smallest ] = heap->mh_elems[ i ];
-        heap->mh_elems[ i ] = el;
-        mh_heapify(heap, smallest);
+        iter->rbuf = rbuf;
+        iter->next = rbuf->rb_tail;
+        return ringbuf_iter_next(iter);
     }
+    else
+        return NULL;
 }
 
 
 static void
-mh_cleanup (struct lsqpack_min_heap *heap)
+ringbuf_cleanup (struct lsqpack_ringbuf *rbuf)
 {
-    free(heap->mh_elems);
-}
-
-
-static int
-mh_insert (struct lsqpack_min_heap *heap, void *conn, uint64_t val)
-{
-    struct lsqpack_min_heap_elem *els;
-    struct lsqpack_min_heap_elem el;
-    unsigned i;
-
-    if (heap->mh_nelem >= heap->mh_nalloc)
-    {
-        if (heap->mh_nalloc)
-            heap->mh_nalloc *= 2;
-        else
-            heap->mh_nalloc = 4;
-        els = realloc(heap->mh_elems, sizeof(els[0]) * heap->mh_nalloc);
-        if (els)
-            heap->mh_elems = els;
-        else
-            return -1;
-    }
-
-    heap->mh_elems[ heap->mh_nelem ].mhe_hbrc = conn;
-    heap->mh_elems[ heap->mh_nelem ].mhe_max_id  = val;
-    ++heap->mh_nelem;
-
-    i = heap->mh_nelem - 1;
-    while (i > 0 && heap->mh_elems[ MHE_PARENT(i) ].mhe_max_id >
-                                    heap->mh_elems[ i ].mhe_max_id)
-    {
-        el = heap->mh_elems[ MHE_PARENT(i) ];
-        heap->mh_elems[ MHE_PARENT(i) ] = heap->mh_elems[ i ];
-        heap->mh_elems[ i ] = el;
-        i = MHE_PARENT(i);
-    }
-
-    return 0;
+    free(rbuf->rb_els);
+    memset(rbuf, 0, sizeof(*rbuf));
 }
 
 
 static void *
-mh_pop (struct lsqpack_min_heap *heap, lsqpack_abs_id_t largest_id)
+ringbuf_get_head (const struct lsqpack_ringbuf *rbuf, unsigned off)
 {
-    void *hbrc;
+    unsigned i;
 
-    if (heap->mh_nelem == 0 || heap->mh_elems[0].mhe_max_id > largest_id)
-        return NULL;
-
-    hbrc = heap->mh_elems[0].mhe_hbrc;
-    --heap->mh_nelem;
-    if (heap->mh_nelem > 0)
-    {
-        heap->mh_elems[0] = heap->mh_elems[ heap->mh_nelem ];
-        mh_heapify(heap, 0);
-    }
-
-    return hbrc;
+    i = (rbuf->rb_nalloc + rbuf->rb_head - off) % rbuf->rb_nalloc;
+    return rbuf->rb_els[i];
 }
 
+
+static void *
+ringbuf_advance_tail (struct lsqpack_ringbuf *rbuf)
+{
+    void *el;
+
+    el = rbuf->rb_els[rbuf->rb_tail];
+    rbuf->rb_tail = (rbuf->rb_tail + 1) % rbuf->rb_nalloc;
+    return el;
+}
+
+
+static int
+ringbuf_add (struct lsqpack_ringbuf *rbuf, void *el)
+{
+    void **els;
+    unsigned count;
+
+    if (!ringbuf_full(rbuf))
+    {
+  insert:
+        rbuf->rb_els[ rbuf->rb_head ] = el;
+        rbuf->rb_head = (rbuf->rb_head + 1) % rbuf->rb_nalloc;
+        return 0;
+    }
+
+    if (rbuf->rb_nalloc)
+    {
+        els = malloc(rbuf->rb_nalloc * 2 * sizeof(rbuf->rb_els[0]));
+        if (els)
+        {
+            if (rbuf->rb_head >= rbuf->rb_tail)
+            {
+                count = rbuf->rb_head - rbuf->rb_tail + 1;
+                memcpy(els, rbuf->rb_els + rbuf->rb_tail,
+                                    count * sizeof(rbuf->rb_els[0]));
+                rbuf->rb_tail = 0;
+                rbuf->rb_head = count - 1;
+            }
+            else
+            {
+                memcpy(els, rbuf->rb_els,
+                            (rbuf->rb_head + 1) * sizeof(rbuf->rb_els[0]));
+                memcpy(els + rbuf->rb_nalloc + rbuf->rb_tail,
+                        rbuf->rb_els + rbuf->rb_tail,
+                        (rbuf->rb_nalloc - rbuf->rb_tail)
+                                                * sizeof(rbuf->rb_els[0]));
+                rbuf->rb_tail += rbuf->rb_nalloc;
+
+            }
+            rbuf->rb_els = els;
+            rbuf->rb_nalloc *= 2;
+            goto insert;
+        }
+        return -1;
+    }
+    else
+    {
+        /* First time */
+        rbuf->rb_els = malloc(4 * sizeof(rbuf->rb_els[0]));
+        if (rbuf->rb_els)
+        {
+            rbuf->rb_nalloc = 4;
+            goto insert;
+        }
+        return -1;
+    }
+}
+
+
+#define ID_MINUS(a, b) ( (dec)->qpd_max_entries ? \
+    ((a) + (dec)->qpd_max_entries * 2 - (b)) % ((dec)->qpd_max_entries * 2) : 0)
+
+#define ID_PLUS(a, b) ( (dec)->qpd_max_entries ? \
+    ((a) + (b)) % ((dec)->qpd_max_entries * 2) : 0 )
 
 static struct lsqpack_dec_table_entry *
 qdec_get_table_entry_rel (const struct lsqpack_dec *dec,
                                             lsqpack_abs_id_t relative_idx)
 {
-    uintptr_t val;
-    unsigned id;
-
-    if (relative_idx < lsqpack_arr_count(&dec->qpd_dyn_table))
-    {
-        id = lsqpack_arr_count(&dec->qpd_dyn_table) - 1 - relative_idx;
-        val = lsqpack_arr_get(&dec->qpd_dyn_table, id);
-        return (struct lsqpack_dec_table_entry *) val;
-    }
+    ++relative_idx;
+    if (ringbuf_count(&dec->qpd_dyn_table) >= relative_idx)
+        return ringbuf_get_head(&dec->qpd_dyn_table, relative_idx);
     else
         return NULL;
 }
@@ -2542,18 +2524,10 @@ static struct lsqpack_dec_table_entry *
 qdec_get_table_entry_abs (const struct lsqpack_dec *dec,
                                                 lsqpack_abs_id_t abs_idx)
 {
-    uintptr_t val;
-    unsigned id;
+    unsigned off;
 
-    if (abs_idx > dec->qpd_del_count && abs_idx <= dec->qpd_ins_count)
-    {
-        id = abs_idx - dec->qpd_del_count - 1;
-        assert(id < lsqpack_arr_count(&dec->qpd_dyn_table));
-        val = lsqpack_arr_get(&dec->qpd_dyn_table, id);
-        return (struct lsqpack_dec_table_entry *) val;
-    }
-    else
-        return NULL;
+    off = ID_MINUS(dec->qpd_last_id, abs_idx);
+    return qdec_get_table_entry_rel(dec, off);
 }
 
 
@@ -2565,9 +2539,12 @@ lsqpack_dec_init (struct lsqpack_dec *dec, unsigned dyn_table_size,
     lsqpack_stream_wantread_f wantread_header_block,
     void (*header_block_done)(void *, struct lsqpack_header_set *))
 {
+    unsigned i;
     memset(dec, 0, sizeof(*dec));
     dec->qpd_max_capacity = dyn_table_size;
     dec->qpd_cur_max_capacity = dyn_table_size;
+    dec->qpd_max_entries = dec->qpd_max_capacity / DYNAMIC_ENTRY_OVERHEAD;
+    dec->qpd_last_id = dec->qpd_max_entries * 2 - 1;
     dec->qpd_max_risked_streams = max_risked_streams;
     dec->qpd_dec_stream = decoder_stream;
     dec->qpd_write_dec = write_decoder;
@@ -2576,8 +2553,9 @@ lsqpack_dec_init (struct lsqpack_dec *dec, unsigned dyn_table_size,
     dec->qpd_header_block_done = header_block_done;
     TAILQ_INIT(&dec->qpd_header_sets);
     TAILQ_INIT(&dec->qpd_hbrcs);
+    for (i = 0; i < (1 << LSQPACK_DEC_BLOCKED_BITS); ++i)
+        TAILQ_INIT(&dec->qpd_blocked_headers[i]);
     STAILQ_INIT(&dec->qpd_dinsts);
-    lsqpack_arr_init(&dec->qpd_dyn_table);
 }
 
 
@@ -2612,7 +2590,7 @@ enum {
 void
 lsqpack_dec_cleanup (struct lsqpack_dec *dec)
 {
-    uintptr_t val;
+    struct lsqpack_dec_table_entry *entry;
 
     /* TODO: free blocked streams */
 
@@ -2631,13 +2609,12 @@ lsqpack_dec_cleanup (struct lsqpack_dec *dec)
             free(dec->qpd_enc_state.ctx_u.wo_namref.entry);
     }
 
-    while (lsqpack_arr_count(&dec->qpd_dyn_table) > 0)
+    while (!ringbuf_empty(&dec->qpd_dyn_table))
     {
-        val = lsqpack_arr_pop(&dec->qpd_dyn_table);
-        qdec_decref_entry((struct lsqpack_dec_table_entry *) val);
+        entry = ringbuf_advance_tail(&dec->qpd_dyn_table);
+        qdec_decref_entry(entry);
     }
-    lsqpack_arr_cleanup(&dec->qpd_dyn_table);
-    mh_cleanup(&dec->qpd_blocked_headers);
+    ringbuf_cleanup(&dec->qpd_dyn_table);
 }
 
 
@@ -2663,9 +2640,11 @@ struct header_ack
 struct header_block_read_ctx
 {
     struct lsqpack_dec_inst             hbrc_dinst;
-    TAILQ_ENTRY(header_block_read_ctx)  hbrc_next;
+    TAILQ_ENTRY(header_block_read_ctx)  hbrc_next_all,
+                                        hbrc_next_blocked;
     void                               *hbrc_stream;
     uint64_t                            hbrc_stream_id;
+    size_t                              hbrc_orig_size;     /* To report error offset */
     size_t                              hbrc_size;
     lsqpack_abs_id_t                    hbrc_largest_ref;   /* Parsed from prefix */
     lsqpack_abs_id_t                    hbrc_base_index;    /* Parsed from prefix */
@@ -2683,9 +2662,10 @@ struct header_block_read_ctx
             struct header_block_read_ctx *, const unsigned char *, size_t);
 
     enum {
-        HBRC_HAVE_LARGEST_REF   = 1 << 0,
-        HBRC_BLOCKED            = 1 << 1,
-        HBRC_DINST              = 1 << 2,
+        HBRC_LARGEST_REF_READ   = 1 << 0,
+        HBRC_LARGEST_REF_SET    = 1 << 1, /* hbrc_largest_ref is an actual ID */
+        HBRC_BLOCKED            = 1 << 2,
+        HBRC_DINST              = 1 << 3,
     }                                   hbrc_flags;
 
     /* First we read the largest reference to see whether the header block
@@ -3120,6 +3100,8 @@ parse_header_data (struct lsqpack_dec *dec,
     unsigned prefix_bits = -1;
     int r;
 
+#define RETURN_ERROR() do { dec->qpd_err.line = __LINE__; goto err; } while (0)
+
 #define IHF read_ctx->hbrc_parse_ctx_u.data.u.ihf
 #define IPBI read_ctx->hbrc_parse_ctx_u.data.u.ipbi
 #define LFINR read_ctx->hbrc_parse_ctx_u.data.u.lfinr
@@ -3195,7 +3177,7 @@ parse_header_data (struct lsqpack_dec *dec,
                     r = hset_add_static_entry(dec, read_ctx, IHF.value);
                 else
                     r = hset_add_dynamic_entry(dec, read_ctx,
-                                    read_ctx->hbrc_base_index - IHF.value);
+                            ID_MINUS(read_ctx->hbrc_base_index, IHF.value));
                 if (r == 0)
                 {
                     read_ctx->hbrc_parse_ctx_u.data.state
@@ -3203,12 +3185,12 @@ parse_header_data (struct lsqpack_dec *dec,
                     break;
                 }
                 else
-                    return RHS_ERROR;
+                    RETURN_ERROR();
             }
             else if (r == -1)
                 return RHS_NEED;
             else
-                return RHS_ERROR;
+                RETURN_ERROR();
 #undef IHF
         case DATA_STATE_READ_LFINR_IDX:
   data_state_read_lfinr_idx:
@@ -3221,17 +3203,17 @@ parse_header_data (struct lsqpack_dec *dec,
                     if (value < QPACK_STATIC_TABLE_SIZE)
                         LFINR.name_ref.static_idx = value;
                     else
-                        return RHS_ERROR;
+                        RETURN_ERROR();
                 }
                 else
                 {
                     LFINR.name_ref.dyn_entry
                         = qdec_get_table_entry_abs(dec,
-                            read_ctx->hbrc_base_index - value);
+                            ID_MINUS(read_ctx->hbrc_base_index, value));
                     if (LFINR.name_ref.dyn_entry)
                         ++LFINR.name_ref.dyn_entry->dte_refcnt;
                     else
-                        return RHS_ERROR;
+                        RETURN_ERROR();
                 }
                 read_ctx->hbrc_parse_ctx_u.data.state
                                     = DATA_STATE_BEGIN_READ_LFINR_VAL_LEN;
@@ -3240,7 +3222,7 @@ parse_header_data (struct lsqpack_dec *dec,
             else if (r == -1)
                 return RHS_NEED;
             else
-                return RHS_ERROR;
+                RETURN_ERROR();
         case DATA_STATE_BEGIN_READ_LFINR_VAL_LEN:
             LFINR.is_huffman = buf[0] & 0x80;
             prefix_bits = 7;
@@ -3275,7 +3257,7 @@ parse_header_data (struct lsqpack_dec *dec,
                     if (LFINR.value)
                         break;
                     else
-                        return RHS_ERROR;
+                        RETURN_ERROR();
                 }
                 else
                 {
@@ -3289,7 +3271,7 @@ parse_header_data (struct lsqpack_dec *dec,
             else if (r == -1)
                 return RHS_NEED;
             else
-                return RHS_ERROR;
+                RETURN_ERROR();
         case DATA_STATE_LFINR_READ_VAL_HUFFMAN:
             size = MIN((unsigned) (end - buf), LFINR.val_len - LFINR.nread);
             hdr = lsqpack_huff_decode(buf, size,
@@ -3321,7 +3303,7 @@ parse_header_data (struct lsqpack_dec *dec,
                     break;
                 }
                 else
-                    return RHS_ERROR;
+                    RETURN_ERROR();
             case HUFF_DEC_END_SRC:
                 buf += hdr.n_src;
                 LFINR.nread += hdr.n_src;
@@ -3331,14 +3313,14 @@ parse_header_data (struct lsqpack_dec *dec,
                 LFINR.nalloc *= 2;
                 str = realloc(LFINR.value, LFINR.nalloc);
                 if (!str)
-                    return RHS_ERROR;
+                    RETURN_ERROR();
                 LFINR.value = str;
                 buf += hdr.n_src;
                 LFINR.nread += hdr.n_src;
                 LFINR.val_off += hdr.n_dst;
                 break;
             default:
-                return RHS_ERROR;
+                RETURN_ERROR();
             }
             break;
         case DATA_STATE_LFINR_READ_VAL_PLAIN:
@@ -3369,7 +3351,7 @@ parse_header_data (struct lsqpack_dec *dec,
                     break;
                 }
                 else
-                    return RHS_ERROR;
+                    RETURN_ERROR();
             }
             break;
 #undef LFINR
@@ -3396,12 +3378,12 @@ parse_header_data (struct lsqpack_dec *dec,
                 if (LFONR.name)
                     break;
                 else
-                    return RHS_ERROR;
+                    RETURN_ERROR();
             }
             else if (r == -1)
                 return RHS_NEED;
             else
-                return RHS_ERROR;
+                RETURN_ERROR();
         case DATA_STATE_READ_LFONR_NAME_HUFFMAN:
             size = MIN((unsigned) (end - buf), LFONR.str_len - LFONR.nread);
             hdr = lsqpack_huff_decode(buf, size,
@@ -3425,14 +3407,14 @@ parse_header_data (struct lsqpack_dec *dec,
                 LFONR.nalloc *= 2;
                 str = realloc(LFONR.name, LFONR.nalloc);
                 if (!str)
-                    return RHS_ERROR;
+                    RETURN_ERROR();
                 LFONR.name = str;
                 buf += hdr.n_src;
                 LFONR.nread += hdr.n_src;
                 LFONR.str_off += hdr.n_dst;
                 break;
             default:
-                return RHS_ERROR;
+                RETURN_ERROR();
             }
             break;
         case DATA_STATE_READ_LFONR_NAME_PLAIN:
@@ -3480,7 +3462,7 @@ parse_header_data (struct lsqpack_dec *dec,
             else if (r == -1)
                 return RHS_NEED;
             else
-                return RHS_ERROR;
+                RETURN_ERROR();
         case DATA_STATE_READ_LFONR_VAL_HUFFMAN:
             size = MIN((unsigned) (end - buf), LFONR.str_len - LFONR.nread);
             hdr = lsqpack_huff_decode(buf, size,
@@ -3503,7 +3485,7 @@ parse_header_data (struct lsqpack_dec *dec,
                     break;
                 }
                 else
-                    return RHS_ERROR;
+                    RETURN_ERROR();
             case HUFF_DEC_END_SRC:
                 buf += hdr.n_src;
                 LFONR.nread += hdr.n_src;
@@ -3513,14 +3495,14 @@ parse_header_data (struct lsqpack_dec *dec,
                 LFONR.nalloc *= 2;
                 str = realloc(LFONR.name, LFONR.nalloc);
                 if (!str)
-                    return RHS_ERROR;
+                    RETURN_ERROR();
                 LFONR.name = str;
                 buf += hdr.n_src;
                 LFONR.nread += hdr.n_src;
                 LFONR.str_off += hdr.n_dst;
                 break;
             default:
-                return RHS_ERROR;
+                RETURN_ERROR();
             }
             break;
         case DATA_STATE_READ_LFONR_VAL_PLAIN:
@@ -3531,7 +3513,7 @@ parse_header_data (struct lsqpack_dec *dec,
                 if (str)
                     LFONR.name = str;
                 else
-                    return RHS_ERROR;
+                    RETURN_ERROR();
             }
             size = MIN((unsigned) (end - buf), LFONR.str_len - LFONR.str_off);
             memcpy(LFONR.name + LFONR.name_len + LFONR.str_off, buf, size);
@@ -3551,7 +3533,7 @@ parse_header_data (struct lsqpack_dec *dec,
                     break;
                 }
                 else
-                    return RHS_ERROR;
+                    RETURN_ERROR();
             }
             break;
 #undef LFONR
@@ -3561,9 +3543,7 @@ parse_header_data (struct lsqpack_dec *dec,
                                                         &LFPBNR.dec_int_state);
             if (r == 0)
             {
-                value += read_ctx->hbrc_base_index + 1;
-                if (value > read_ctx->hbrc_largest_ref)
-                    return RHS_ERROR;
+                value = ID_PLUS(value, read_ctx->hbrc_base_index + 1);
                 LFPBNR.reffed_entry = qdec_get_table_entry_abs(dec, value);
                 if (LFPBNR.reffed_entry)
                 {
@@ -3573,12 +3553,12 @@ parse_header_data (struct lsqpack_dec *dec,
                     break;
                 }
                 else
-                    return RHS_ERROR;
+                    RETURN_ERROR();
             }
             else if (r == -1)
                 return RHS_NEED;
             else
-                return RHS_ERROR;
+                RETURN_ERROR();
         case DATA_STATE_BEGIN_READ_LFPBNR_VAL_LEN:
             LFPBNR.is_huffman = buf[0] & 0x80;
             prefix_bits = 7;
@@ -3613,7 +3593,7 @@ parse_header_data (struct lsqpack_dec *dec,
                     if (LFPBNR.value)
                         break;
                     else
-                        return RHS_ERROR;
+                        RETURN_ERROR();
                 }
                 else
                 {
@@ -3625,7 +3605,7 @@ parse_header_data (struct lsqpack_dec *dec,
             else if (r == -1)
                 return RHS_NEED;
             else
-                return RHS_ERROR;
+                RETURN_ERROR();
         case DATA_STATE_LFPBNR_READ_VAL_HUFFMAN:
             size = MIN((unsigned) (end - buf), LFPBNR.val_len - LFPBNR.nread);
             hdr = lsqpack_huff_decode(buf, size,
@@ -3650,7 +3630,7 @@ parse_header_data (struct lsqpack_dec *dec,
                     break;
                 }
                 else
-                    return RHS_ERROR;
+                    RETURN_ERROR();
             case HUFF_DEC_END_SRC:
                 buf += hdr.n_src;
                 LFPBNR.nread += hdr.n_src;
@@ -3660,14 +3640,14 @@ parse_header_data (struct lsqpack_dec *dec,
                 LFPBNR.nalloc *= 2;
                 str = realloc(LFPBNR.value, LFPBNR.nalloc);
                 if (!str)
-                    return RHS_ERROR;
+                    RETURN_ERROR();
                 LFPBNR.value = str;
                 buf += hdr.n_src;
                 LFPBNR.nread += hdr.n_src;
                 LFPBNR.val_off += hdr.n_dst;
                 break;
             default:
-                return RHS_ERROR;
+                RETURN_ERROR();
             }
             break;
         case DATA_STATE_LFPBNR_READ_VAL_PLAIN:
@@ -3691,7 +3671,7 @@ parse_header_data (struct lsqpack_dec *dec,
                     break;
                 }
                 else
-                    return RHS_ERROR;
+                    RETURN_ERROR();
             }
             break;
 #undef LFPBNR
@@ -3702,7 +3682,7 @@ parse_header_data (struct lsqpack_dec *dec,
             if (r == 0)
             {
                 r = hset_add_dynamic_entry(dec, read_ctx,
-                                IPBI.value + read_ctx->hbrc_base_index + 1);
+                        ID_PLUS(read_ctx->hbrc_base_index, IPBI.value + 1));
                 if (r == 0)
                 {
                     read_ctx->hbrc_parse_ctx_u.data.state
@@ -3710,16 +3690,16 @@ parse_header_data (struct lsqpack_dec *dec,
                     break;
                 }
                 else
-                    return RHS_ERROR;
+                    RETURN_ERROR();
             }
             else if (r == -1)
                 return RHS_NEED;
             else
-                return RHS_ERROR;
+                RETURN_ERROR();
 #undef IPBI
         default:
             assert(0);
-            return RHS_ERROR;
+            RETURN_ERROR();
         }
     }
 
@@ -3729,52 +3709,26 @@ parse_header_data (struct lsqpack_dec *dec,
                                             == DATA_STATE_NEXT_INSTRUCTION)
         return RHS_DONE;
     else
-        return RHS_ERROR;
+        RETURN_ERROR();
 
+ err:
+    dec->qpd_err.type = LSQPACK_DEC_ERR_LOC_HEADER_BLOCK;
+    dec->qpd_err.off = read_ctx->hbrc_orig_size - read_ctx->hbrc_size
+                            + (buf - (end - bufsz));
+    dec->qpd_err.stream_id = read_ctx->hbrc_stream_id;
+    return RHS_ERROR;
 }
 
 
-/*
- * From [draft-ietf-quic-qpack-03] Section 5.5.1:
- *
- *    if LargestReference > 0:
- *       LargestReference -= 1
- *       CurrentWrapped = TableLargestAbsoluteIndex mod 2*MaxEntries
- *
- *       if CurrentWrapped >= LargestReference + MaxEntries:
- *          # Largest Reference wrapped around 1 extra time
- *          LargestReference += 2*MaxEntries
- *       else if CurrentWrapped + MaxEntries < LargestReference
- *          # Decoder wrapped around 1 extra time
- *          CurrentWrapped += 2*MaxEntries
- *
- *       LargestReference +=
- *          (TableLargestAbsoluteIndex - CurrentWrapped)
- */
-static lsqpack_abs_id_t
-qdec_decode_LR (const struct lsqpack_dec *dec, lsqpack_abs_id_t largest_ref)
+static int
+qdec_in_future (const struct lsqpack_dec *dec, lsqpack_abs_id_t id)
 {
-    lsqpack_abs_id_t cur_wrapped;
-    unsigned max_entries;
-
-    if (largest_ref > 0)
-    {
-        max_entries = dec->qpd_max_capacity / DYNAMIC_ENTRY_OVERHEAD;
-        --largest_ref;
-        cur_wrapped = dec->qpd_ins_count % (2 * max_entries);
-
-        if (cur_wrapped >= largest_ref + max_entries)
-            largest_ref += 2 * max_entries;
-        else if (cur_wrapped + max_entries < largest_ref)
-            cur_wrapped += 2 * max_entries;
-
-        largest_ref += dec->qpd_ins_count - cur_wrapped;
-    }
-    /*
-    fprintf(stderr, "decoded LargestReference as %u\n", largest_ref);
-    */
-
-    return largest_ref;
+    if (dec->qpd_last_id < dec->qpd_max_entries)
+        return id > dec->qpd_last_id
+            && id <= dec->qpd_last_id + dec->qpd_max_entries;
+    else
+        return !(id <= dec->qpd_last_id
+            && id >= dec->qpd_last_id - dec->qpd_max_entries + 1);
 }
 
 
@@ -3805,14 +3759,27 @@ parse_header_prefix (struct lsqpack_dec *dec,
                                                         &LR.dec_int_state);
             if (r == 0)
             {
-                read_ctx->hbrc_flags |= HBRC_HAVE_LARGEST_REF;
-                read_ctx->hbrc_largest_ref = qdec_decode_LR(dec, LR.value);
-                read_ctx->hbrc_parse_ctx_u.prefix.state
-                                        = PREFIX_STATE_BEGIN_READING_BASE_IDX;
-                if (read_ctx->hbrc_largest_ref > dec->qpd_ins_count)
-                    return RHS_BLOCKED;
+                if (LR.value)
+                {
+                    if (LR.value - 1 >= 2 * dec->qpd_max_entries)
+                        return RHS_ERROR;
+                    read_ctx->hbrc_largest_ref = ID_MINUS(LR.value, 2);
+                    read_ctx->hbrc_flags |=
+                                    HBRC_LARGEST_REF_READ|HBRC_LARGEST_REF_SET;
+                    read_ctx->hbrc_parse_ctx_u.prefix.state
+                                            = PREFIX_STATE_BEGIN_READING_BASE_IDX;
+                    if (qdec_in_future(dec, read_ctx->hbrc_largest_ref))
+                        return RHS_BLOCKED;
+                    else
+                        break;
+                }
                 else
+                {
+                    read_ctx->hbrc_flags |= HBRC_LARGEST_REF_READ;
+                    read_ctx->hbrc_parse_ctx_u.prefix.state
+                                            = PREFIX_STATE_BEGIN_READING_BASE_IDX;
                     break;
+                }
             }
             else if (r == -1)
             {
@@ -3836,16 +3803,20 @@ parse_header_prefix (struct lsqpack_dec *dec,
                                                         &BI.dec_int_state);
             if (r == 0)
             {
-                if (BI.sign)
+                if (read_ctx->hbrc_flags & HBRC_LARGEST_REF_SET)
                 {
-                    if (read_ctx->hbrc_largest_ref < BI.value)
-                        return RHS_ERROR;   /* Negative base index */
-                    read_ctx->hbrc_base_index = read_ctx->hbrc_largest_ref
-                                                                    - BI.value;
+                    if (BI.sign)
+                        read_ctx->hbrc_base_index =
+                                ID_MINUS(read_ctx->hbrc_largest_ref, BI.value);
+                    else
+                        read_ctx->hbrc_base_index =
+                                ID_PLUS(read_ctx->hbrc_largest_ref, BI.value);
                 }
-                else
-                    read_ctx->hbrc_base_index = read_ctx->hbrc_largest_ref
-                                                                    + BI.value;
+                else    /* From qpack-03: "A header block that does not
+                         * reference the dynamic table can use any value
+                         * for Base Index"
+                         */
+                    read_ctx->hbrc_base_index = 0;
                 read_ctx->hbrc_parse = parse_header_data;
                 read_ctx->hbrc_parse_ctx_u.data.state
                                                 = DATA_STATE_NEXT_INSTRUCTION;
@@ -3881,7 +3852,7 @@ max_to_read (const struct header_block_read_ctx *read_ctx)
 {
     size_t sz;
 
-    if (read_ctx->hbrc_flags & HBRC_HAVE_LARGEST_REF)
+    if (read_ctx->hbrc_flags & HBRC_LARGEST_REF_READ)
         return read_ctx->hbrc_size;
     else
     {
@@ -3934,7 +3905,15 @@ static void
 destroy_header_block_read_ctx (struct lsqpack_dec *dec,
                         struct header_block_read_ctx *read_ctx)
 {
-    TAILQ_REMOVE(&dec->qpd_hbrcs, read_ctx, hbrc_next);
+    lsqpack_abs_id_t id;
+
+    TAILQ_REMOVE(&dec->qpd_hbrcs, read_ctx, hbrc_next_all);
+    if (read_ctx->hbrc_flags & HBRC_BLOCKED)
+    {
+        id = read_ctx->hbrc_largest_ref & ((1 << LSQPACK_DEC_BLOCKED_BITS) - 1);
+        TAILQ_REMOVE(&dec->qpd_blocked_headers[id], read_ctx, hbrc_next_blocked);
+        --dec->qpd_n_blocked;
+    }
     free(read_ctx);
 }
 
@@ -3943,7 +3922,7 @@ static int
 qdec_insert_header_block (struct lsqpack_dec *dec,
                         struct header_block_read_ctx *read_ctx)
 {
-    TAILQ_INSERT_TAIL(&dec->qpd_hbrcs, read_ctx, hbrc_next);
+    TAILQ_INSERT_TAIL(&dec->qpd_hbrcs, read_ctx, hbrc_next_all);
     return 0;
 }
 
@@ -3952,7 +3931,7 @@ static int
 qdec_remove_header_block (struct lsqpack_dec *dec,
                         struct header_block_read_ctx *read_ctx)
 {
-    TAILQ_REMOVE(&dec->qpd_hbrcs, read_ctx, hbrc_next);
+    TAILQ_REMOVE(&dec->qpd_hbrcs, read_ctx, hbrc_next_all);
     return 0;
 }
 
@@ -3961,11 +3940,12 @@ static int
 stash_blocked_header (struct lsqpack_dec *dec,
                         struct header_block_read_ctx *read_ctx)
 {
-    if (mh_count(&dec->qpd_blocked_headers) >= dec->qpd_max_risked_streams)
-        return -1;
-    if (0 == mh_insert(&dec->qpd_blocked_headers, read_ctx,
-                                        read_ctx->hbrc_largest_ref))
+    lsqpack_abs_id_t id;
+
+    if (dec->qpd_n_blocked < dec->qpd_max_risked_streams)
     {
+        id = read_ctx->hbrc_largest_ref & ((1 << LSQPACK_DEC_BLOCKED_BITS) - 1);
+        TAILQ_INSERT_TAIL(&dec->qpd_blocked_headers[id], read_ctx, hbrc_next_blocked);
         read_ctx->hbrc_flags |= HBRC_BLOCKED;
         return 0;
     }
@@ -3979,7 +3959,7 @@ find_header_block_read_ctx (struct lsqpack_dec *dec, void *stream)
 {
     struct header_block_read_ctx *read_ctx;
 
-    TAILQ_FOREACH(read_ctx, &dec->qpd_hbrcs, hbrc_next)
+    TAILQ_FOREACH(read_ctx, &dec->qpd_hbrcs, hbrc_next_all)
         if (read_ctx->hbrc_stream == stream)
             return read_ctx;
 
@@ -4077,8 +4057,11 @@ lsqpack_dec_header_in (struct lsqpack_dec *dec, void *stream,
         .hbrc_stream_id = stream_id,
         .hbrc_stream    = stream,
         .hbrc_size      = header_size,
+        .hbrc_orig_size = header_size,
         .hbrc_parse     = parse_header_prefix,
-        .hbrc_lr_min_sz = lsqpack_val2len(dec->qpd_del_count, 8),
+        .hbrc_lr_min_sz = 1,    /* TODO: now that this is constant (since -03),
+                                 * simplify the code.
+                                 */
     };
 
     st = qdec_read_header(dec, &read_ctx_buf);
@@ -4118,10 +4101,10 @@ static void
 qdec_drop_oldest_entry (struct lsqpack_dec *dec)
 {
     struct lsqpack_dec_table_entry *entry;
-    entry = (void *) lsqpack_arr_shift(&dec->qpd_dyn_table);
+
+    entry = ringbuf_advance_tail(&dec->qpd_dyn_table);
     dec->qpd_cur_capacity -= DTE_SIZE(entry);
     qdec_decref_entry(entry);
-    ++dec->qpd_del_count;
 }
 
 
@@ -4144,12 +4127,22 @@ qdec_update_max_capacity (struct lsqpack_dec *dec, unsigned new_capacity)
 static void
 qdec_process_blocked_headers (struct lsqpack_dec *dec)
 {
-    struct header_block_read_ctx *read_ctx;
+    struct header_block_read_ctx *read_ctx, *next;
+    lsqpack_abs_id_t id;
 
-    while ((read_ctx = mh_pop(&dec->qpd_blocked_headers, dec->qpd_ins_count)))
+    id = dec->qpd_last_id & ((1 << LSQPACK_DEC_BLOCKED_BITS) - 1);
+    for (read_ctx = TAILQ_FIRST(&dec->qpd_blocked_headers[id]); read_ctx;
+                                                            read_ctx = next)
     {
-        read_ctx->hbrc_flags &= ~HBRC_BLOCKED;
-        dec->qpd_wantread_header_block(read_ctx->hbrc_stream, 1);
+        next = TAILQ_NEXT(read_ctx, hbrc_next_blocked);
+        if (read_ctx->hbrc_largest_ref == dec->qpd_last_id)
+        {
+            read_ctx->hbrc_flags &= ~HBRC_BLOCKED;
+            TAILQ_REMOVE(&dec->qpd_blocked_headers[id], read_ctx,
+                                                            hbrc_next_blocked);
+            --dec->qpd_n_blocked;
+            dec->qpd_wantread_header_block(read_ctx->hbrc_stream, 1);
+        }
     }
 }
 
@@ -4158,16 +4151,17 @@ static int
 lsqpack_dec_push_entry (struct lsqpack_dec *dec,
                                         struct lsqpack_dec_table_entry *entry)
 {
-    if (0 == lsqpack_arr_push(&dec->qpd_dyn_table, (uintptr_t) entry))
+    if (0 == ringbuf_add(&dec->qpd_dyn_table, entry))
     {
         dec->qpd_cur_capacity += DTE_SIZE(entry);
-        ++dec->qpd_ins_count;
+        dec->qpd_last_id = ID_PLUS(dec->qpd_last_id, 1);
         qdec_remove_overflow_entries(dec);
         qdec_process_blocked_headers(dec);
-        return 0;
+        if (dec->qpd_cur_capacity <= dec->qpd_cur_max_capacity)
+            return 0;
     }
-    else
-        return -1;
+
+    return -1;
 }
 
 
@@ -4651,21 +4645,20 @@ void
 lsqpack_dec_print_table (const struct lsqpack_dec *dec, FILE *out)
 {
     const struct lsqpack_dec_table_entry *entry;
-    uintptr_t val;
-    unsigned n;
+    struct ringbuf_iter riter;
+    lsqpack_abs_id_t id;
 
     fprintf(out, "Printing decoder table state.\n");
-    fprintf(out, "Insertions: %u; deletions: %u.\n", dec->qpd_ins_count,
-                                                        dec->qpd_del_count);
     fprintf(out, "Max capacity: %u; current capacity: %u\n",
         dec->qpd_cur_max_capacity, dec->qpd_cur_capacity);
-    for (n = 0; n < lsqpack_arr_count(&dec->qpd_dyn_table); ++n)
+    id = ID_MINUS(dec->qpd_last_id + 1, ringbuf_count(&dec->qpd_dyn_table));
+    for (entry = ringbuf_iter_first(&riter, &dec->qpd_dyn_table);
+                                    entry; entry= ringbuf_iter_next(&riter))
     {
-        val = lsqpack_arr_get(&dec->qpd_dyn_table, n);
-        entry = (void *) val;
-        fprintf(out, "%u) %.*s: %.*s\n", dec->qpd_del_count + 1 + n,
+        fprintf(out, "%u) %.*s: %.*s\n", id,
             entry->dte_name_len, DTE_NAME(entry),
             entry->dte_val_len, DTE_VALUE(entry));
+        id = ID_PLUS(id, 1);
     }
     fprintf(out, "\n");
 }
@@ -4692,6 +4685,12 @@ lsqpack_dec_destroy_header_set (struct lsqpack_header_set *set)
     free(set);
 }
 
+
+const struct lsqpack_dec_err *
+lsqpack_dec_get_err_info (const struct lsqpack_dec *dec)
+{
+    return &dec->qpd_err;
+}
 
 
 static const struct encode_el encode_table[257] =

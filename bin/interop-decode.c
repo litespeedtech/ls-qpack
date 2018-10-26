@@ -80,13 +80,16 @@ read_header_block (void *buf_p, const unsigned char **dst, size_t size)
 static void
 wantread_header_block (void *buf_p, int wantread)
 {
+    const struct lsqpack_dec_err *err;
     struct buf *buf = buf_p;
     buf->wantread = wantread;
     if (wantread)
     {
         if (0 != lsqpack_dec_header_read(buf->dec, buf))
         {
-            fprintf(stderr, "error parsing stream %"PRIu64"\n", buf->stream_id);
+            err = lsqpack_dec_get_err_info(buf->dec);
+            fprintf(stderr, "error parsing stream %"PRIu64": off %"PRIu64
+                        ", line %d\n", buf->stream_id, err->off, err->line);
             exit(EXIT_FAILURE);
         }
     }
@@ -132,6 +135,7 @@ main (int argc, char **argv)
     unsigned dyn_table_size     = LSQPACK_DEF_DYN_TABLE_SIZE,
              max_risked_streams = LSQPACK_DEF_MAX_RISKED_STREAMS;
     struct lsqpack_dec decoder;
+    const struct lsqpack_dec_err *err;
     ssize_t nr;
     int r;
     uint64_t stream_id;
@@ -300,7 +304,9 @@ main (int argc, char **argv)
             r = lsqpack_dec_enc_in(&decoder, buf->buf, buf->size - buf->off);
             if (r != 0)
             {
-                fprintf(stderr, "encoder in error\n");
+                err = lsqpack_dec_get_err_info(buf->dec);
+                fprintf(stderr, "encoder_in error; off %"PRIu64", line %d\n",
+                                                            err->off, err->line);
                 exit(EXIT_FAILURE);
             }
             free(buf);
@@ -312,7 +318,9 @@ main (int argc, char **argv)
             r = lsqpack_dec_header_in(&decoder, buf, buf->stream_id, buf->size);
             if (r != 0)
             {
-                fprintf(stderr, "header_in error\n");
+                err = lsqpack_dec_get_err_info(buf->dec);
+                fprintf(stderr, "header_in error stream %"PRIu64": off %"PRIu64
+                            ", line %d\n", buf->stream_id, err->off, err->line);
                 exit(EXIT_FAILURE);
             }
         }

@@ -252,6 +252,22 @@ lsqpack_dec_cleanup (struct lsqpack_dec *);
 void
 lsqpack_dec_print_table (const struct lsqpack_dec *, FILE *out);
 
+
+struct lsqpack_dec_err
+{
+    enum {
+        LSQPACK_DEC_ERR_LOC_HEADER_BLOCK,
+        LSQPACK_DEC_ERR_LOC_ENC_STREAM,
+    }           type;
+    int         line;       /* In the source file */
+    uint64_t    off;        /* Offset in header block or on encoder stream */
+    uint64_t    stream_id;  /* Only applicable to header block */
+};
+
+
+const struct lsqpack_dec_err *
+lsqpack_dec_get_err_info (const struct lsqpack_dec *);
+
 /*
  * Internals follow.  The internals are subject to change without notice.
  */
@@ -363,12 +379,10 @@ struct lsqpack_enc
                                                         unsigned);
 };
 
-struct lsqpack_arr
+struct lsqpack_ringbuf
 {
-    unsigned        nalloc,
-                    nelem,
-                    off;
-    uintptr_t      *els;
+    unsigned        rb_nalloc, rb_head, rb_tail;
+    void          **rb_els;
 };
 
 TAILQ_HEAD(lsqpack_header_sets, lsqpack_header_set_elem);
@@ -387,15 +401,6 @@ struct lsqpack_huff_decode_state
     struct lsqpack_decode_status    status;
 };
 
-struct lsqpack_min_heap_elem;
-
-struct lsqpack_min_heap
-{
-    struct lsqpack_min_heap_elem   *mh_elems;
-    unsigned                        mh_nalloc,
-                                    mh_nelem;
-};
-
 struct lsqpack_enc_int_state
 {
     int         resume;
@@ -412,8 +417,11 @@ struct lsqpack_dec
     unsigned                qpd_cur_max_capacity;
     unsigned                qpd_cur_capacity;
     unsigned                qpd_max_risked_streams;
-    lsqpack_abs_id_t        qpd_ins_count;
-    lsqpack_abs_id_t        qpd_del_count;
+    unsigned                qpd_max_entries;
+    /** ID of the last dynamic table entry.  Has the range
+     * [0, qpd_max_entries * 2 - 1 ]
+     */
+    lsqpack_abs_id_t        qpd_last_id;
     enum {
         LSQPACK_DEC_WANT_WRITE_DECODER  = 1 << 0,
     }                       qpd_flags;
@@ -432,13 +440,17 @@ struct lsqpack_dec
                             qpd_header_sets;
 
     /** This is the dynamic table */
-    struct lsqpack_arr      qpd_dyn_table;
+    struct lsqpack_ringbuf  qpd_dyn_table;
 
     TAILQ_HEAD(, header_block_read_ctx)
                             qpd_hbrcs;
 
-    /** Blocked headers are kept in a min-heap */
-    struct lsqpack_min_heap qpd_blocked_headers;
+    /** Blocked headers are kept in a small hash */
+#define LSQPACK_DEC_BLOCKED_BITS 3
+    TAILQ_HEAD(, header_block_read_ctx)
+                            qpd_blocked_headers[1 << LSQPACK_DEC_BLOCKED_BITS];
+    /** Number of blocked streams (in qpd_blocked_headers) */
+    unsigned                qpd_n_blocked;
 
     /** Decoder instructions to be sent out */
     STAILQ_HEAD(, lsqpack_dec_inst)
@@ -447,11 +459,6 @@ struct lsqpack_dec
     struct lsqpack_enc_int_state
                             qpd_dinst_state;
 
-    /**
-     * Number of elements currently allocated in the qpd_blocked_headers
-     * array.
-     */
-    unsigned                qpd_bh_nalloc;
     /** Reading the encoder stream */
     struct {
         int                                                 resume;
@@ -500,6 +507,7 @@ struct lsqpack_dec
             }                                               size_update;
         }               ctx_u;
     }                       qpd_enc_state;
+    struct lsqpack_dec_err  qpd_err;
 };
 
 #ifdef __cplusplus

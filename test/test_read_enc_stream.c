@@ -118,24 +118,55 @@ static const struct test_read_encoder_stream tests[] =
 };
 
 
+struct ringbuf_iter
+{
+    const struct lsqpack_ringbuf *rbuf;
+    unsigned next, end;
+};
+
+
+#if LSQPACK_DEVEL_MODE
+unsigned
+ringbuf_count (const struct lsqpack_ringbuf *rbuf);
+
+void *
+ringbuf_iter_next (struct ringbuf_iter *iter);
+
+void *
+ringbuf_iter_first (struct ringbuf_iter *iter,
+                                        const struct lsqpack_ringbuf *rbuf);
+
 static void
 verify_dyn_table (const struct lsqpack_dec *dec,
                             const struct test_read_encoder_stream *test)
 {
     const struct lsqpack_dec_table_entry *entry;
     unsigned n;
+    struct ringbuf_iter riter;
 
-    assert(dec->qpd_dyn_table.nelem == test->n_entries);
+    assert(ringbuf_count(&dec->qpd_dyn_table) == test->n_entries);
 
     for (n = 0; n < test->n_entries; ++n)
     {
-        entry = (void *) dec->qpd_dyn_table.els[ dec->qpd_dyn_table.off + n ];
+        if (n == 0)
+            entry = ringbuf_iter_first(&riter, &dec->qpd_dyn_table);
+        else
+            entry = ringbuf_iter_next(&riter);
+        assert(entry);
         assert(entry->dte_name_len == strlen(test->dyn_table[n].name));
         assert(entry->dte_val_len == strlen(test->dyn_table[n].value));
         assert(0 == memcmp(DTE_NAME(entry), test->dyn_table[n].name, entry->dte_name_len));
         assert(0 == memcmp(DTE_VALUE(entry), test->dyn_table[n].value, entry->dte_val_len));
     }
 }
+#else
+static void
+verify_dyn_table (const struct lsqpack_dec *dec,
+                            const struct test_read_encoder_stream *test)
+{
+    fprintf(stderr, "LSQPACK_DEVEL_MODE is not compiled: cannot verify dynamic table\n");
+}
+#endif
 
 
 static void
