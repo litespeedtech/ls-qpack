@@ -3962,6 +3962,7 @@ stash_blocked_header (struct lsqpack_dec *dec,
     {
         id = read_ctx->hbrc_largest_ref & ((1 << LSQPACK_DEC_BLOCKED_BITS) - 1);
         TAILQ_INSERT_TAIL(&dec->qpd_blocked_headers[id], read_ctx, hbrc_next_blocked);
+        ++dec->qpd_n_blocked;
         read_ctx->hbrc_flags |= HBRC_BLOCKED;
         return 0;
     }
