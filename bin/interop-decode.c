@@ -55,6 +55,7 @@ struct buf
     size_t                  size;
     size_t                  off;
     int                     wantread;
+    int                     on_list;
     unsigned char           buf[0];
 };
 
@@ -121,7 +122,8 @@ header_block_done (void *buf_p, struct lsqpack_header_set *set)
     fprintf(s_out, "\n");
 
     lsqpack_dec_destroy_header_set(set);
-    TAILQ_REMOVE(&bufs, buf, next_buf);
+    if (buf->on_list)
+        TAILQ_REMOVE(&bufs, buf, next_buf);
     free(buf);
 }
 
@@ -244,6 +246,7 @@ main (int argc, char **argv)
         buf->dec = &decoder;
         buf->stream_id = stream_id;
         buf->size = size;
+        buf->on_list = 1;
         TAILQ_INSERT_TAIL(&bufs, buf, next_buf);
     }
 
@@ -299,6 +302,7 @@ main (int argc, char **argv)
     while ((buf = TAILQ_FIRST(&bufs)))
     {
         TAILQ_REMOVE(&bufs, buf, next_buf);
+        buf->on_list = 0;
         if (buf->stream_id == 0)
         {
             r = lsqpack_dec_enc_in(&decoder, buf->buf, buf->size - buf->off);
