@@ -106,7 +106,18 @@ enum lsqpack_enc_status
 
 enum lsqpack_enc_flags
 {
-    LQEF_NO_INDEX   = 1 << 0,
+    /**
+     * Do not index this header field.  No output to the encoder stream
+     * will be produced.
+     */
+    LQEF_NO_INDEX    = 1 << 0,
+    /**
+     * Never index this field.  This will set the 'N' bit on Literal Header
+     * Field With Name Reference, Literal Header Field With Post-Base Name
+     * Reference, and Literal Header Field Without Name Reference instructions
+     * in the header block.  Implies LQEF_DONT_INDEX.
+     */
+    LQEF_NEVER_INDEX = 1 << 1,
 };
 
 /**

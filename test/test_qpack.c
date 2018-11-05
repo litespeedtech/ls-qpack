@@ -63,7 +63,7 @@ static const struct qpack_header_block_test
         .qhbt_max_risked_streams = LSQPACK_DEF_MAX_RISKED_STREAMS,
         .qhbt_n_headers     = 1,
         .qhbt_headers       = {
-            { ":method", "method", LQEF_NO_INDEX, },
+            { ":method", "method", LQEF_NEVER_INDEX, },
         },
         .qhbt_enc_sz        = 0,
         .qhbt_prefix_sz     = 2,
@@ -128,7 +128,7 @@ static const struct qpack_header_block_test
         .qhbt_max_risked_streams = LSQPACK_DEF_DYN_TABLE_SIZE,
         .qhbt_n_headers     = 1,
         .qhbt_headers       = {
-            { "dude", "where is my car?", LQEF_NO_INDEX, },
+            { "dude", "where is my car?", LQEF_NEVER_INDEX, },
         },
         .qhbt_enc_sz        = 0,
         .qhbt_prefix_sz     = 2,

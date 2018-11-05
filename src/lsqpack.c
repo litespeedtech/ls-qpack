@@ -1677,7 +1677,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
 
     use_dyn_table = enc_use_dynamic_table(enc);
 
-    index = !(flags & LQEF_NO_INDEX)
+    index = !(flags & (LQEF_NO_INDEX|LQEF_NEVER_INDEX))
         && use_dyn_table
         && enc->qpe_ins_count < LSQPACK_MAX_ABS_ID
         ;
@@ -1984,7 +1984,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         break;
     case EHA_LIT:
         *dst = 0x20
-               | (((flags & LQEF_NO_INDEX) > 0) << 4)
+               | (((flags & LQEF_NEVER_INDEX) > 0) << 4)
                ;
         r = lsqpack_enc_enc_str(3, dst, hea_buf_end - dst,
                                 (const unsigned char *) name, name_len);
@@ -2001,7 +2001,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     case EHA_LIT_WITH_NAME_NEW:
         id = enc->qpe_ins_count + 1;
  post_base_name_ref:
-        *dst = (((flags & LQEF_NO_INDEX) > 0) << 3);
+        *dst = (((flags & LQEF_NEVER_INDEX) > 0) << 3);
         assert(id > enc->qpe_cur_header.base_idx);
         dst = lsqpack_enc_int(dst, hea_buf_end,
                                     id - enc->qpe_cur_header.base_idx - 1, 3);
@@ -2018,7 +2018,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         if (id > enc->qpe_cur_header.base_idx)
             goto post_base_name_ref;
         *dst = 0x40
-               | (((flags & LQEF_NO_INDEX) > 0) << 5)
+               | (((flags & LQEF_NEVER_INDEX) > 0) << 5)
                ;
         dst = lsqpack_enc_int(dst, hea_buf_end,
                                         enc->qpe_cur_header.base_idx - id, 4);
@@ -2034,7 +2034,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     default:
         assert(prog.ep_hea_action == EHA_LIT_WITH_NAME_STAT);
         *dst = 0x40
-               | (((flags & LQEF_NO_INDEX) > 0) << 5)
+               | (((flags & LQEF_NEVER_INDEX) > 0) << 5)
                | 0x10
                ;
         dst = lsqpack_enc_int(dst, hea_buf_end, id, 4);
@@ -3917,7 +3917,7 @@ qdec_read_header (struct lsqpack_dec *dec,
 }
 
 
-static void
+static void __attribute__((unused))
 destroy_header_block_read_ctx (struct lsqpack_dec *dec,
                         struct header_block_read_ctx *read_ctx)
 {
