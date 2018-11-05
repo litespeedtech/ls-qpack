@@ -503,6 +503,19 @@ qenc_hist_seen_name_yes (struct lsqpack_enc_hist *hist, unsigned a)
 }
 
 
+void
+lsqpack_enc_preinit (struct lsqpack_enc *enc)
+{
+    memset(enc, 0, sizeof(*enc));
+    STAILQ_INIT(&enc->qpe_all_entries);
+    STAILQ_INIT(&enc->qpe_hinfo_arrs);
+    TAILQ_INIT(&enc->qpe_hinfos);
+    enc->qpe_hist_add          = qenc_hist_add_noop;
+    enc->qpe_hist_seen_nameval = qenc_hist_seen_nameval_yes;
+    enc->qpe_hist_seen_name    = qenc_hist_seen_name_yes;
+};
+
+
 int
 lsqpack_enc_init (struct lsqpack_enc *enc, unsigned max_table_size,
     unsigned dyn_table_size, unsigned max_risked_streams,
@@ -522,55 +535,56 @@ lsqpack_enc_init (struct lsqpack_enc *enc, unsigned max_table_size,
         return -1;
     }
 
-    if (enc_opts & LSQPACK_ENC_OPT_IX_AGGR)
-        hist = NULL;
-    else
+    if (!(enc_opts & LSQPACK_ENC_OPT_STAGE_2))
+        lsqpack_enc_preinit(enc);
+
+    if (!(enc_opts & LSQPACK_ENC_OPT_IX_AGGR))
     {
         hist = qenc_hist_new(dyn_table_size / DYNAMIC_ENTRY_OVERHEAD);
         if (!hist)
             return -1;
+        enc->qpe_hist_add          = qenc_hist_add;
+        enc->qpe_hist_seen_nameval = qenc_hist_seen_nameval;
+        enc->qpe_hist_seen_name    = qenc_hist_seen_name;
     }
+    else
+        hist = NULL;
 
-    buckets = malloc(sizeof(buckets[0]) * N_BUCKETS(nbits));
-    if (!buckets)
+    if (max_table_size / DYNAMIC_ENTRY_OVERHEAD)
     {
-        if (hist)
+        nbits = 2;
+        buckets = malloc(sizeof(buckets[0]) * N_BUCKETS(nbits));
+        if (!buckets)
         {
-            free(hist->ehi_els);
-            free(hist);
+            if (hist)
+            {
+                free(hist->ehi_els);
+                free(hist);
+            }
+            return -1;
         }
-        return -1;
-    }
 
-    for (i = 0; i < N_BUCKETS(nbits); ++i)
+        for (i = 0; i < N_BUCKETS(nbits); ++i)
+        {
+            STAILQ_INIT(&buckets[i].by_name);
+            STAILQ_INIT(&buckets[i].by_nameval);
+        }
+    }
+    else
     {
-        STAILQ_INIT(&buckets[i].by_name);
-        STAILQ_INIT(&buckets[i].by_nameval);
+        nbits = 0;
+        buckets = NULL;
     }
 
-    memset(enc, 0, sizeof(*enc));
-    STAILQ_INIT(&enc->qpe_all_entries);
-    STAILQ_INIT(&enc->qpe_hinfo_arrs);
-    TAILQ_INIT(&enc->qpe_hinfos);
     enc->qpe_max_entries  = max_table_size / DYNAMIC_ENTRY_OVERHEAD;
     enc->qpe_max_capacity = dyn_table_size;
     enc->qpe_max_risked_streams = max_risked_streams;
     enc->qpe_buckets      = buckets;
     enc->qpe_nbits        = nbits;
-    enc->qpe_opts         = enc_opts;
+    if (enc_opts & LSQPACK_ENC_OPT_DUP)
+        enc->qpe_flags   |= LSQPACK_ENC_USE_DUP;
     enc->qpe_hist         = hist;
-    if (enc_opts & LSQPACK_ENC_OPT_IX_AGGR)
-    {
-        enc->qpe_hist_add          = qenc_hist_add_noop;
-        enc->qpe_hist_seen_nameval = qenc_hist_seen_nameval_yes;
-        enc->qpe_hist_seen_name    = qenc_hist_seen_name_yes;
-    }
-    else
-    {
-        enc->qpe_hist_add          = qenc_hist_add;
-        enc->qpe_hist_seen_nameval = qenc_hist_seen_nameval;
-        enc->qpe_hist_seen_name    = qenc_hist_seen_name;
-    }
+
     return 0;
 }
 
@@ -1224,7 +1238,7 @@ qenc_remove_overflow_entries (struct lsqpack_enc *enc)
 #if LSQPACK_DEVEL_MODE
     if (enc->qpe_log)
     {
-        if (enc->qpe_opts & LSQPACK_ENC_OPT_DUP)
+        if (enc->qpe_flags & LSQPACK_ENC_USE_DUP)
             ELOG("fill: %.2f; effective fill: %.2f\n",
                 (float) enc->qpe_cur_capacity / (float) enc->qpe_max_capacity,
                 qenc_effective_fill(enc));
@@ -1588,7 +1602,7 @@ qenc_duplicable_entry (const struct lsqpack_enc *enc,
     float fill, fraction;
     unsigned off;
 
-    if (!(enc->qpe_opts & LSQPACK_ENC_OPT_DUP))
+    if (!(enc->qpe_flags & LSQPACK_ENC_USE_DUP))
         return 0;
 
     fill = (float) (enc->qpe_cur_capacity + ETE_SIZE(entry))

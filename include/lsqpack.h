@@ -72,7 +72,21 @@ enum lsqpack_enc_opts
      * Index aggressively: ignore history
      */
     LSQPACK_ENC_OPT_IX_AGGR = 1 << 2,
+
+    /**
+     * The encoder was pre-initialized.
+     */
+    LSQPACK_ENC_OPT_STAGE_2 = 1 << 3,
 };
+
+
+/**
+ * Initialize the encoder so that it can be used without using the
+ * dynamic table.  Once peer's settings are known, call
+ * @ref lsqpack_enc_init().
+ */
+void
+lsqpack_enc_preinit (struct lsqpack_enc *);
 
 int
 lsqpack_enc_init (struct lsqpack_enc *,
@@ -314,8 +328,8 @@ struct lsqpack_enc
 
     enum {
         LSQPACK_ENC_HEADER  = 1 << 0,
+        LSQPACK_ENC_USE_DUP = 1 << 1,
     }                           qpe_flags;
-    enum lsqpack_enc_opts       qpe_opts;
 
     unsigned                    qpe_cur_capacity;
     unsigned                    qpe_max_capacity;
