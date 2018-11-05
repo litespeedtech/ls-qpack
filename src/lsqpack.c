@@ -2668,14 +2668,6 @@ struct header_block_read_ctx
         HBRC_DINST              = 1 << 3,
     }                                   hbrc_flags;
 
-    /* First we read the largest reference to see whether the header block
-     * is blocked.  hbrc_lr_min_sz is the minimum number of bytes that a
-     * valid largest reference could possibly be expressed in. hbrc_lr_nread
-     * is the number of bytes read so far.
-     */
-    unsigned char                       hbrc_lr_min_sz;
-    unsigned char                       hbrc_lr_nread;
-
     union {
         struct {
             enum {
@@ -3732,6 +3724,22 @@ qdec_in_future (const struct lsqpack_dec *dec, lsqpack_abs_id_t id)
 }
 
 
+/*
+ * [draft-ietf-quic-qpack-03], Section 5.4.1:
+ *
+ *                                                                 If
+ * Largest Reference is greater than zero, the encoder transforms it as
+ * follows before encoding:
+ *
+ *    LargestReference = LargestReference mod 2*MaxEntries + 1
+ */
+static lsqpack_abs_id_t
+dec_max_encoded_LR (const struct lsqpack_dec *dec)
+{
+    return dec->qpd_max_entries * 2;
+}
+
+
 static enum read_header_status
 parse_header_prefix (struct lsqpack_dec *dec,
         struct header_block_read_ctx *read_ctx, const unsigned char *buf,
@@ -3761,7 +3769,7 @@ parse_header_prefix (struct lsqpack_dec *dec,
             {
                 if (LR.value)
                 {
-                    if (LR.value - 1 >= 2 * dec->qpd_max_entries)
+                    if (LR.value > dec_max_encoded_LR(dec))
                         return RHS_ERROR;
                     read_ctx->hbrc_largest_ref = ID_MINUS(LR.value, 2);
                     read_ctx->hbrc_flags |=
@@ -3783,8 +3791,8 @@ parse_header_prefix (struct lsqpack_dec *dec,
             }
             else if (r == -1)
             {
-                read_ctx->hbrc_lr_nread += end - buf;
-                if (read_ctx->hbrc_lr_nread < LSQPACK_UINT64_ENC_SZ)
+                if (read_ctx->hbrc_orig_size - read_ctx->hbrc_size
+                                <= lsqpack_val2len(dec_max_encoded_LR(dec), 8))
                     return RHS_NEED;
                 else
                     return RHS_ERROR;
@@ -3850,18 +3858,10 @@ parse_header_prefix (struct lsqpack_dec *dec,
 static size_t
 max_to_read (const struct header_block_read_ctx *read_ctx)
 {
-    size_t sz;
-
     if (read_ctx->hbrc_flags & HBRC_LARGEST_REF_READ)
         return read_ctx->hbrc_size;
     else
-    {
-        if (read_ctx->hbrc_lr_min_sz > read_ctx->hbrc_lr_nread)
-            sz = read_ctx->hbrc_lr_min_sz - read_ctx->hbrc_lr_nread;
-        else
-            sz = 1;
-        return MIN(sz, read_ctx->hbrc_size);
-    }
+        return 1;
 }
 
 
@@ -4076,9 +4076,6 @@ lsqpack_dec_header_in (struct lsqpack_dec *dec, void *stream,
         .hbrc_size      = header_size,
         .hbrc_orig_size = header_size,
         .hbrc_parse     = parse_header_prefix,
-        .hbrc_lr_min_sz = 1,    /* TODO: now that this is constant (since -03),
-                                 * simplify the code.
-                                 */
     };
 
     st = qdec_read_header(dec, &read_ctx_buf);
