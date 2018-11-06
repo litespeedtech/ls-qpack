@@ -399,7 +399,7 @@ struct lsqpack_enc
                                                         unsigned, unsigned);
     int                       (*qpe_hist_seen_nameval)(
                                     struct lsqpack_enc_hist *,
-                                                        unsigned, unsigned);
+                                                        unsigned);
     int                       (*qpe_hist_seen_name)(struct lsqpack_enc_hist *,
                                                         unsigned);
 };

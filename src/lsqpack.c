@@ -323,15 +323,8 @@ enc_use_dynamic_table (const struct lsqpack_enc *enc)
 }
 
 
-union hist_el {
-    struct {
-        uint16_t name_hash,
-                 nameval_hash;
-    }                               he_pair;
-    /* This is *NOT* the same as the nameval hash.  The history keeps track
-     * of both name and nameval hashes.
-     */
-    uint32_t                        he_merged;
+struct hist_el {
+    unsigned    he_name_hash, he_nameval_hash;
 };
 
 
@@ -340,7 +333,7 @@ struct lsqpack_enc_hist
     unsigned        ehi_idx;
     unsigned        ehi_nels;
     int             ehi_wrapped;
-    union hist_el  *ehi_els;
+    struct hist_el *ehi_els;
 };
 
 
@@ -373,8 +366,8 @@ qenc_hist_add (struct lsqpack_enc_hist *hist, unsigned name_hash,
 {
     if (hist->ehi_nels)
     {
-        hist->ehi_els[ hist->ehi_idx ].he_pair.name_hash = name_hash;
-        hist->ehi_els[ hist->ehi_idx ].he_pair.nameval_hash = nameval_hash;
+        hist->ehi_els[ hist->ehi_idx ].he_name_hash = name_hash;
+        hist->ehi_els[ hist->ehi_idx ].he_nameval_hash = nameval_hash;
         hist->ehi_idx = (hist->ehi_idx + 1) % hist->ehi_nels;
         hist->ehi_wrapped |= hist->ehi_idx == 0;
     }
@@ -384,7 +377,7 @@ qenc_hist_add (struct lsqpack_enc_hist *hist, unsigned name_hash,
 static void
 qenc_grow_history (struct lsqpack_enc_hist *hist)
 {
-    union hist_el *els;
+    struct hist_el *els;
     unsigned nelem;
 
     if (0 == hist->ehi_nels)
@@ -420,31 +413,29 @@ qenc_grow_history (struct lsqpack_enc_hist *hist)
  * be able to use those entries.
  */
 static int
-qenc_hist_seen_nameval (struct lsqpack_enc_hist *hist, unsigned name_hash,
-                                                        unsigned nameval_hash)
+qenc_hist_seen_nameval (struct lsqpack_enc_hist *hist, unsigned nameval_hash)
 {
-    const union hist_el *el;
+    const struct hist_el *el;
     unsigned prev_idx;
-    const union hist_el he = { .he_pair = { name_hash, nameval_hash, }};
 
     if (hist->ehi_wrapped)
     {
         prev_idx = hist->ehi_idx > 0 ? hist->ehi_idx - 1 : hist->ehi_nels - 1;
-        assert(hist->ehi_els[ prev_idx ].he_merged == he.he_merged);
-        for (el = hist->ehi_els; el->he_merged != he.he_merged; ++el)
+        assert(hist->ehi_els[ prev_idx ].he_nameval_hash == nameval_hash);
+        for (el = hist->ehi_els; el->he_nameval_hash != nameval_hash; ++el)
             ;
         if (el < &hist->ehi_els[ prev_idx ])
             return 1;
-        hist->ehi_els[ hist->ehi_nels ] = he;
-        for (++el; el->he_merged != he.he_merged; ++el)
+        hist->ehi_els[ hist->ehi_nels ].he_nameval_hash = nameval_hash;
+        for (++el; el->he_nameval_hash != nameval_hash; ++el)
             ;
         return el < &hist->ehi_els[ hist->ehi_nels ];
     }
     else
     {
         prev_idx = hist->ehi_idx - 1;
-        assert(hist->ehi_els[ prev_idx ].he_merged == he.he_merged);
-        for (el = hist->ehi_els; el->he_merged != he.he_merged; ++el)
+        assert(hist->ehi_els[ prev_idx ].he_nameval_hash == nameval_hash);
+        for (el = hist->ehi_els; el->he_nameval_hash != nameval_hash; ++el)
             ;
         return el < &hist->ehi_els[ prev_idx ];
     }
@@ -454,29 +445,27 @@ qenc_hist_seen_nameval (struct lsqpack_enc_hist *hist, unsigned name_hash,
 static int
 qenc_hist_seen_name (struct lsqpack_enc_hist *hist, unsigned name_hash)
 {
-    const union hist_el *el;
+    const struct hist_el *el;
     unsigned prev_idx;
-
-    name_hash = (uint16_t) name_hash;
 
     if (hist->ehi_wrapped)
     {
         prev_idx = hist->ehi_idx > 0 ? hist->ehi_idx - 1 : hist->ehi_nels - 1;
-        assert(hist->ehi_els[ prev_idx ].he_pair.name_hash == name_hash);
-        for (el = hist->ehi_els; el->he_pair.name_hash != name_hash; ++el)
+        assert(hist->ehi_els[ prev_idx ].he_name_hash == name_hash);
+        for (el = hist->ehi_els; el->he_name_hash != name_hash; ++el)
             ;
         if (el < &hist->ehi_els[ prev_idx ])
             return 1;
-        hist->ehi_els[ hist->ehi_nels ].he_pair.name_hash = name_hash;
-        for (++el; el->he_pair.name_hash != name_hash; ++el)
+        hist->ehi_els[ hist->ehi_nels ].he_name_hash = name_hash;
+        for (++el; el->he_name_hash != name_hash; ++el)
             ;
         return el < &hist->ehi_els[ hist->ehi_nels ];
     }
     else
     {
         prev_idx = hist->ehi_idx - 1;
-        assert(hist->ehi_els[ prev_idx ].he_pair.name_hash == name_hash);
-        for (el = hist->ehi_els; el->he_pair.name_hash != name_hash; ++el)
+        assert(hist->ehi_els[ prev_idx ].he_name_hash == name_hash);
+        for (el = hist->ehi_els; el->he_name_hash != name_hash; ++el)
             ;
         return el < &hist->ehi_els[ prev_idx ];
     }
@@ -490,7 +479,7 @@ qenc_hist_add_noop (struct lsqpack_enc_hist *hist, unsigned a, unsigned b)
 
 
 static int
-qenc_hist_seen_nameval_yes (struct lsqpack_enc_hist *hist, unsigned a, unsigned b)
+qenc_hist_seen_nameval_yes (struct lsqpack_enc_hist *hist, unsigned a)
 {
     return 1;
 }
@@ -1801,7 +1790,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                 [1][1][1] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },   /* Invalid state */
 #undef A
             };
-            seen_nameval = enc->qpe_hist_seen_nameval(enc->qpe_hist, name_hash, nameval_hash);
+            seen_nameval = enc->qpe_hist_seen_nameval(enc->qpe_hist, nameval_hash);
             prog = programs[seen_nameval][risk][use_dyn_table && n_cand > 0];
         }
         else
@@ -1835,7 +1824,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                 id = entry->ete_id;
                 if (index && enough_room
                         && enc->qpe_hist_seen_nameval(enc->qpe_hist,
-                                                      name_hash, nameval_hash))
+                                                      nameval_hash))
                     prog = (struct encode_program) { EEA_INS_NAMEREF_DYNAMIC,
                                 EHA_LIT_WITH_NAME_NEW, ETA_NEW,
                                 EPF_REF_NEW|EPF_REF_FOUND, };
@@ -1849,7 +1838,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     /* No matches found */
     if (index
             && (seen_nameval < 0 ? (seen_nameval
-                    = enc->qpe_hist_seen_nameval(enc->qpe_hist, name_hash,
+                    = enc->qpe_hist_seen_nameval(enc->qpe_hist,
                                                 nameval_hash)) : seen_nameval)
             && (enough_room < 0 ?
             (enough_room = qenc_has_or_can_evict_at_least(enc,
