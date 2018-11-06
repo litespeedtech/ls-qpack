@@ -1346,7 +1346,6 @@ lsqpack_enc_push_entry (struct lsqpack_enc *enc, const char *name,
         entry->ete_id, (int) entry->ete_name_len, ETE_NAME(entry),
         (int) entry->ete_val_len, ETE_VALUE(entry), enc->qpe_nelem,
         enc->qpe_cur_capacity);
-    qenc_remove_overflow_entries(enc);
     return entry;
 }
 
@@ -2100,6 +2099,8 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         qenc_maybe_update_hinfo_min_max(enc->qpe_cur_header.hinfo,
                                                             entry->ete_id);
     }
+
+    qenc_remove_overflow_entries(enc);
 
     enc->qpe_bytes_in += name_len + value_len;
     enc->qpe_bytes_out += enc_sz + hea_sz;
