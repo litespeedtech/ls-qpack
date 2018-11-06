@@ -1706,6 +1706,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     XXH32_update(&hash_state,  &value_len, sizeof(value_len));
     XXH32_update(&hash_state,  value, value_len);
     nameval_hash = XXH32_digest(&hash_state);
+    ELOG("name hash: 0x%X; nameval hash: 0x%X\n", name_hash, nameval_hash);
 
     ++enc->qpe_cur_header.n_headers;
     if (enc->qpe_hist
