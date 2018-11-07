@@ -55,7 +55,6 @@ struct buf
     size_t                  size;
     size_t                  off;
     int                     wantread;
-    int                     on_list;
     unsigned char           buf[0];
 };
 
@@ -63,44 +62,17 @@ struct buf
 TAILQ_HEAD(, buf) bufs = TAILQ_HEAD_INITIALIZER(bufs);
 
 
-static ssize_t
-read_header_block (void *buf_p, const unsigned char **dst, size_t size)
+static void
+hblock_unblocked (void *buf_p)
 {
     struct buf *buf = buf_p;
-    size_t avail = buf->size - buf->off;
-    if (size > avail)
-        size = avail;
-    if (size > s_max_read_size)
-        size = s_max_read_size;
-    *dst = buf->buf + buf->off;
-    buf->off += size;
-    return size;
+    TAILQ_INSERT_HEAD(&bufs, buf, next_buf);
 }
 
 
 static void
-wantread_header_block (void *buf_p, int wantread)
+header_block_done (const struct buf *buf, struct lsqpack_header_set *set)
 {
-    const struct lsqpack_dec_err *err;
-    struct buf *buf = buf_p;
-    buf->wantread = wantread;
-    if (wantread)
-    {
-        if (0 != lsqpack_dec_header_read(buf->dec, buf))
-        {
-            err = lsqpack_dec_get_err_info(buf->dec);
-            fprintf(stderr, "error parsing stream %"PRIu64": off %"PRIu64
-                        ", line %d\n", buf->stream_id, err->off, err->line);
-            exit(EXIT_FAILURE);
-        }
-    }
-}
-
-
-static void
-header_block_done (void *buf_p, struct lsqpack_header_set *set)
-{
-    struct buf *buf = buf_p;
     unsigned n;
 
     if (s_verbose)
@@ -122,9 +94,6 @@ header_block_done (void *buf_p, struct lsqpack_header_set *set)
     fprintf(s_out, "\n");
 
     lsqpack_dec_destroy_header_set(set);
-    if (buf->on_list)
-        TAILQ_REMOVE(&bufs, buf, next_buf);
-    free(buf);
 }
 
 
@@ -138,6 +107,7 @@ main (int argc, char **argv)
              max_risked_streams = LSQPACK_DEF_MAX_RISKED_STREAMS;
     struct lsqpack_dec decoder;
     const struct lsqpack_dec_err *err;
+    const unsigned char *p;
     ssize_t nr;
     int r;
     uint64_t stream_id;
@@ -146,6 +116,8 @@ main (int argc, char **argv)
     struct buf *buf;
     unsigned lineno;
     char *line, *end;
+    enum lsqpack_read_header_status rhs;
+    struct lsqpack_header_set *hset;
     char command[0x100];
     char line_buf[0x100];
 
@@ -212,8 +184,7 @@ main (int argc, char **argv)
         s_out = stdout;
 
     lsqpack_dec_init(&decoder, dyn_table_size, max_risked_streams,
-                 NULL, NULL, read_header_block, wantread_header_block,
-                 header_block_done);
+                 NULL, NULL, hblock_unblocked);
 
     off = 0;
     while (1)
@@ -246,7 +217,6 @@ main (int argc, char **argv)
         buf->dec = &decoder;
         buf->stream_id = stream_id;
         buf->size = size;
-        buf->on_list = 1;
         TAILQ_INSERT_TAIL(&bufs, buf, next_buf);
     }
 
@@ -278,9 +248,28 @@ main (int argc, char **argv)
                         stream_id, lineno);
                     exit(EXIT_FAILURE);
                 }
-                r = lsqpack_dec_header_in(&decoder, buf, stream_id, buf->size);
-                if (r != 0)
+                p = buf->buf;
+                rhs = lsqpack_dec_header_in(&decoder, buf, stream_id,
+                            buf->size, &p,
+                            buf->size /* FIXME: this should be `size' */,
+                            &hset);
+                switch (rhs)
                 {
+                case LQRHS_DONE:
+                    assert(p == buf->buf + buf->size);
+                    header_block_done(buf, hset);
+                    TAILQ_REMOVE(&bufs, buf, next_buf);
+                    free(buf);
+                    break;
+                case LQRHS_BLOCKED:
+                    buf->off += (unsigned) (p - buf->buf);
+                    TAILQ_REMOVE(&bufs, buf, next_buf);
+                    break;
+                case LQRHS_NEED:
+                    buf->off += (unsigned) (p - buf->buf);
+                    break;
+                default:
+                    assert(rhs == LQRHS_ERROR);
                     fprintf(stderr, "recipe line %u: stream %lu: header_in error\n",
                         lineno, stream_id);
                     exit(EXIT_FAILURE);
@@ -302,7 +291,6 @@ main (int argc, char **argv)
     while ((buf = TAILQ_FIRST(&bufs)))
     {
         TAILQ_REMOVE(&bufs, buf, next_buf);
-        buf->on_list = 0;
         if (buf->stream_id == 0)
         {
             r = lsqpack_dec_enc_in(&decoder, buf->buf, buf->size - buf->off);
@@ -313,18 +301,37 @@ main (int argc, char **argv)
                                                             err->off, err->line);
                 exit(EXIT_FAILURE);
             }
-            free(buf);
             if (s_verbose)
                 lsqpack_dec_print_table(&decoder, stderr);
+            free(buf);
         }
-        else if (buf->off == 0)
+        else
         {
-            r = lsqpack_dec_header_in(&decoder, buf, buf->stream_id, buf->size);
-            if (r != 0)
+            p = buf->buf + buf->off;
+            if (buf->off == 0)
+                rhs = lsqpack_dec_header_in(&decoder, buf, buf->stream_id,
+                                            buf->size, &p, buf->size, &hset);
+            else
+                rhs = lsqpack_dec_header_read(buf->dec, buf, &p,
+                                                buf->size - buf->off, &hset);
+            switch (rhs)
             {
-                err = lsqpack_dec_get_err_info(buf->dec);
-                fprintf(stderr, "header_in error stream %"PRIu64": off %"PRIu64
-                            ", line %d\n", buf->stream_id, err->off, err->line);
+            case LQRHS_DONE:
+                assert(p == buf->buf + buf->size);
+                header_block_done(buf, hset);
+                free(buf);
+                break;
+            case LQRHS_BLOCKED:
+                buf->off += (unsigned) (p - buf->buf);
+                break;
+            case LQRHS_NEED:
+                fprintf(stderr, "This can't be right: all bytes were given.  "
+                    "stream %lu\n", buf->stream_id);
+                exit(EXIT_FAILURE);
+            default:
+                assert(rhs == LQRHS_ERROR);
+                fprintf(stderr, "stream %lu: header block error starting at "
+                    "off %zu\n", stream_id, buf->off);
                 exit(EXIT_FAILURE);
             }
         }
@@ -335,6 +342,9 @@ main (int argc, char **argv)
         fprintf(stderr, "some streams reamain\n");
         exit(EXIT_FAILURE);
     }
+    /* TODO: check if decoder has any stream references.  That would be
+     * an error.
+     */
 
     lsqpack_dec_cleanup(&decoder);
 

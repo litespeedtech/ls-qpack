@@ -50,7 +50,6 @@ typedef unsigned lsqpack_abs_id_t;
 struct lsqpack_enc;
 struct lsqpack_dec;
 
-typedef ssize_t (*lsqpack_stream_read_f)(void *stream, const unsigned char **buf, size_t sz);
 typedef void (*lsqpack_stream_write_f)(void *stream, void *buf, size_t sz);
 typedef void (*lsqpack_stream_wantread_f)(void *stream, int wantread);
 typedef void (*lsqpack_stream_wantwrite_f)(void *stream, int wantwrite);
@@ -225,31 +224,62 @@ void
 lsqpack_dec_init (struct lsqpack_dec *, unsigned dyn_table_size,
     unsigned max_risked_streams,
     lsqpack_stream_write_f write_decoder, void *decoder_stream,
-    lsqpack_stream_read_f read_header_block,
-    lsqpack_stream_wantread_f wantread_header_block,
-    void (*header_block_done)(void *header_block_stream,
-                                        struct lsqpack_header_set *));
+    void (*hblock_unblocked)(void *hblock));
 
-/* The decoder will read exactly `header_block_size' bytes from the stream
- * using the read_header_block() function pointer specified during
- * initialization.  If the header block cannot be processed due to blocked
- * references, the decoder keeps the stream until the references become
- * unblocked.  wantread_header_block() is called to indicate whether to
- * the decoder want more bytes.  If yes, lsqpack_dec_header_read() should
- * be called when more data becomes available.
- *
- * Until the `header_block_done()' callback is called, the decoder keeps
- * a reference to the stream and may call associated callbacks.
- */
-int
-lsqpack_dec_header_in (struct lsqpack_dec *, void *header_block_stream,
-                        uint64_t stream_iid, size_t header_block_size);
+enum lsqpack_read_header_status
+{
+    LQRHS_DONE,
+    LQRHS_BLOCKED,
+    LQRHS_NEED,
+    LQRHS_ERROR,
+};
+
 
 /**
- * More stream data is available -- have the decoder read it.
+ * Call this function when the header blocks is first read.  The decoder
+ * will try to decode the header block.  One of the following four statuses
+ * can be returned:
+ *
+ *      LQRHS_DONE      The header set has been placed in `hset' and `buf'
+ *                        has been advanced.
+ *
+ *      LQRHS_NEED      The decoder needs more bytes from the header block to
+ *                        proceed.  When they become available, call
+ *                        @ref lsqpack_dec_header_read().
+ *                        `buf' is advanced.
+ *
+ *      LQRHS_BLOCKED   The decoder cannot decode the header block until
+ *                        more dynamic table entries become available.
+ *                        `buf' is advanced.  When the header block becomes
+ *                        unblocked, the decoder will call hblock_unblocked()
+ *                        callback specified in the constructor.
+ *
+ *      LQRHS_ERROR     An error has occurred.  This can be any error:
+ *                        decoding error, memory allocation failure, or
+ *                        some internal error.
+ *
+ * If the decoder returns LQRHS_NEED or LQRHS_BLOCKED, it keeps a reference to
+ * the header block.
+ *
+ * If the decoder returns LQRHS_DONE or LQRHS_ERROR, it means that it no
+ * longer has a reference to the header block.
  */
-int
-lsqpack_dec_header_read (struct lsqpack_dec *dec, void *stream);
+enum lsqpack_read_header_status
+lsqpack_dec_header_in (struct lsqpack_dec *, void *hblock,
+                       uint64_t stream_id, size_t header_block_size,
+                       const unsigned char **buf, size_t bufsz,
+                       struct lsqpack_header_set **hset);
+
+/**
+ * Call this function when more header block bytes are become available
+ * after this function or @ref lsqpack_dec_header_in() returned LQRHS_NEED
+ * or header_unblocked() callback has been called.  See comments to
+ * @ref lsqpack_dec_header_in() for explanation of the return values.
+ */
+enum lsqpack_read_header_status
+lsqpack_dec_header_read (struct lsqpack_dec *dec, void *hblock,
+                         const unsigned char **buf, size_t bufsz,
+                         struct lsqpack_header_set **hset);
 
 /**
  * Feed encoder stream data to the decoder.  Zero is returned on success,
@@ -451,14 +481,10 @@ struct lsqpack_dec
         LSQPACK_DEC_WANT_WRITE_DECODER  = 1 << 0,
     }                       qpd_flags;
     void                   *qpd_dec_stream;
-    lsqpack_stream_wantread_f
+    lsqpack_stream_wantread_f   /* XXX ? */
                             qpd_wantwrite_decoder;
     lsqpack_stream_write_f  qpd_write_dec;
-    lsqpack_stream_wantread_f
-                            qpd_wantread_header_block;
-    lsqpack_stream_read_f   qpd_read_header_block;
-    void                  (*qpd_header_block_done)(void *header_block_stream,
-                                        struct lsqpack_header_set *);
+    void                  (*qpd_hblock_unblocked)(void *hblock);
 
     /** Outstanding header sets */
     struct lsqpack_header_sets

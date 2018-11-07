@@ -2540,9 +2540,7 @@ void
 lsqpack_dec_init (struct lsqpack_dec *dec, unsigned dyn_table_size,
     unsigned max_risked_streams,
     lsqpack_stream_write_f write_decoder, void *decoder_stream,
-    lsqpack_stream_read_f read_header_block,
-    lsqpack_stream_wantread_f wantread_header_block,
-    void (*header_block_done)(void *, struct lsqpack_header_set *))
+    void (*hblock_unblocked)(void *hblock))
 {
     unsigned i;
     memset(dec, 0, sizeof(*dec));
@@ -2553,9 +2551,7 @@ lsqpack_dec_init (struct lsqpack_dec *dec, unsigned dyn_table_size,
     dec->qpd_max_risked_streams = max_risked_streams;
     dec->qpd_dec_stream = decoder_stream;
     dec->qpd_write_dec = write_decoder;
-    dec->qpd_read_header_block = read_header_block;
-    dec->qpd_wantread_header_block = wantread_header_block;
-    dec->qpd_header_block_done = header_block_done;
+    dec->qpd_hblock_unblocked = hblock_unblocked;
     TAILQ_INIT(&dec->qpd_header_sets);
     TAILQ_INIT(&dec->qpd_hbrcs);
     for (i = 0; i < (1 << LSQPACK_DEC_BLOCKED_BITS); ++i)
@@ -2647,7 +2643,7 @@ struct header_block_read_ctx
     struct lsqpack_dec_inst             hbrc_dinst;
     TAILQ_ENTRY(header_block_read_ctx)  hbrc_next_all,
                                         hbrc_next_blocked;
-    void                               *hbrc_stream;
+    void                               *hbrc_hblock;
     uint64_t                            hbrc_stream_id;
     size_t                              hbrc_orig_size;     /* To report error offset */
     size_t                              hbrc_size;
@@ -2663,7 +2659,7 @@ struct header_block_read_ctx
     /* There are two parsing phases: reading the prefix and reading the
      * instruction stream.
      */
-    enum read_header_status           (*hbrc_parse) (struct lsqpack_dec *,
+    enum lsqpack_read_header_status           (*hbrc_parse) (struct lsqpack_dec *,
             struct header_block_read_ctx *, const unsigned char *, size_t);
 
     enum {
@@ -2671,7 +2667,14 @@ struct header_block_read_ctx
         HBRC_LARGEST_REF_SET    = 1 << 1, /* hbrc_largest_ref is an actual ID */
         HBRC_BLOCKED            = 1 << 2,
         HBRC_DINST              = 1 << 3,
+        HBRC_ON_LIST            = 1 << 4,
     }                                   hbrc_flags;
+
+    struct hbrc_buf {
+        const unsigned char *buf;
+        size_t               sz;
+        size_t               off;
+    }                                   hbrc_buf;
 
     union {
         struct {
@@ -3075,16 +3078,7 @@ lsqpack_huff_decode (const unsigned char *src, int src_len,
 }
 
 
-enum read_header_status
-{
-    RHS_DONE,
-    RHS_BLOCKED,
-    RHS_NEED,
-    RHS_ERROR,
-};
-
-
-static enum read_header_status
+static enum lsqpack_read_header_status
 parse_header_data (struct lsqpack_dec *dec,
         struct header_block_read_ctx *read_ctx, const unsigned char *buf,
                                                                 size_t bufsz)
@@ -3185,7 +3179,7 @@ parse_header_data (struct lsqpack_dec *dec,
                     RETURN_ERROR();
             }
             else if (r == -1)
-                return RHS_NEED;
+                return LQRHS_NEED;
             else
                 RETURN_ERROR();
 #undef IHF
@@ -3217,7 +3211,7 @@ parse_header_data (struct lsqpack_dec *dec,
                 break;
             }
             else if (r == -1)
-                return RHS_NEED;
+                return LQRHS_NEED;
             else
                 RETURN_ERROR();
         case DATA_STATE_BEGIN_READ_LFINR_VAL_LEN:
@@ -3266,7 +3260,7 @@ parse_header_data (struct lsqpack_dec *dec,
                 }
             }
             else if (r == -1)
-                return RHS_NEED;
+                return LQRHS_NEED;
             else
                 RETURN_ERROR();
         case DATA_STATE_LFINR_READ_VAL_HUFFMAN:
@@ -3378,7 +3372,7 @@ parse_header_data (struct lsqpack_dec *dec,
                     RETURN_ERROR();
             }
             else if (r == -1)
-                return RHS_NEED;
+                return LQRHS_NEED;
             else
                 RETURN_ERROR();
         case DATA_STATE_READ_LFONR_NAME_HUFFMAN:
@@ -3457,7 +3451,7 @@ parse_header_data (struct lsqpack_dec *dec,
                 break;
             }
             else if (r == -1)
-                return RHS_NEED;
+                return LQRHS_NEED;
             else
                 RETURN_ERROR();
         case DATA_STATE_READ_LFONR_VAL_HUFFMAN:
@@ -3553,7 +3547,7 @@ parse_header_data (struct lsqpack_dec *dec,
                     RETURN_ERROR();
             }
             else if (r == -1)
-                return RHS_NEED;
+                return LQRHS_NEED;
             else
                 RETURN_ERROR();
         case DATA_STATE_BEGIN_READ_LFPBNR_VAL_LEN:
@@ -3600,7 +3594,7 @@ parse_header_data (struct lsqpack_dec *dec,
                 }
             }
             else if (r == -1)
-                return RHS_NEED;
+                return LQRHS_NEED;
             else
                 RETURN_ERROR();
         case DATA_STATE_LFPBNR_READ_VAL_HUFFMAN:
@@ -3690,7 +3684,7 @@ parse_header_data (struct lsqpack_dec *dec,
                     RETURN_ERROR();
             }
             else if (r == -1)
-                return RHS_NEED;
+                return LQRHS_NEED;
             else
                 RETURN_ERROR();
 #undef IPBI
@@ -3701,10 +3695,10 @@ parse_header_data (struct lsqpack_dec *dec,
     }
 
     if (read_ctx->hbrc_size > 0)
-        return RHS_NEED;
+        return LQRHS_NEED;
     else if (read_ctx->hbrc_parse_ctx_u.data.state
                                             == DATA_STATE_NEXT_INSTRUCTION)
-        return RHS_DONE;
+        return LQRHS_DONE;
     else
         RETURN_ERROR();
 
@@ -3713,7 +3707,7 @@ parse_header_data (struct lsqpack_dec *dec,
     dec->qpd_err.off = read_ctx->hbrc_orig_size - read_ctx->hbrc_size
                             + (buf - (end - bufsz));
     dec->qpd_err.stream_id = read_ctx->hbrc_stream_id;
-    return RHS_ERROR;
+    return LQRHS_ERROR;
 }
 
 
@@ -3745,7 +3739,7 @@ dec_max_encoded_LR (const struct lsqpack_dec *dec)
 }
 
 
-static enum read_header_status
+static enum lsqpack_read_header_status
 parse_header_prefix (struct lsqpack_dec *dec,
         struct header_block_read_ctx *read_ctx, const unsigned char *buf,
                                                                 size_t bufsz)
@@ -3775,14 +3769,14 @@ parse_header_prefix (struct lsqpack_dec *dec,
                 if (LR.value)
                 {
                     if (LR.value > dec_max_encoded_LR(dec))
-                        return RHS_ERROR;
+                        return LQRHS_ERROR;
                     read_ctx->hbrc_largest_ref = ID_MINUS(LR.value, 2);
                     read_ctx->hbrc_flags |=
                                     HBRC_LARGEST_REF_READ|HBRC_LARGEST_REF_SET;
                     read_ctx->hbrc_parse_ctx_u.prefix.state
                                             = PREFIX_STATE_BEGIN_READING_BASE_IDX;
                     if (qdec_in_future(dec, read_ctx->hbrc_largest_ref))
-                        return RHS_BLOCKED;
+                        return LQRHS_BLOCKED;
                     else
                         break;
                 }
@@ -3798,12 +3792,12 @@ parse_header_prefix (struct lsqpack_dec *dec,
             {
                 if (read_ctx->hbrc_orig_size - read_ctx->hbrc_size
                                 <= lsqpack_val2len(dec_max_encoded_LR(dec), 8))
-                    return RHS_NEED;
+                    return LQRHS_NEED;
                 else
-                    return RHS_ERROR;
+                    return LQRHS_ERROR;
             }
             else
-                return RHS_ERROR;
+                return LQRHS_ERROR;
         case PREFIX_STATE_BEGIN_READING_BASE_IDX:
             BI.sign = (buf[0] & 0x80) > 0;
             BI.dec_int_state.resume = 0;
@@ -3836,17 +3830,17 @@ parse_header_prefix (struct lsqpack_dec *dec,
                 if (end - buf)
                     return parse_header_data(dec, read_ctx, buf, end - buf);
                 else
-                    return RHS_NEED;
+                    return LQRHS_NEED;
             }
             else if (r == -1)
             {
-                return RHS_NEED;
+                return LQRHS_NEED;
             }
             else
-                return RHS_ERROR;
+                return LQRHS_ERROR;
         default:
             assert(0);
-            return RHS_ERROR;
+            return LQRHS_ERROR;
         }
     }
 
@@ -3854,9 +3848,9 @@ parse_header_prefix (struct lsqpack_dec *dec,
 #undef BI
 
     if (read_ctx->hbrc_size > 0)
-        return RHS_NEED;
+        return LQRHS_NEED;
     else
-        return RHS_ERROR;
+        return LQRHS_ERROR;
 }
 
 
@@ -3883,42 +3877,51 @@ qdec_send_header_ack (struct lsqpack_dec *dec, uint64_t stream_id)
 }
 
 
-static enum read_header_status
+static size_t
+qdec_read_header_block (struct hbrc_buf *hbrc_buf,
+                                    const unsigned char **buf, size_t sz)
+{
+    if (sz > hbrc_buf->sz - hbrc_buf->off)
+        sz = hbrc_buf->sz - hbrc_buf->off;
+    *buf = hbrc_buf->buf + hbrc_buf->off;
+    hbrc_buf->off += sz;
+    return sz;
+}
+
+
+static enum lsqpack_read_header_status
 qdec_read_header (struct lsqpack_dec *dec,
                                     struct header_block_read_ctx *read_ctx)
 {
     const unsigned char *buf;
-    enum read_header_status st;
+    enum lsqpack_read_header_status st;
     size_t n_to_read;
-    ssize_t buf_sz;
+    size_t buf_sz;
 
     while (read_ctx->hbrc_size > 0)
     {
         n_to_read = max_to_read(read_ctx);
-        buf_sz = dec->qpd_read_header_block(read_ctx->hbrc_stream, &buf,
-                                                                    n_to_read);
+        buf_sz = qdec_read_header_block(&read_ctx->hbrc_buf, &buf, n_to_read);
         if (buf_sz > 0)
         {
             read_ctx->hbrc_size -= buf_sz;
             st = read_ctx->hbrc_parse(dec, read_ctx, buf, buf_sz);
-            if (st == RHS_NEED)
+            if (st == LQRHS_NEED)
             {
                 if (read_ctx->hbrc_size == 0)
-                    return RHS_ERROR;
+                    return LQRHS_ERROR;
             }
             else
                 return st;
         }
-        else if (buf_sz == 0)
-            return RHS_NEED;
         else
-            return RHS_ERROR;
+            return LQRHS_NEED;
     }
 
     if (read_ctx->hbrc_flags & HBRC_LARGEST_REF_SET)
         qdec_send_header_ack(dec, read_ctx->hbrc_stream_id);
 
-    return RHS_DONE;
+    return LQRHS_DONE;
 }
 
 
@@ -3944,6 +3947,7 @@ qdec_insert_header_block (struct lsqpack_dec *dec,
                         struct header_block_read_ctx *read_ctx)
 {
     TAILQ_INSERT_TAIL(&dec->qpd_hbrcs, read_ctx, hbrc_next_all);
+    read_ctx->hbrc_flags |= HBRC_ON_LIST;
     return 0;
 }
 
@@ -3953,6 +3957,7 @@ qdec_remove_header_block (struct lsqpack_dec *dec,
                         struct header_block_read_ctx *read_ctx)
 {
     TAILQ_REMOVE(&dec->qpd_hbrcs, read_ctx, hbrc_next_all);
+    read_ctx->hbrc_flags &= ~HBRC_ON_LIST;
     return 0;
 }
 
@@ -3977,12 +3982,12 @@ stash_blocked_header (struct lsqpack_dec *dec,
 
 
 static struct header_block_read_ctx *
-find_header_block_read_ctx (struct lsqpack_dec *dec, void *stream)
+find_header_block_read_ctx (struct lsqpack_dec *dec, void *hblock)
 {
     struct header_block_read_ctx *read_ctx;
 
     TAILQ_FOREACH(read_ctx, &dec->qpd_hbrcs, hbrc_next_all)
-        if (read_ctx->hbrc_stream == stream)
+        if (read_ctx->hbrc_hblock == hblock)
             return read_ctx;
 
     return NULL;
@@ -4019,7 +4024,7 @@ schedule_short_header_ack (struct lsqpack_dec *dec, uint64_t stream_id)
 }
 
 
-static void
+static void __attribute__((unused))
 schedule_long_header_ack (struct lsqpack_dec *dec,
                                         struct header_block_read_ctx *read_ctx)
 {
@@ -4030,89 +4035,84 @@ schedule_long_header_ack (struct lsqpack_dec *dec,
 }
 
 
-int
-lsqpack_dec_header_read (struct lsqpack_dec *dec, void *stream)
+static enum lsqpack_read_header_status
+qdec_header_process (struct lsqpack_dec *dec,
+            struct header_block_read_ctx *read_ctx,
+            const unsigned char **buf, size_t bufsz,
+            struct lsqpack_header_set **hset)
 {
-    struct header_block_read_ctx *read_ctx;
-    enum read_header_status st;
+    struct header_block_read_ctx *read_ctx_copy;
+    enum lsqpack_read_header_status st;
 
-    read_ctx = find_header_block_read_ctx(dec, stream);
-    if (read_ctx)
+    read_ctx->hbrc_buf = (struct hbrc_buf) { *buf, bufsz, 0, };
+    st = qdec_read_header(dec, read_ctx);
+    switch (st)
     {
-        st = qdec_read_header(dec, read_ctx);
-        switch (st)
-        {
-        case RHS_DONE:
-            dec->qpd_header_block_done(read_ctx->hbrc_stream,
-                                                read_ctx->hbrc_header_set);
+    case LQRHS_DONE:
+        if (read_ctx->hbrc_flags & HBRC_ON_LIST)
             qdec_remove_header_block(dec, read_ctx);
-            schedule_long_header_ack(dec, read_ctx);
-            return 0;
-        case RHS_NEED:
-            dec->qpd_wantread_header_block(read_ctx->hbrc_stream, 1);
-            return 0;
-        case RHS_BLOCKED:
-            if (0 == stash_blocked_header(dec, read_ctx))
-            {
-                dec->qpd_wantread_header_block(read_ctx->hbrc_stream, 0);
-                return 0;
-            }
-            else
-                return -1;
-        default:
-            assert(st == RHS_ERROR);
-            return -1;
+        *hset = read_ctx->hbrc_header_set;
+        if (read_ctx->hbrc_largest_ref)
+        {
+            if (0 != schedule_short_header_ack(dec, read_ctx->hbrc_stream_id))
+                return LQRHS_ERROR;
         }
+        *buf = *buf + read_ctx->hbrc_buf.off;
+        return LQRHS_DONE;
+    case LQRHS_NEED:
+    case LQRHS_BLOCKED:
+        if (!(read_ctx->hbrc_flags & HBRC_ON_LIST))
+        {
+            read_ctx_copy = malloc(sizeof(*read_ctx_copy));
+            if (!read_ctx_copy)
+                return LQRHS_ERROR;
+            memcpy(read_ctx_copy, read_ctx, sizeof(*read_ctx));
+            read_ctx = read_ctx_copy;
+            if (0 != qdec_insert_header_block(dec, read_ctx))
+            {
+                free(read_ctx_copy);
+                return LQRHS_ERROR;
+            }
+        }
+        if (st == LQRHS_BLOCKED && 0 != stash_blocked_header(dec, read_ctx))
+            return LQRHS_ERROR;
+        *buf = *buf + read_ctx->hbrc_buf.off;
+        return st;
+    default:
+        assert(st == LQRHS_ERROR);
+        return LQRHS_ERROR;
     }
-    else
-        return -1;
 }
 
 
-int
-lsqpack_dec_header_in (struct lsqpack_dec *dec, void *stream,
-                       uint64_t stream_id, size_t header_size)
+enum lsqpack_read_header_status
+lsqpack_dec_header_read (struct lsqpack_dec *dec, void *hblock,
+    const unsigned char **buf, size_t bufsz, struct lsqpack_header_set **hset)
 {
-    enum read_header_status st;
     struct header_block_read_ctx *read_ctx;
-    struct header_block_read_ctx read_ctx_buf = {
+
+    read_ctx = find_header_block_read_ctx(dec, hblock);
+    if (read_ctx)
+        return qdec_header_process(dec, read_ctx, buf, bufsz, hset);
+    else
+        return LQRHS_ERROR;
+}
+
+
+enum lsqpack_read_header_status
+lsqpack_dec_header_in (struct lsqpack_dec *dec, void *hblock,
+            uint64_t stream_id, size_t header_size, const unsigned char **buf,
+            size_t bufsz, struct lsqpack_header_set **hset)
+{
+    struct header_block_read_ctx read_ctx = {
         .hbrc_stream_id = stream_id,
-        .hbrc_stream    = stream,
+        .hbrc_hblock    = hblock,
         .hbrc_size      = header_size,
         .hbrc_orig_size = header_size,
         .hbrc_parse     = parse_header_prefix,
     };
 
-    st = qdec_read_header(dec, &read_ctx_buf);
-    switch (st)
-    {
-    case RHS_DONE:
-        dec->qpd_header_block_done(stream, read_ctx_buf.hbrc_header_set);
-        if (read_ctx_buf.hbrc_largest_ref)
-        {
-            if (0 != schedule_short_header_ack(dec, stream_id))
-                return -1;
-        }
-        return 0;
-    case RHS_NEED:
-    case RHS_BLOCKED:
-        read_ctx = malloc(sizeof(*read_ctx));
-        if (!read_ctx)
-            return -1;
-        memcpy(read_ctx, &read_ctx_buf, sizeof(*read_ctx));
-        if (0 != qdec_insert_header_block(dec, read_ctx))
-        {
-            free(read_ctx);
-            return -1;
-        }
-        if (st == RHS_BLOCKED && 0 != stash_blocked_header(dec, read_ctx))
-            return -1;
-        dec->qpd_wantread_header_block(stream, st == RHS_NEED);
-        return 0;
-    default:
-        assert(st == RHS_ERROR);
-        return -1;
-    }
+    return qdec_header_process(dec, &read_ctx, buf, bufsz, hset);
 }
 
 
@@ -4160,7 +4160,7 @@ qdec_process_blocked_headers (struct lsqpack_dec *dec)
             TAILQ_REMOVE(&dec->qpd_blocked_headers[id], read_ctx,
                                                             hbrc_next_blocked);
             --dec->qpd_n_blocked;
-            dec->qpd_wantread_header_block(read_ctx->hbrc_stream, 1);
+            dec->qpd_hblock_unblocked(read_ctx->hbrc_hblock);
         }
     }
 }
