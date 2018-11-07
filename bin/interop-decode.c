@@ -54,7 +54,6 @@ struct buf
     uint64_t                stream_id;     /* Zero means encoder stream */
     size_t                  size;
     size_t                  off;
-    int                     wantread;
     unsigned char           buf[0];
 };
 
