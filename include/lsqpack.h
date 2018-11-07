@@ -59,6 +59,9 @@ enum lsqpack_enc_opts
     /**
      * Client and server follow different heuristics.  The encoder is either
      * in one or the other mode.
+     *
+     * At the moment this option is a no-op.  This is a potential future
+     * work item where some heuristics may be added to the library.
      */
     LSQPACK_ENC_OPT_SERVER  = 1 << 0,
 
@@ -73,7 +76,8 @@ enum lsqpack_enc_opts
     LSQPACK_ENC_OPT_IX_AGGR = 1 << 2,
 
     /**
-     * The encoder was pre-initialized.
+     * The encoder was pre-initialized using @ref lsqpack_enc_preinit() and
+     * so some initialization steps can be skipped.
      */
     LSQPACK_ENC_OPT_STAGE_2 = 1 << 3,
 };
@@ -273,7 +277,7 @@ lsqpack_dec_header_in (struct lsqpack_dec *, void *hblock,
 /**
  * Call this function when more header block bytes are become available
  * after this function or @ref lsqpack_dec_header_in() returned LQRHS_NEED
- * or header_unblocked() callback has been called.  See comments to
+ * or hblock_unblocked() callback has been called.  See comments to
  * @ref lsqpack_dec_header_in() for explanation of the return values.
  */
 enum lsqpack_read_header_status
