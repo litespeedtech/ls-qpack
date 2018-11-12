@@ -217,13 +217,6 @@ struct lsqpack_header_set
     unsigned                 qhs_count;
 };
 
-/* The callback `header_block_done' is called when the decoder is done
- * reading from the header block.  At this point, the decoder is no
- * longer using the stream reference.  If header block decoding was
- * successful, the header set is not NULL.  This structure should be
- * destroyed when the user is done with it using
- * lsqpack_dec_destroy_header_set().
- */
 void
 lsqpack_dec_init (struct lsqpack_dec *, unsigned dyn_table_size,
     unsigned max_risked_streams,
@@ -245,7 +238,9 @@ enum lsqpack_read_header_status
  * can be returned:
  *
  *      LQRHS_DONE      The header set has been placed in `hset' and `buf'
- *                        has been advanced.
+ *                        has been advanced.  This header should be released
+ *                        using @ref lsqpack_dec_destroy_header_set() after
+ *                        the caller is done with it.
  *
  *      LQRHS_NEED      The decoder needs more bytes from the header block to
  *                        proceed.  When they become available, call
@@ -293,14 +288,14 @@ int
 lsqpack_dec_enc_in (struct lsqpack_dec *, const unsigned char *, size_t);
 
 /**
- * Destroy the header set returned by the header_block_done() callback.
+ * Destroy the header set returned by either
+ * @ref lsqpack_dec_header_in() or @ref lsqpack_dec_header_read().
  */
 void
 lsqpack_dec_destroy_header_set (struct lsqpack_header_set *);
 
 /* Clean up the decoder.  If any there are any blocked header blocks,
- * `header_block_done' will be called for each of them with the second
- * argument set to NULL.
+ * references to them will be discarded.
  */
 void
 lsqpack_dec_cleanup (struct lsqpack_dec *);
