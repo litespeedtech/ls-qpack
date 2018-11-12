@@ -54,6 +54,7 @@ struct buf
     uint64_t                stream_id;     /* Zero means encoder stream */
     size_t                  size;
     size_t                  off;
+    size_t                  file_off;
     unsigned char           buf[0];
 };
 
@@ -112,6 +113,7 @@ main (int argc, char **argv)
     uint64_t stream_id;
     uint32_t size;
     size_t off;         /* For debugging */
+    size_t file_off;
     struct buf *buf;
     unsigned lineno;
     char *line, *end;
@@ -188,6 +190,7 @@ main (int argc, char **argv)
     off = 0;
     while (1)
     {
+        file_off = off;
         nr = read(in, &stream_id, sizeof(stream_id));
         if (nr == 0)
             break;
@@ -216,6 +219,7 @@ main (int argc, char **argv)
         buf->dec = &decoder;
         buf->stream_id = stream_id;
         buf->size = size;
+        buf->file_off = file_off;
         TAILQ_INSERT_TAIL(&bufs, buf, next_buf);
     }
 
