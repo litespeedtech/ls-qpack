@@ -2539,7 +2539,6 @@ qdec_get_table_entry_abs (const struct lsqpack_dec *dec,
 void
 lsqpack_dec_init (struct lsqpack_dec *dec, unsigned dyn_table_size,
     unsigned max_risked_streams,
-    lsqpack_stream_write_f write_decoder, void *decoder_stream,
     void (*hblock_unblocked)(void *hblock))
 {
     unsigned i;
@@ -2549,8 +2548,6 @@ lsqpack_dec_init (struct lsqpack_dec *dec, unsigned dyn_table_size,
     dec->qpd_max_entries = dec->qpd_max_capacity / DYNAMIC_ENTRY_OVERHEAD;
     dec->qpd_last_id = dec->qpd_max_entries * 2 - 1;
     dec->qpd_max_risked_streams = max_risked_streams;
-    dec->qpd_dec_stream = decoder_stream;
-    dec->qpd_write_dec = write_decoder;
     dec->qpd_hblock_unblocked = hblock_unblocked;
     TAILQ_INIT(&dec->qpd_header_sets);
     TAILQ_INIT(&dec->qpd_hbrcs);
@@ -3864,19 +3861,6 @@ max_to_read (const struct header_block_read_ctx *read_ctx)
 }
 
 
-static void
-qdec_send_header_ack (struct lsqpack_dec *dec, uint64_t stream_id)
-{
-    unsigned char buf[LSQPACK_UINT64_ENC_SZ];
-    unsigned char *end;
-
-    buf[0] = 0x80;
-    end = lsqpack_enc_int(buf, buf + sizeof(buf), stream_id, 7);
-    assert(end > buf);
-    dec->qpd_write_dec(dec->qpd_dec_stream, buf, end - buf);
-}
-
-
 static size_t
 qdec_read_header_block (struct hbrc_buf *hbrc_buf,
                                     const unsigned char **buf, size_t sz)
@@ -3917,9 +3901,6 @@ qdec_read_header (struct lsqpack_dec *dec,
         else
             return LQRHS_NEED;
     }
-
-    if (read_ctx->hbrc_flags & HBRC_LARGEST_REF_SET)
-        qdec_send_header_ack(dec, read_ctx->hbrc_stream_id);
 
     return LQRHS_DONE;
 }
@@ -3994,44 +3975,24 @@ find_header_block_read_ctx (struct lsqpack_dec *dec, void *hblock)
 }
 
 
-static void
-maybe_want_write_decoder (struct lsqpack_dec *dec)
-{
-    if (0 != (dec->qpd_flags & LSQPACK_DEC_WANT_WRITE_DECODER))
-    {
-        dec->qpd_flags |= LSQPACK_DEC_WANT_WRITE_DECODER;
-        dec->qpd_wantwrite_decoder(dec->qpd_dec_stream, 1);
-    }
-}
-
-
 static int
-schedule_short_header_ack (struct lsqpack_dec *dec, uint64_t stream_id)
+qdec_try_writing_hack (struct lsqpack_dec *dec, uint64_t stream_id,
+                       unsigned char *dec_buf, size_t *dec_buf_sz)
 {
-    struct header_ack *hack;
+    unsigned char *p = dec_buf;
 
-    hack = malloc(sizeof(*hack));
-    if (hack)
+    if (*dec_buf_sz > 0)
     {
-        STAILQ_INSERT_TAIL(&dec->qpd_dinsts, &hack->dinst, di_next);
-        hack->dinst.di_type = DIT_HEAD_ACK;
-        hack->stream_id = stream_id;
-        maybe_want_write_decoder(dec);
-        return 0;
+        *dec_buf = 0x80;
+        p = lsqpack_enc_int(p, p + *dec_buf_sz, stream_id, 7);
+        if (p > dec_buf)
+        {
+            *dec_buf_sz = p - dec_buf;
+            return 0;
+        }
     }
-    else
-        return -1;
-}
 
-
-static void __attribute__((unused))
-schedule_long_header_ack (struct lsqpack_dec *dec,
-                                        struct header_block_read_ctx *read_ctx)
-{
-    STAILQ_INSERT_TAIL(&dec->qpd_dinsts, &read_ctx->hbrc_dinst, di_next);
-    read_ctx->hbrc_dinst.di_type = DIT_READ_CTX_ACK;
-    read_ctx->hbrc_flags |= HBRC_DINST;
-    maybe_want_write_decoder(dec);
+    return -1;
 }
 
 
@@ -4039,7 +4000,8 @@ static enum lsqpack_read_header_status
 qdec_header_process (struct lsqpack_dec *dec,
             struct header_block_read_ctx *read_ctx,
             const unsigned char **buf, size_t bufsz,
-            struct lsqpack_header_set **hset)
+            struct lsqpack_header_set **hset,
+            unsigned char *dec_buf, size_t *dec_buf_sz)
 {
     struct header_block_read_ctx *read_ctx_copy;
     enum lsqpack_read_header_status st;
@@ -4052,11 +4014,14 @@ qdec_header_process (struct lsqpack_dec *dec,
         if (read_ctx->hbrc_flags & HBRC_ON_LIST)
             qdec_remove_header_block(dec, read_ctx);
         *hset = read_ctx->hbrc_header_set;
-        if (read_ctx->hbrc_largest_ref)
+        if (read_ctx->hbrc_largest_ref && dec_buf && dec_buf_sz)
         {
-            if (0 != schedule_short_header_ack(dec, read_ctx->hbrc_stream_id))
+            if (0 != qdec_try_writing_hack(dec, read_ctx->hbrc_stream_id,
+                                                        dec_buf, dec_buf_sz))
                 return LQRHS_ERROR;
         }
+        else
+            *dec_buf_sz = 0;
         *buf = *buf + read_ctx->hbrc_buf.off;
         return LQRHS_DONE;
     case LQRHS_NEED:
@@ -4087,13 +4052,15 @@ qdec_header_process (struct lsqpack_dec *dec,
 
 enum lsqpack_read_header_status
 lsqpack_dec_header_read (struct lsqpack_dec *dec, void *hblock,
-    const unsigned char **buf, size_t bufsz, struct lsqpack_header_set **hset)
+    const unsigned char **buf, size_t bufsz, struct lsqpack_header_set **hset,
+    unsigned char *dec_buf, size_t *dec_buf_sz)
 {
     struct header_block_read_ctx *read_ctx;
 
     read_ctx = find_header_block_read_ctx(dec, hblock);
     if (read_ctx)
-        return qdec_header_process(dec, read_ctx, buf, bufsz, hset);
+        return qdec_header_process(dec, read_ctx, buf, bufsz, hset,
+                                   dec_buf, dec_buf_sz);
     else
         return LQRHS_ERROR;
 }
@@ -4102,7 +4069,8 @@ lsqpack_dec_header_read (struct lsqpack_dec *dec, void *hblock,
 enum lsqpack_read_header_status
 lsqpack_dec_header_in (struct lsqpack_dec *dec, void *hblock,
             uint64_t stream_id, size_t header_size, const unsigned char **buf,
-            size_t bufsz, struct lsqpack_header_set **hset)
+            size_t bufsz, struct lsqpack_header_set **hset,
+            unsigned char *dec_buf, size_t *dec_buf_sz)
 {
     struct header_block_read_ctx read_ctx = {
         .hbrc_stream_id = stream_id,
@@ -4112,7 +4080,8 @@ lsqpack_dec_header_in (struct lsqpack_dec *dec, void *hblock,
         .hbrc_parse     = parse_header_prefix,
     };
 
-    return qdec_header_process(dec, &read_ctx, buf, bufsz, hset);
+    return qdec_header_process(dec, &read_ctx, buf, bufsz, hset,
+                               dec_buf, dec_buf_sz);
 }
 
 

@@ -185,7 +185,7 @@ main (int argc, char **argv)
         s_out = stdout;
 
     lsqpack_dec_init(&decoder, dyn_table_size, max_risked_streams,
-                 NULL, NULL, hblock_unblocked);
+                 hblock_unblocked);
 
     off = 0;
     while (1)
@@ -255,7 +255,7 @@ main (int argc, char **argv)
                 rhs = lsqpack_dec_header_in(&decoder, buf, stream_id,
                             buf->size, &p,
                             buf->size /* FIXME: this should be `size' */,
-                            &hset);
+                            &hset, NULL, NULL);
                 switch (rhs)
                 {
                 case LQRHS_DONE:
@@ -313,10 +313,10 @@ main (int argc, char **argv)
             p = buf->buf + buf->off;
             if (buf->off == 0)
                 rhs = lsqpack_dec_header_in(&decoder, buf, buf->stream_id,
-                                            buf->size, &p, buf->size, &hset);
+                                buf->size, &p, buf->size, &hset, NULL, NULL);
             else
                 rhs = lsqpack_dec_header_read(buf->dec, buf, &p,
-                                                buf->size - buf->off, &hset);
+                                buf->size - buf->off, &hset, NULL, NULL);
             switch (rhs)
             {
             case LQRHS_DONE:

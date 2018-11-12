@@ -220,7 +220,6 @@ struct lsqpack_header_set
 void
 lsqpack_dec_init (struct lsqpack_dec *, unsigned dyn_table_size,
     unsigned max_risked_streams,
-    lsqpack_stream_write_f write_decoder, void *decoder_stream,
     void (*hblock_unblocked)(void *hblock));
 
 enum lsqpack_read_header_status
@@ -230,6 +229,9 @@ enum lsqpack_read_header_status
     LQRHS_NEED,
     LQRHS_ERROR,
 };
+
+/** Number of bytes needed to encode 7-bit prefix 62-bit value */
+#define LSQPACK_LONGEST_HACK 10
 
 
 /**
@@ -267,7 +269,8 @@ enum lsqpack_read_header_status
 lsqpack_dec_header_in (struct lsqpack_dec *, void *hblock,
                        uint64_t stream_id, size_t header_block_size,
                        const unsigned char **buf, size_t bufsz,
-                       struct lsqpack_header_set **hset);
+                       struct lsqpack_header_set **hset,
+                       unsigned char *dec_buf, size_t *dec_buf_sz);
 
 /**
  * Call this function when more header block bytes are become available
@@ -278,7 +281,8 @@ lsqpack_dec_header_in (struct lsqpack_dec *, void *hblock,
 enum lsqpack_read_header_status
 lsqpack_dec_header_read (struct lsqpack_dec *dec, void *hblock,
                          const unsigned char **buf, size_t bufsz,
-                         struct lsqpack_header_set **hset);
+                         struct lsqpack_header_set **hset,
+                         unsigned char *dec_buf, size_t *dec_buf_sz);
 
 /**
  * Feed encoder stream data to the decoder.  Zero is returned on success,
@@ -476,13 +480,6 @@ struct lsqpack_dec
      * [0, qpd_max_entries * 2 - 1 ]
      */
     lsqpack_abs_id_t        qpd_last_id;
-    enum {
-        LSQPACK_DEC_WANT_WRITE_DECODER  = 1 << 0,
-    }                       qpd_flags;
-    void                   *qpd_dec_stream;
-    lsqpack_stream_wantread_f   /* XXX ? */
-                            qpd_wantwrite_decoder;
-    lsqpack_stream_write_f  qpd_write_dec;
     void                  (*qpd_hblock_unblocked)(void *hblock);
 
     /** Outstanding header sets */
