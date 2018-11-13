@@ -492,7 +492,8 @@ struct lsqpack_dec
      * [0, qpd_max_entries * 2 - 1 ]
      */
     lsqpack_abs_id_t        qpd_last_id;
-    unsigned                qpd_ins_since_upd;
+    /** TODO: describe the mechanism */
+    lsqpack_abs_id_t        qpd_largest_known_id;
     void                  (*qpd_hblock_unblocked)(void *hblock);
 
     /** Outstanding header sets */

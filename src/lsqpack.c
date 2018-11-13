@@ -3987,13 +3987,23 @@ qdec_try_writing_hack (struct lsqpack_dec *dec, uint64_t stream_id,
         p = lsqpack_enc_int(p, p + *dec_buf_sz, stream_id, 7);
         if (p > dec_buf)
         {
-            dec->qpd_ins_since_upd = 0;
             *dec_buf_sz = p - dec_buf;
             return 0;
         }
     }
 
     return -1;
+}
+
+
+static void
+qdec_maybe_update_largest_known (struct lsqpack_dec *dec, lsqpack_abs_id_t id)
+{
+    lsqpack_abs_id_t diff;
+
+    diff = ID_MINUS(id, dec->qpd_largest_known_id);
+    if (diff > 0 && diff <= dec->qpd_max_entries)
+        dec->qpd_largest_known_id = id;
 }
 
 
@@ -4015,10 +4025,14 @@ qdec_header_process (struct lsqpack_dec *dec,
         if (read_ctx->hbrc_flags & HBRC_ON_LIST)
             qdec_remove_header_block(dec, read_ctx);
         *hset = read_ctx->hbrc_header_set;
-        if (read_ctx->hbrc_largest_ref && dec_buf && dec_buf_sz)
+        if ((read_ctx->hbrc_flags & HBRC_LARGEST_REF_SET)
+                                                    && dec_buf && dec_buf_sz)
         {
-            if (0 != qdec_try_writing_hack(dec, read_ctx->hbrc_stream_id,
+            if (0 == qdec_try_writing_hack(dec, read_ctx->hbrc_stream_id,
                                                         dec_buf, dec_buf_sz))
+                qdec_maybe_update_largest_known(dec,
+                                                read_ctx->hbrc_largest_ref);
+            else
                 return LQRHS_ERROR;
         }
         else
@@ -4139,7 +4153,7 @@ qdec_process_blocked_headers (struct lsqpack_dec *dec)
 int
 lsqpack_dec_tss_pending (const struct lsqpack_dec *dec)
 {
-    return dec->qpd_ins_since_upd != 0;
+    return dec->qpd_last_id != dec->qpd_largest_known_id;
 }
 
 
@@ -4147,14 +4161,16 @@ ssize_t
 lsqpack_dec_write_tss (struct lsqpack_dec *dec, unsigned char *buf, size_t sz)
 {
     unsigned char *p;
+    unsigned count;
 
-    if (dec->qpd_ins_since_upd != 0)
+    if (dec->qpd_last_id != dec->qpd_largest_known_id)
     {
+        count = ID_MINUS(dec->qpd_largest_known_id, dec->qpd_last_id);
         *buf = 0;
-        p = lsqpack_enc_int(buf, buf + sz, dec->qpd_ins_since_upd, 6);
+        p = lsqpack_enc_int(buf, buf + sz, count, 6);
         if (p > buf)
         {
-            dec->qpd_ins_since_upd = 0;
+            dec->qpd_largest_known_id = dec->qpd_last_id;
             return p - buf;
         }
         else
@@ -4173,7 +4189,6 @@ lsqpack_dec_push_entry (struct lsqpack_dec *dec,
     {
         dec->qpd_cur_capacity += DTE_SIZE(entry);
         dec->qpd_last_id = ID_PLUS(dec->qpd_last_id, 1);
-        ++dec->qpd_ins_since_upd;
         qdec_remove_overflow_entries(dec);
         qdec_process_blocked_headers(dec);
         if (dec->qpd_cur_capacity <= dec->qpd_cur_max_capacity)
