@@ -2547,6 +2547,7 @@ lsqpack_dec_init (struct lsqpack_dec *dec, unsigned dyn_table_size,
     dec->qpd_cur_max_capacity = dyn_table_size;
     dec->qpd_max_entries = dec->qpd_max_capacity / DYNAMIC_ENTRY_OVERHEAD;
     dec->qpd_last_id = dec->qpd_max_entries * 2 - 1;
+    dec->qpd_largest_known_id = dec->qpd_max_entries * 2 - 1;
     dec->qpd_max_risked_streams = max_risked_streams;
     dec->qpd_hblock_unblocked = hblock_unblocked;
     TAILQ_INIT(&dec->qpd_header_sets);
