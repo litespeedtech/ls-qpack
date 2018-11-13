@@ -3987,6 +3987,7 @@ qdec_try_writing_hack (struct lsqpack_dec *dec, uint64_t stream_id,
         p = lsqpack_enc_int(p, p + *dec_buf_sz, stream_id, 7);
         if (p > dec_buf)
         {
+            dec->qpd_ins_since_upd = 0;
             *dec_buf_sz = p - dec_buf;
             return 0;
         }
@@ -4135,6 +4136,35 @@ qdec_process_blocked_headers (struct lsqpack_dec *dec)
 }
 
 
+int
+lsqpack_dec_tss_pending (const struct lsqpack_dec *dec)
+{
+    return dec->qpd_ins_since_upd != 0;
+}
+
+
+ssize_t
+lsqpack_dec_write_tss (struct lsqpack_dec *dec, unsigned char *buf, size_t sz)
+{
+    unsigned char *p;
+
+    if (dec->qpd_ins_since_upd != 0)
+    {
+        *buf = 0;
+        p = lsqpack_enc_int(buf, buf + sz, dec->qpd_ins_since_upd, 6);
+        if (p > buf)
+        {
+            dec->qpd_ins_since_upd = 0;
+            return p - buf;
+        }
+        else
+            return -1;
+    }
+    else
+        return 0;
+}
+
+
 static int
 lsqpack_dec_push_entry (struct lsqpack_dec *dec,
                                         struct lsqpack_dec_table_entry *entry)
@@ -4143,6 +4173,7 @@ lsqpack_dec_push_entry (struct lsqpack_dec *dec,
     {
         dec->qpd_cur_capacity += DTE_SIZE(entry);
         dec->qpd_last_id = ID_PLUS(dec->qpd_last_id, 1);
+        ++dec->qpd_ins_since_upd;
         qdec_remove_overflow_entries(dec);
         qdec_process_blocked_headers(dec);
         if (dec->qpd_cur_capacity <= dec->qpd_cur_max_capacity)

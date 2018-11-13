@@ -298,6 +298,18 @@ lsqpack_dec_enc_in (struct lsqpack_dec *, const unsigned char *, size_t);
 void
 lsqpack_dec_destroy_header_set (struct lsqpack_header_set *);
 
+/**
+ * Returns true if Table State Synchronization instruction is pending.
+ */
+int
+lsqpack_dec_tss_pending (const struct lsqpack_dec *dec);
+
+/** Number of bytes required to encode the longest TSS instruction */
+#define LSQPACK_LONGEST_TSS 6
+
+ssize_t
+lsqpack_dec_write_tss (struct lsqpack_dec *, unsigned char *, size_t);
+
 /* Clean up the decoder.  If any there are any blocked header blocks,
  * references to them will be discarded.
  */
@@ -480,6 +492,7 @@ struct lsqpack_dec
      * [0, qpd_max_entries * 2 - 1 ]
      */
     lsqpack_abs_id_t        qpd_last_id;
+    unsigned                qpd_ins_since_upd;
     void                  (*qpd_hblock_unblocked)(void *hblock);
 
     /** Outstanding header sets */
