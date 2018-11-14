@@ -1631,6 +1631,16 @@ qenc_maybe_update_hinfo_min_max (struct lsqpack_header_info *hinfo,
 }
 
 
+/* Clang does not produce incorrect "may be used uninitialized" warnings
+ * in the function below, but gcc 5.4.0 does.
+ */
+#ifdef __clang__
+#define USE_USELESS_INITIALIZATION 0
+#else
+#define USE_USELESS_INITIALIZATION 1
+#endif
+
+
 enum lsqpack_enc_status
 lsqpack_enc_encode (struct lsqpack_enc *enc,
         unsigned char *enc_buf, size_t *enc_sz_p,
@@ -1674,8 +1684,19 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                     .ep_tab_action = ETA_NOOP,
                     .ep_flags      = 0,
         };
+#if USE_USELESS_INITIALIZATION
+        nameval_hash = 0;
+        name_hash = 0;
+        use_dyn_table = 0;
+        risk = 0;
+        entry = NULL;
+#endif
         goto execute_program;
     }
+#if USE_USELESS_INITIALIZATION
+    else
+        id = 0;
+#endif
 
     use_dyn_table = enc_use_dynamic_table(enc);
 
@@ -1772,6 +1793,13 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
             goto execute_program;
         }
     }
+#if USE_USELESS_INITIALIZATION
+    else
+    {
+        entry = NULL;
+        n_cand = 0;
+    }
+#endif
 
     /* Look for name-only match in the static table */
     static_id = find_in_static_headers(name, name_len);
