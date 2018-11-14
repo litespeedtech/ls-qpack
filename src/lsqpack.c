@@ -3920,6 +3920,9 @@ destroy_header_block_read_ctx (struct lsqpack_dec *dec,
         TAILQ_REMOVE(&dec->qpd_blocked_headers[id], read_ctx, hbrc_next_blocked);
         --dec->qpd_n_blocked;
     }
+    /* TODO: there may be partial entries -- depending on state -- that also
+     * need to be freed.
+     */
     free(read_ctx);
 }
 
@@ -4179,6 +4182,22 @@ lsqpack_dec_write_tss (struct lsqpack_dec *dec, unsigned char *buf, size_t sz)
     }
     else
         return 0;
+}
+
+
+int
+lsqpack_dec_unref_stream (struct lsqpack_dec *dec, void *hblock)
+{
+    struct header_block_read_ctx *read_ctx;
+
+    read_ctx = find_header_block_read_ctx(dec, hblock);
+    if (read_ctx)
+    {
+        destroy_header_block_read_ctx(dec, read_ctx);
+        return 0;
+    }
+    else
+        return -1;
 }
 
 

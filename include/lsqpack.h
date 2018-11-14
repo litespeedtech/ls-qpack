@@ -326,7 +326,16 @@ ssize_t
 lsqpack_dec_cancel_stream (struct lsqpack_dec *, void *hblock,
                                 unsigned char *buf, size_t buf_sz);
 
-/* Clean up the decoder.  If any there are any blocked header blocks,
+/**
+ * Delete reference to header block `hblock'.  Use this instead of
+ * @ref lsqpack_dec_cancel_stream() when producing a Cancel Stream
+ * instruction is not necessary.
+ */
+int
+lsqpack_dec_unref_stream (struct lsqpack_dec *, void *hblock);
+
+/**
+ * Clean up the decoder.  If any there are any blocked header blocks,
  * references to them will be discarded.
  */
 void
