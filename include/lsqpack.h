@@ -310,6 +310,22 @@ lsqpack_dec_tss_pending (const struct lsqpack_dec *dec);
 ssize_t
 lsqpack_dec_write_tss (struct lsqpack_dec *, unsigned char *, size_t);
 
+/** Number of bytes required to encode the longest cancel instruction */
+#define LSQPACK_LONGEST_CANCEL 6
+
+/**
+ * Cancel stream associated with header block `hblock' and write
+ * cancellation instruction to `buf'.  `buf' must be at least
+ * @ref LSQPACK_LONGEST_CANCEL bytes long.
+ *
+ * Number of bytes written to `buf' is returned.  If stream `stream_id'
+ * could not be found, zero is returned.  If `buf' is too short, -1 is
+ * returned.
+ */
+ssize_t
+lsqpack_dec_cancel_stream (struct lsqpack_dec *, void *hblock,
+                                unsigned char *buf, size_t buf_sz);
+
 /* Clean up the decoder.  If any there are any blocked header blocks,
  * references to them will be discarded.
  */

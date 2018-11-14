@@ -3907,7 +3907,7 @@ qdec_read_header (struct lsqpack_dec *dec,
 }
 
 
-static void __attribute__((unused))
+static void
 destroy_header_block_read_ctx (struct lsqpack_dec *dec,
                         struct header_block_read_ctx *read_ctx)
 {
@@ -4179,6 +4179,32 @@ lsqpack_dec_write_tss (struct lsqpack_dec *dec, unsigned char *buf, size_t sz)
     }
     else
         return 0;
+}
+
+
+ssize_t
+lsqpack_dec_cancel_stream (struct lsqpack_dec *dec, void *hblock,
+                                        unsigned char *buf, size_t buf_sz)
+{
+    struct header_block_read_ctx *read_ctx;
+    unsigned char *p;
+
+    read_ctx = find_header_block_read_ctx(dec, hblock);
+    if (!read_ctx)
+        return 0;
+
+    if (buf_sz == 0)
+        return -1;
+
+    *buf = 0x40;
+    p = lsqpack_enc_int(buf, buf + buf_sz, read_ctx->hbrc_stream_id, 6);
+    if (p > buf)
+    {
+        destroy_header_block_read_ctx(dec, read_ctx);
+        return p - buf;
+    }
+    else
+        return -1;
 }
 
 
