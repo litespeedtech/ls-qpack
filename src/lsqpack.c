@@ -4067,7 +4067,7 @@ qdec_header_process (struct lsqpack_dec *dec,
             else
                 return LQRHS_ERROR;
         }
-        else
+        else if (dec_buf_sz)
             *dec_buf_sz = 0;
         *buf = *buf + read_ctx->hbrc_buf.off;
         return LQRHS_DONE;
