@@ -506,6 +506,7 @@ lsqpack_enc_preinit (struct lsqpack_enc *enc, void *logger_ctx)
     enc->qpe_hist_seen_nameval = qenc_hist_seen_nameval_yes;
     enc->qpe_hist_seen_name    = qenc_hist_seen_name_yes;
     enc->qpe_logger_ctx        = logger_ctx;
+    E_DEBUG("preinitialized");
 };
 
 
@@ -578,6 +579,9 @@ lsqpack_enc_init (struct lsqpack_enc *enc, void *logger_ctx,
     if (enc_opts & LSQPACK_ENC_OPT_DUP)
         enc->qpe_flags   |= LSQPACK_ENC_USE_DUP;
     enc->qpe_hist         = hist;
+    E_DEBUG("initialized.  opts: 0x%X; max capacity: %u; max risked "
+        "streams: %u.", enc_opts, enc->qpe_max_capacity,
+        enc->qpe_max_risked_streams);
 
     return 0;
 }
@@ -607,6 +611,7 @@ lsqpack_enc_cleanup (struct lsqpack_enc *enc)
         free(enc->qpe_hist->ehi_els);
         free(enc->qpe_hist);
     }
+    E_DEBUG("cleaned up");
 }
 
 
@@ -1154,7 +1159,6 @@ qenc_drop_oldest_entry (struct lsqpack_enc *enc)
 }
 
 
-#if LSQPACK_DEVEL_MODE
 static float
 qenc_effective_fill (const struct lsqpack_enc *enc)
 {
@@ -1176,7 +1180,6 @@ qenc_effective_fill (const struct lsqpack_enc *enc)
     return (float) (enc->qpe_cur_capacity - dups_size)
                                         / (float) enc->qpe_max_capacity;
 }
-#endif
 
 
 static void
@@ -1220,8 +1223,7 @@ qenc_remove_overflow_entries (struct lsqpack_enc *enc)
             */
     }
 
-#if LSQPACK_DEVEL_MODE
-    if (enc->qpe_log)
+    if (enc->qpe_logger_ctx)
     {
         if (enc->qpe_flags & LSQPACK_ENC_USE_DUP)
             E_DEBUG("fill: %.2f; effective fill: %.2f",
@@ -1231,7 +1233,6 @@ qenc_remove_overflow_entries (struct lsqpack_enc *enc)
             E_DEBUG("fill: %.2f",
                 (float) enc->qpe_cur_capacity / (float) enc->qpe_max_capacity);
     }
-#endif
 }
 
 
@@ -1353,6 +1354,8 @@ lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
         enc->qpe_cur_header.hinfo->qhi_stream_id = stream_id;
         enc->qpe_cur_header.hinfo->qhi_seqno     = seqno;
     }
+    else
+        E_INFO("could not allocate hinfo for stream %"PRIu64, stream_id);
     enc->qpe_cur_header.n_risked = 0;
     enc->qpe_cur_header.n_headers = 0;
     enc->qpe_cur_header.base_idx = enc->qpe_ins_count;
@@ -1404,6 +1407,7 @@ lsqpack_enc_header_data_prefix_size (const struct lsqpack_enc *enc)
 ssize_t
 lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
 {
+    const struct lsqpack_header_info *hinfo;
     unsigned char *dst, *end;
     lsqpack_abs_id_t diff, encoded_largest_ref;
     unsigned sign;
@@ -1413,13 +1417,14 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
 
     if (enc->qpe_cur_header.hinfo && HINFO_IDS_SET(enc->qpe_cur_header.hinfo))
     {
+        hinfo = enc->qpe_cur_header.hinfo;  /* shorthand */
         end = buf + sz;
 
         *buf = 0;
-        encoded_largest_ref = enc->qpe_cur_header.hinfo->qhi_max_id
-                                                % (2 * enc->qpe_max_entries) + 1;
+        encoded_largest_ref = hinfo->qhi_max_id
+                                            % (2 * enc->qpe_max_entries) + 1;
         E_DEBUG("LargestRef for stream %"PRIu64" is encoded as %u",
-            enc->qpe_cur_header.hinfo->qhi_stream_id, encoded_largest_ref);
+            hinfo->qhi_stream_id, encoded_largest_ref);
         dst = lsqpack_enc_int(buf, end, encoded_largest_ref, 8);
         if (dst <= buf)
             return 0;
@@ -1428,23 +1433,24 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
             return 0;
 
         buf = dst;
-        if (enc->qpe_cur_header.base_idx
-                                    >= enc->qpe_cur_header.hinfo->qhi_max_id)
+        if (enc->qpe_cur_header.base_idx >= hinfo->qhi_max_id)
         {
             sign = 0;
-            diff = enc->qpe_cur_header.base_idx
-                                    - enc->qpe_cur_header.hinfo->qhi_max_id;
+            diff = enc->qpe_cur_header.base_idx - hinfo->qhi_max_id;
         }
         else
         {
             sign = 1;
-            diff = enc->qpe_cur_header.hinfo->qhi_max_id
-                                    - enc->qpe_cur_header.base_idx;
+            diff = hinfo->qhi_max_id - enc->qpe_cur_header.base_idx;
         }
         *buf = sign << 7;
         dst = lsqpack_enc_int(buf, end, diff, 7);
         if (dst <= buf)
             return 0;
+
+        E_DEBUG("ended header for stream %"PRIu64"; max ref: %u encoded as %u; "
+            "risked: %d", hinfo->qhi_stream_id, hinfo->qhi_max_id,
+            encoded_largest_ref, hinfo->qhi_max_id > enc->qpe_max_acked_id);
 
         enc->qpe_cur_header.hinfo = NULL;
         enc->qpe_flags &= ~LSQPACK_ENC_HEADER;
@@ -1453,9 +1459,16 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
 
     if (sz >= 2)
     {
-        memset(buf, 0, 2);
-        enc_free_hinfo(enc, enc->qpe_cur_header.hinfo);
-        enc->qpe_cur_header.hinfo = NULL;
+        if (enc->qpe_cur_header.hinfo)
+        {
+            E_DEBUG("ended header for stream %"PRIu64"; dynamic table not "
+                "referenced", enc->qpe_cur_header.hinfo->qhi_stream_id);
+            memset(buf, 0, 2);
+            enc_free_hinfo(enc, enc->qpe_cur_header.hinfo);
+            enc->qpe_cur_header.hinfo = NULL;
+        }
+        else
+            E_DEBUG("ended header; hinfo absent");
         enc->qpe_flags &= ~LSQPACK_ENC_HEADER;
         return 2;
     }
@@ -2126,6 +2139,8 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
 void
 lsqpack_enc_set_max_capacity (struct lsqpack_enc *enc, unsigned max_capacity)
 {
+    E_DEBUG("maximum capacity goes from %u to %u", enc->qpe_max_capacity,
+                                                                max_capacity);
     enc->qpe_max_capacity = max_capacity;
     qenc_remove_overflow_entries(enc);
 }
@@ -2136,6 +2151,7 @@ enc_proc_header_ack (struct lsqpack_enc *enc, uint64_t stream_id)
 {
     struct lsqpack_header_info *hinfo, *acked;
 
+    E_DEBUG("got Header Ack instruction, stream=%"PRIu64, stream_id);
     if (stream_id > MAX_QUIC_STREAM_ID)
         return -1;
 
@@ -2164,6 +2180,7 @@ enc_proc_table_synch (struct lsqpack_enc *enc, uint64_t ins_count)
 {
     lsqpack_abs_id_t max_acked;
 
+    E_DEBUG("got TSS instruction, count=%"PRIu64, ins_count);
     if (ins_count == 0)
     {
         E_INFO("TSS=0 is an error");
@@ -2195,6 +2212,8 @@ enc_proc_table_synch (struct lsqpack_enc *enc, uint64_t ins_count)
 static int
 enc_proc_stream_cancel (struct lsqpack_enc *enc, uint64_t stream_id)
 {
+    E_WARN("got Cancel Stream instruction (not implemented!); stream=%"PRIu64, 
+                                                                    stream_id);
     if (stream_id > MAX_QUIC_STREAM_ID)
         return -1;
     return -1;  /* TODO */
@@ -2288,6 +2307,7 @@ lsqpack_enc_decoder_in (struct lsqpack_enc *enc,
                                  * to the integer decoder -- it is only
                                  * used in the first call.
                                  */
+    E_DEBUG("got %zu bytes of decoder stream", buf_sz);
 
     while (buf < end)
     {
@@ -2596,6 +2616,8 @@ lsqpack_dec_init (struct lsqpack_dec *dec, void *logger_ctx,
     for (i = 0; i < (1 << LSQPACK_DEC_BLOCKED_BITS); ++i)
         TAILQ_INIT(&dec->qpd_blocked_headers[i]);
     STAILQ_INIT(&dec->qpd_dinsts);
+    D_DEBUG("initialized.  max capacity=%u; max risked streams=%u",
+        dec->qpd_max_capacity, dec->qpd_max_risked_streams);
 }
 
 
@@ -2655,6 +2677,7 @@ lsqpack_dec_cleanup (struct lsqpack_dec *dec)
         qdec_decref_entry(entry);
     }
     ringbuf_cleanup(&dec->qpd_dyn_table);
+    D_DEBUG("cleaned up");
 }
 
 
@@ -4083,6 +4106,8 @@ qdec_header_process (struct lsqpack_dec *dec,
         else if (dec_buf_sz)
             *dec_buf_sz = 0;
         *buf = *buf + read_ctx->hbrc_buf.off;
+        D_DEBUG("header block for stream %"PRIu64" is done",
+                                                    read_ctx->hbrc_stream_id);
         return LQRHS_DONE;
     case LQRHS_NEED:
     case LQRHS_BLOCKED:
@@ -4102,9 +4127,17 @@ qdec_header_process (struct lsqpack_dec *dec,
         if (st == LQRHS_BLOCKED && 0 != stash_blocked_header(dec, read_ctx))
             return LQRHS_ERROR;
         *buf = *buf + read_ctx->hbrc_buf.off;
+        if (st == LQRHS_NEED)
+            D_DEBUG("header block for stream %"PRIu64" needs more bytes",
+                                                    read_ctx->hbrc_stream_id);
+        else
+            D_DEBUG("header block for stream %"PRIu64" is blocked",
+                                                    read_ctx->hbrc_stream_id);
         return st;
     default:
         assert(st == LQRHS_ERROR);
+        D_DEBUG("header block for stream %"PRIu64" has had an error",
+                                                    read_ctx->hbrc_stream_id);
         return LQRHS_ERROR;
     }
 }
@@ -4119,10 +4152,17 @@ lsqpack_dec_header_read (struct lsqpack_dec *dec, void *hblock,
 
     read_ctx = find_header_block_read_ctx(dec, hblock);
     if (read_ctx)
+    {
+        D_DEBUG("continue reading header block for stream %"PRIu64,
+                                                    read_ctx->hbrc_stream_id);
         return qdec_header_process(dec, read_ctx, buf, bufsz, hset,
                                    dec_buf, dec_buf_sz);
+    }
     else
+    {
+        D_INFO("could not find header block to continue reading");
         return LQRHS_ERROR;
+    }
 }
 
 
@@ -4140,6 +4180,7 @@ lsqpack_dec_header_in (struct lsqpack_dec *dec, void *hblock,
         .hbrc_parse     = parse_header_prefix,
     };
 
+    D_DEBUG("begin reading header block for stream %"PRIu64, stream_id);
     return qdec_header_process(dec, &read_ctx, buf, bufsz, hset,
                                dec_buf, dec_buf_sz);
 }
@@ -4151,6 +4192,7 @@ qdec_drop_oldest_entry (struct lsqpack_dec *dec)
     struct lsqpack_dec_table_entry *entry;
 
     entry = ringbuf_advance_tail(&dec->qpd_dyn_table);
+    D_DEBUG("drop entry");
     dec->qpd_cur_capacity -= DTE_SIZE(entry);
     qdec_decref_entry(entry);
 }
@@ -4189,6 +4231,8 @@ qdec_process_blocked_headers (struct lsqpack_dec *dec)
             TAILQ_REMOVE(&dec->qpd_blocked_headers[id], read_ctx,
                                                             hbrc_next_blocked);
             --dec->qpd_n_blocked;
+            D_DEBUG("header block for stream %"PRIu64" has become unblocked",   
+                read_ctx->hbrc_stream_id);
             dec->qpd_hblock_unblocked(read_ctx->hbrc_hblock);
         }
     }
@@ -4223,7 +4267,10 @@ lsqpack_dec_write_tss (struct lsqpack_dec *dec, unsigned char *buf, size_t sz)
             return -1;
     }
     else
+    {
+        D_DEBUG("no TSS instruction necessary: emitting zero bytes");
         return 0;
+    }
 }
 
 
@@ -4235,11 +4282,16 @@ lsqpack_dec_unref_stream (struct lsqpack_dec *dec, void *hblock)
     read_ctx = find_header_block_read_ctx(dec, hblock);
     if (read_ctx)
     {
+        D_DEBUG("unreffed header block for stream %"PRIu64,
+                                                    read_ctx->hbrc_stream_id);
         destroy_header_block_read_ctx(dec, read_ctx);
         return 0;
     }
     else
+    {
+        D_INFO("could not find header block to unref");
         return -1;
+    }
 }
 
 
@@ -4252,7 +4304,10 @@ lsqpack_dec_cancel_stream (struct lsqpack_dec *dec, void *hblock,
 
     read_ctx = find_header_block_read_ctx(dec, hblock);
     if (!read_ctx)
+    {
+        D_INFO("could not find stream to cancel");
         return 0;
+    }
 
     if (buf_sz == 0)
         return -1;
@@ -4261,11 +4316,17 @@ lsqpack_dec_cancel_stream (struct lsqpack_dec *dec, void *hblock,
     p = lsqpack_enc_int(buf, buf + buf_sz, read_ctx->hbrc_stream_id, 6);
     if (p > buf)
     {
+        D_DEBUG("cancelled stream %"PRIu64"; generate instruction of %u bytes",
+            read_ctx->hbrc_stream_id, (unsigned) (p - buf));
         destroy_header_block_read_ctx(dec, read_ctx);
         return p - buf;
     }
     else
+    {
+        D_WARN("cannot generate Cancel Stream instruction for stream %"PRIu64
+            "; buf size=%zu", read_ctx->hbrc_stream_id, buf_sz);
         return -1;
+    }
 }
 
 
@@ -4275,6 +4336,9 @@ lsqpack_dec_push_entry (struct lsqpack_dec *dec,
 {
     if (0 == ringbuf_add(&dec->qpd_dyn_table, entry))
     {
+        D_DEBUG("push entry:(`%.*s': `%.*s')",
+                                (int) entry->dte_name_len, DTE_NAME(entry),
+                                (int) entry->dte_val_len, DTE_VALUE(entry));
         dec->qpd_cur_capacity += DTE_SIZE(entry);
         dec->qpd_last_id = ID_PLUS(dec->qpd_last_id, 1);
         qdec_remove_overflow_entries(dec);
@@ -4297,6 +4361,8 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
     unsigned prefix_bits = -1;
     size_t size;
     int r;
+
+    D_DEBUG("got %zu bytes of encoder stream", buf_sz);
 
 #define WINR dec->qpd_enc_state.ctx_u.with_namref
 #define WONR dec->qpd_enc_state.ctx_u.wo_namref
@@ -4758,6 +4824,8 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
 void
 lsqpack_dec_set_max_capacity (struct lsqpack_dec *dec, unsigned max_capacity)
 {
+    D_DEBUG("max capacity goes from %u to %u", dec->qpd_max_capacity,
+                                                            max_capacity);
     dec->qpd_max_capacity = max_capacity;
     qdec_update_max_capacity(dec, max_capacity);
 }
