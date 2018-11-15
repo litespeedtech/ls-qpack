@@ -4208,7 +4208,7 @@ lsqpack_dec_write_tss (struct lsqpack_dec *dec, unsigned char *buf, size_t sz)
 
     if (dec->qpd_last_id != dec->qpd_largest_known_id)
     {
-        count = ID_MINUS(dec->qpd_largest_known_id, dec->qpd_last_id);
+        count = ID_MINUS(dec->qpd_last_id, dec->qpd_largest_known_id);
         *buf = 0;
         p = lsqpack_enc_int(buf, buf + sz, count, 6);
         if (p > buf)
