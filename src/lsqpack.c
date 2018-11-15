@@ -226,6 +226,7 @@ struct lsqpack_header_info
     unsigned                            qhi_bytes_inserted;
     lsqpack_abs_id_t                    qhi_min_id;
     lsqpack_abs_id_t                    qhi_max_id;
+    /* TODO FIXME qhi_ins_id is never used */
     lsqpack_abs_id_t                    qhi_ins_id;
     /* TODO FIXME qhi_at_risk is never set */
     signed char                         qhi_at_risk;
@@ -2147,9 +2148,9 @@ enc_proc_header_ack (struct lsqpack_enc *enc, uint64_t stream_id)
     if (!acked)
         return -1;
 
-    if (acked->qhi_ins_id > enc->qpe_max_acked_id)
+    if (acked->qhi_max_id > enc->qpe_max_acked_id)
     {
-        enc->qpe_max_acked_id = acked->qhi_ins_id;
+        enc->qpe_max_acked_id = acked->qhi_max_id;
         E_DEBUG("max acked ID is now %u", enc->qpe_max_acked_id);
     }
 
@@ -2165,9 +2166,10 @@ enc_proc_table_synch (struct lsqpack_enc *enc, uint64_t ins_count)
 
     if (ins_count == 0)
     {
-        E_DEBUG("TSS=0 is an error");
+        E_INFO("TSS=0 is an error");
         return -1;
     }
+
     max_acked = ins_count + enc->qpe_last_tss;
     if (max_acked > enc->qpe_ins_count)
     {
