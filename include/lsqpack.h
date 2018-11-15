@@ -87,12 +87,16 @@ enum lsqpack_enc_opts
  * Initialize the encoder so that it can be used without using the
  * dynamic table.  Once peer's settings are known, call
  * @ref lsqpack_enc_init().
+ *
+ * `logger_ctx' can be set to NULL if no special logging is set up.
  */
 void
-lsqpack_enc_preinit (struct lsqpack_enc *);
+lsqpack_enc_preinit (struct lsqpack_enc *, void *logger_ctx);
 
 int
 lsqpack_enc_init (struct lsqpack_enc *,
+    /** `logger_ctx' can be set to NULL if no special logging is set up. */
+    void *logger_ctx,
     /**
      * As specified by the decoder.  This value is used to calculate
      * MaxEntries.
@@ -218,8 +222,8 @@ struct lsqpack_header_set
 };
 
 void
-lsqpack_dec_init (struct lsqpack_dec *, unsigned dyn_table_size,
-    unsigned max_risked_streams,
+lsqpack_dec_init (struct lsqpack_dec *, void *logger_ctx,
+    unsigned dyn_table_size, unsigned max_risked_streams,
     void (*hblock_unblocked)(void *hblock));
 
 enum lsqpack_read_header_status
@@ -461,9 +465,7 @@ struct lsqpack_enc
      */
     unsigned long               qpe_bytes_in;
     unsigned long               qpe_bytes_out;
-#if LSQPACK_DEVEL_MODE
-    FILE                       *qpe_log;
-#endif
+    void                       *qpe_logger_ctx;
     struct lsqpack_enc_hist    *qpe_hist;
     void                      (*qpe_hist_add)(struct lsqpack_enc_hist *,
                                                         unsigned, unsigned);
@@ -520,6 +522,8 @@ struct lsqpack_dec
     /** TODO: describe the mechanism */
     lsqpack_abs_id_t        qpd_largest_known_id;
     void                  (*qpd_hblock_unblocked)(void *hblock);
+
+    void                   *qpd_logger_ctx;
 
     /** Outstanding header sets */
     struct lsqpack_header_sets

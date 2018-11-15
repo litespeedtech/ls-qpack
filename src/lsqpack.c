@@ -31,9 +31,7 @@ SOFTWARE.
 #include <stdlib.h>
 #include <string.h>
 #include <sys/queue.h>
-#if LSQPACK_DEVEL_MODE
 #include <inttypes.h>
-#endif
 
 #include "lsqpack.h"
 #include XXH_HEADER_NAME
@@ -168,16 +166,20 @@ static const struct static_table_entry static_table[] =
 
 #define MAX_QUIC_STREAM_ID ((1ull << 62) - 1)
 
-#if LSQPACK_DEVEL_MODE
-#   define ELOG(a...) do {                                  \
-        if (enc->qpe_log)                                   \
-        {                                                   \
-            fprintf(enc->qpe_log, "qenc: ");                \
-            fprintf(enc->qpe_log, a);                       \
-        }                                                   \
-    } while (0)
+#ifdef LSQPACK_ENC_LOGGER_HEADER
+#include LSQPACK_ENC_LOGGER_HEADER
 #else
-#   define ELOG(a...)
+#define E_LOG(prefix, args...) do {                                     \
+    if (enc->qpe_logger_ctx) {                                          \
+        fprintf(enc->qpe_logger_ctx, prefix);                           \
+        fprintf(enc->qpe_logger_ctx,  args);                            \
+        fprintf(enc->qpe_logger_ctx, "\n");                             \
+    }                                                                   \
+} while (0)
+#define E_DEBUG(args...) E_LOG("qenc: debug: ", args)
+#define E_INFO(args...)  E_LOG("qenc: info: ", args)
+#define E_WARN(args...)  E_LOG("qenc: warn: ", args)
+#define E_ERROR(args...) E_LOG("qenc: error: ", args)
 #endif
 
 /* Entries in the encoder's dynamic table are hashed 1) by name and 2) by
@@ -493,7 +495,7 @@ qenc_hist_seen_name_yes (struct lsqpack_enc_hist *hist, unsigned a)
 
 
 void
-lsqpack_enc_preinit (struct lsqpack_enc *enc)
+lsqpack_enc_preinit (struct lsqpack_enc *enc, void *logger_ctx)
 {
     memset(enc, 0, sizeof(*enc));
     STAILQ_INIT(&enc->qpe_all_entries);
@@ -502,13 +504,14 @@ lsqpack_enc_preinit (struct lsqpack_enc *enc)
     enc->qpe_hist_add          = qenc_hist_add_noop;
     enc->qpe_hist_seen_nameval = qenc_hist_seen_nameval_yes;
     enc->qpe_hist_seen_name    = qenc_hist_seen_name_yes;
+    enc->qpe_logger_ctx        = logger_ctx;
 };
 
 
 int
-lsqpack_enc_init (struct lsqpack_enc *enc, unsigned max_table_size,
-    unsigned dyn_table_size, unsigned max_risked_streams,
-    enum lsqpack_enc_opts enc_opts)
+lsqpack_enc_init (struct lsqpack_enc *enc, void *logger_ctx,
+                  unsigned max_table_size, unsigned dyn_table_size,
+                  unsigned max_risked_streams, enum lsqpack_enc_opts enc_opts)
 {
     struct lsqpack_double_enc_head *buckets;
     struct lsqpack_enc_hist *hist;
@@ -525,7 +528,7 @@ lsqpack_enc_init (struct lsqpack_enc *enc, unsigned max_table_size,
     }
 
     if (!(enc_opts & LSQPACK_ENC_OPT_STAGE_2))
-        lsqpack_enc_preinit(enc);
+        lsqpack_enc_preinit(enc, logger_ctx);
 
     if (!(enc_opts & LSQPACK_ENC_OPT_IX_AGGR))
     {
@@ -570,21 +573,13 @@ lsqpack_enc_init (struct lsqpack_enc *enc, unsigned max_table_size,
     enc->qpe_max_risked_streams = max_risked_streams;
     enc->qpe_buckets      = buckets;
     enc->qpe_nbits        = nbits;
+    enc->qpe_logger_ctx   = logger_ctx;
     if (enc_opts & LSQPACK_ENC_OPT_DUP)
         enc->qpe_flags   |= LSQPACK_ENC_USE_DUP;
     enc->qpe_hist         = hist;
 
     return 0;
 }
-
-
-#if LSQPACK_DEVEL_MODE
-void
-lsqpack_enc_log (struct lsqpack_enc *enc, FILE *out)
-{
-    enc->qpe_log = out;
-}
-#endif
 
 
 void
@@ -1140,7 +1135,7 @@ qenc_drop_oldest_entry (struct lsqpack_enc *enc)
 
     entry = STAILQ_FIRST(&enc->qpe_all_entries);
     assert(entry);
-    ELOG("drop entry %u (`%.*s': `%.*s'), nelem: %u; capacity: %u\n",
+    E_DEBUG("drop entry %u (`%.*s': `%.*s'), nelem: %u; capacity: %u",
         entry->ete_id, (int) entry->ete_name_len, ETE_NAME(entry),
         (int) entry->ete_val_len, ETE_VALUE(entry), enc->qpe_nelem - 1,
         enc->qpe_cur_capacity - ETE_SIZE(entry));
@@ -1215,7 +1210,7 @@ qenc_remove_overflow_entries (struct lsqpack_enc *enc)
         if (entry)
         {
             enc->qpe_drain_idx = entry->ete_id;
-            ELOG("set draining index to %u (%u entries)\n",
+            E_DEBUG("set draining index to %u (%u entries)",
                                         enc->qpe_drain_idx, count);
         }
         /*
@@ -1228,11 +1223,11 @@ qenc_remove_overflow_entries (struct lsqpack_enc *enc)
     if (enc->qpe_log)
     {
         if (enc->qpe_flags & LSQPACK_ENC_USE_DUP)
-            ELOG("fill: %.2f; effective fill: %.2f\n",
+            E_DEBUG("fill: %.2f; effective fill: %.2f",
                 (float) enc->qpe_cur_capacity / (float) enc->qpe_max_capacity,
                 qenc_effective_fill(enc));
         else
-            ELOG("fill: %.2f\n",
+            E_DEBUG("fill: %.2f",
                 (float) enc->qpe_cur_capacity / (float) enc->qpe_max_capacity);
     }
 #endif
@@ -1331,7 +1326,7 @@ lsqpack_enc_push_entry (struct lsqpack_enc *enc, const char *name,
 
     enc->qpe_cur_capacity += ENTRY_COST(name_len, value_len);
     ++enc->qpe_nelem;
-    ELOG("pushed entry %u (`%.*s': `%.*s'), nelem: %u; capacity: %u\n",
+    E_DEBUG("pushed entry %u (`%.*s': `%.*s'), nelem: %u; capacity: %u",
         entry->ete_id, (int) entry->ete_name_len, ETE_NAME(entry),
         (int) entry->ete_val_len, ETE_VALUE(entry), enc->qpe_nelem,
         enc->qpe_cur_capacity);
@@ -1349,7 +1344,7 @@ lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
     if (enc->qpe_flags & LSQPACK_ENC_HEADER)
         return -1;
 
-    ELOG("Start header for stream %"PRIu64"\n", stream_id);
+    E_DEBUG("Start header for stream %"PRIu64, stream_id);
 
     enc->qpe_cur_header.hinfo = enc_alloc_hinfo(enc);
     if (enc->qpe_cur_header.hinfo)
@@ -1422,7 +1417,7 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
         *buf = 0;
         encoded_largest_ref = enc->qpe_cur_header.hinfo->qhi_max_id
                                                 % (2 * enc->qpe_max_entries) + 1;
-        ELOG("LargestRef for stream %"PRIu64" is encoded as %u\n",
+        E_DEBUG("LargestRef for stream %"PRIu64" is encoded as %u",
             enc->qpe_cur_header.hinfo->qhi_stream_id, encoded_largest_ref);
         dst = lsqpack_enc_int(buf, end, encoded_largest_ref, 8);
         if (dst <= buf)
@@ -1499,7 +1494,6 @@ struct encode_program
 };
 
 
-#if LSQPACK_DEVEL_MODE
 static const char *const eea2str[] =
 {
     [EEA_NONE] = "EEA_NONE",
@@ -1529,7 +1523,6 @@ static const char *const eta2str[] =
     [ETA_NEW] = "ETA_NEW",
     [ETA_NEW_NAME] = "ETA_NEW_NAME",
 };
-#endif
 
 
 /* XXX Traversal of all header infos on each insertion.  Maybe bite the
@@ -1664,7 +1657,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     unsigned n_cand;
     int r;
 
-    ELOG("encode `%.*s': `%.*s'\n", (int) name_len, name,
+    E_DEBUG("encode `%.*s': `%.*s'", (int) name_len, name,
                                                 (int) value_len, value);
 
     /* Encoding always outputs at least a byte to the header block.  If
@@ -1716,7 +1709,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     XXH32_update(&hash_state,  &value_len, sizeof(value_len));
     XXH32_update(&hash_state,  value, value_len);
     nameval_hash = XXH32_digest(&hash_state);
-    ELOG("name hash: 0x%X; nameval hash: 0x%X\n", name_hash, nameval_hash);
+    E_DEBUG("name hash: 0x%X; nameval hash: 0x%X", name_hash, nameval_hash);
 
     ++enc->qpe_cur_header.n_headers;
     if (enc->qpe_hist
@@ -1915,12 +1908,12 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         {
             assert(index);
             index = 0;
-            ELOG("double lit would result in ratio > 0.95, reset\n");
+            E_DEBUG("double lit would result in ratio > 0.95, reset");
             goto restart;
         }
     }
 
-    ELOG("program: %s; %s; %s; flags: 0x%X\n",
+    E_DEBUG("program: %s; %s; %s; flags: 0x%X",
         eea2str[ prog.ep_enc_action ], eha2str[ prog.ep_hea_action ],
         eta2str[ prog.ep_tab_action ], prog.ep_flags);
     switch (prog.ep_enc_action)
@@ -2157,7 +2150,7 @@ enc_proc_header_ack (struct lsqpack_enc *enc, uint64_t stream_id)
     if (acked->qhi_ins_id > enc->qpe_max_acked_id)
     {
         enc->qpe_max_acked_id = acked->qhi_ins_id;
-        ELOG("max acked ID is now %u\n", enc->qpe_max_acked_id);
+        E_DEBUG("max acked ID is now %u", enc->qpe_max_acked_id);
     }
 
     enc_free_hinfo(enc, acked);
@@ -2172,13 +2165,13 @@ enc_proc_table_synch (struct lsqpack_enc *enc, uint64_t ins_count)
 
     if (ins_count == 0)
     {
-        ELOG("TSS=0 is an error\n");
+        E_DEBUG("TSS=0 is an error");
         return -1;
     }
     max_acked = ins_count + enc->qpe_last_tss;
     if (max_acked > enc->qpe_ins_count)
     {
-        ELOG("TSS: max_acked %u is larger than number of inserts %u\n",
+        E_DEBUG("TSS: max_acked %u is larger than number of inserts %u",
             max_acked, enc->qpe_ins_count);
         return -1;
     }
@@ -2187,11 +2180,11 @@ enc_proc_table_synch (struct lsqpack_enc *enc, uint64_t ins_count)
     {
         enc->qpe_last_tss = max_acked;
         enc->qpe_max_acked_id = max_acked;
-        ELOG("max acked ID is now %u\n", enc->qpe_max_acked_id);
+        E_DEBUG("max acked ID is now %u", enc->qpe_max_acked_id);
     }
     else
     {
-        ELOG("duplicate TSS: %u\n", max_acked);
+        E_DEBUG("duplicate TSS: %u", max_acked);
     }
     return 0;
 }
@@ -2351,6 +2344,23 @@ lsqpack_enc_ratio (const struct lsqpack_enc *enc)
     else
         return 0;
 }
+
+
+#ifdef LSQPACK_DEC_LOGGER_HEADER
+#include LSQPACK_DEC_LOGGER_HEADER
+#else
+#define D_LOG(prefix, args...) do {                                     \
+    if (dec->qpd_logger_ctx) {                                          \
+        fprintf(dec->qpd_logger_ctx, prefix);                           \
+        fprintf(dec->qpd_logger_ctx,  args);                            \
+        fprintf(dec->qpd_logger_ctx, "\n");                             \
+    }                                                                   \
+} while (0)
+#define D_DEBUG(args...) D_LOG("qdec: debug: ", args)
+#define D_INFO(args...)  D_LOG("qdec: info: ", args)
+#define D_WARN(args...)  D_LOG("qdec: warn: ", args)
+#define D_ERROR(args...) D_LOG("qdec: error: ", args)
+#endif
 
 
 /* Dynamic table entry: */
@@ -2565,12 +2575,13 @@ qdec_get_table_entry_abs (const struct lsqpack_dec *dec,
 
 
 void
-lsqpack_dec_init (struct lsqpack_dec *dec, unsigned dyn_table_size,
-    unsigned max_risked_streams,
+lsqpack_dec_init (struct lsqpack_dec *dec, void *logger_ctx,
+    unsigned dyn_table_size, unsigned max_risked_streams,
     void (*hblock_unblocked)(void *hblock))
 {
     unsigned i;
     memset(dec, 0, sizeof(*dec));
+    dec->qpd_logger_ctx = logger_ctx;
     dec->qpd_max_capacity = dyn_table_size;
     dec->qpd_cur_max_capacity = dyn_table_size;
     dec->qpd_max_entries = dec->qpd_max_capacity / DYNAMIC_ENTRY_OVERHEAD;
@@ -4202,6 +4213,7 @@ lsqpack_dec_write_tss (struct lsqpack_dec *dec, unsigned char *buf, size_t sz)
         p = lsqpack_enc_int(buf, buf + sz, count, 6);
         if (p > buf)
         {
+            D_DEBUG("wrote TSS: count=%u", count);
             dec->qpd_largest_known_id = dec->qpd_last_id;
             return p - buf;
         }

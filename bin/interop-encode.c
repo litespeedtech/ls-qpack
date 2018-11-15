@@ -205,16 +205,12 @@ main (int argc, char **argv)
         }
     }
 
-    if (0 != lsqpack_enc_init(&encoder, dyn_table_size, dyn_table_size,
-                                                max_risked_streams, enc_opts))
+    if (0 != lsqpack_enc_init(&encoder, stderr,  dyn_table_size,
+                                dyn_table_size, max_risked_streams, enc_opts))
     {
         perror("lsqpack_enc_init");
         exit(EXIT_FAILURE);
     }
-
-#if LSQPACK_DEVEL_MODE
-    lsqpack_enc_log(&encoder, stderr);
-#endif
 
     lineno = 0;
     stream_id = 0;

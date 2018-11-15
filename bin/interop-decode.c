@@ -184,8 +184,8 @@ main (int argc, char **argv)
     if (!s_out)
         s_out = stdout;
 
-    lsqpack_dec_init(&decoder, dyn_table_size, max_risked_streams,
-                 hblock_unblocked);
+    lsqpack_dec_init(&decoder, s_verbose ? stderr : NULL, dyn_table_size,
+                        max_risked_streams, hblock_unblocked);
 
     off = 0;
     while (1)
