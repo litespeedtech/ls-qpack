@@ -51,6 +51,24 @@ usage (const char *name)
 }
 
 
+static void
+write_enc_stream (int out, const unsigned char *enc_buf, size_t enc_sz)
+{
+    uint64_t stream_id_enc;
+    uint32_t length_enc;
+
+    stream_id_enc = 0;
+    length_enc = enc_sz;
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+    stream_id_enc = bswap_64(stream_id_enc);
+    length_enc = bswap_32(length_enc);
+#endif
+    write(out, &stream_id_enc, sizeof(stream_id_enc));
+    write(out, &length_enc, sizeof(length_enc));
+    write(out, enc_buf, enc_sz);
+}
+
+
 /* XXX For brevity, we assume that write(2) is successful. */
 static void
 write_enc_and_header_streams (int out, unsigned stream_id,
@@ -159,6 +177,8 @@ main (int argc, char **argv)
     enum { ACK_NEVER, ACK_IMMEDIATE, } ack_mode = ACK_NEVER;
     int process_annotations = 0;
     char line_buf[0x1000];
+    unsigned char tsu_buf[LSQPACK_LONGEST_TSU];
+    size_t tsu_buf_sz;
     unsigned char enc_buf[0x1000], hea_buf[0x1000], pref_buf[0x20];
 
     while (-1 != (opt = getopt(argc, argv, "ADSa:i:no:s:t:hv")))
@@ -222,7 +242,7 @@ main (int argc, char **argv)
     }
 
     if (0 != lsqpack_enc_init(&encoder, stderr,  dyn_table_size,
-                                dyn_table_size, max_risked_streams, enc_opts))
+                    dyn_table_size, max_risked_streams, enc_opts, NULL, NULL))
     {
         perror("lsqpack_enc_init");
         exit(EXIT_FAILURE);
@@ -303,6 +323,18 @@ main (int argc, char **argv)
             }
             else if (1 == sscanf(line, "## %*[c] %u", &arg))
                 cancel_stream(&encoder, arg);
+            else if (1 == sscanf(line, "## %*[t] %u", &arg))
+            {
+                tsu_buf_sz = sizeof(tsu_buf);
+                if (0 != lsqpack_enc_set_max_capacity(&encoder, arg, tsu_buf,
+                                                                &tsu_buf_sz))
+                {
+                    fprintf(stderr, "cannot set capacity to %u: %s\n", arg,
+                        strerror(errno));
+                    exit(EXIT_FAILURE);
+                }
+                write_enc_stream(out, tsu_buf, tsu_buf_sz);
+            }
             continue;
         }
 

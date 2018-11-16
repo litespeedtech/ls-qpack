@@ -318,7 +318,7 @@ enc_use_dynamic_table (const struct lsqpack_enc *enc)
 {
     return enc->qpe_cur_header.hinfo != NULL
         && enc->qpe_cur_header.hinfo->qhi_bytes_inserted
-                                                < enc->qpe_max_capacity / 2;
+                                                < enc->qpe_cur_max_capacity / 2;
 }
 
 
@@ -491,6 +491,10 @@ qenc_hist_seen_name_yes (struct lsqpack_enc_hist *hist, unsigned a)
 }
 
 
+unsigned char *
+lsqpack_enc_int (unsigned char *, unsigned char *const, uint64_t, unsigned);
+
+
 void
 lsqpack_enc_preinit (struct lsqpack_enc *enc, void *logger_ctx)
 {
@@ -509,17 +513,20 @@ lsqpack_enc_preinit (struct lsqpack_enc *enc, void *logger_ctx)
 int
 lsqpack_enc_init (struct lsqpack_enc *enc, void *logger_ctx,
                   unsigned max_table_size, unsigned dyn_table_size,
-                  unsigned max_risked_streams, enum lsqpack_enc_opts enc_opts)
+                  unsigned max_risked_streams, enum lsqpack_enc_opts enc_opts,
+                  unsigned char *tsu_buf, size_t *tsu_buf_sz)
 {
     struct lsqpack_double_enc_head *buckets;
     struct lsqpack_enc_hist *hist;
+    unsigned char *p;
     unsigned nbits = 2;
     unsigned i;
 
     assert(dyn_table_size <= max_table_size);
 
     if (dyn_table_size > LSQPACK_MAX_DYN_TABLE_SIZE ||
-        max_risked_streams > LSQPACK_MAX_MAX_RISKED_STREAMS)
+        max_risked_streams > LSQPACK_MAX_MAX_RISKED_STREAMS ||
+        dyn_table_size > max_table_size)
     {
         errno = EINVAL;
         return -1;
@@ -527,6 +534,28 @@ lsqpack_enc_init (struct lsqpack_enc *enc, void *logger_ctx,
 
     if (!(enc_opts & LSQPACK_ENC_OPT_STAGE_2))
         lsqpack_enc_preinit(enc, logger_ctx);
+
+    if (dyn_table_size < max_table_size)
+    {
+        if (!(tsu_buf && tsu_buf_sz))
+        {
+            errno = EINVAL;
+            return -1;
+        }
+        p = tsu_buf;
+        *p = 0x20;
+        p = lsqpack_enc_int(p, tsu_buf + *tsu_buf_sz, dyn_table_size, 5);
+        if (p <= tsu_buf)
+        {
+            errno = ENOBUFS;
+            return -1;
+        }
+        E_DEBUG("generated TSU=%u instruction %zd byte%.*s in size",
+            dyn_table_size, p - tsu_buf, p - tsu_buf != 1, "s");
+        *tsu_buf_sz = p - tsu_buf;
+    }
+    else if (tsu_buf_sz)
+        *tsu_buf_sz = 0;
 
     if (!(enc_opts & LSQPACK_ENC_OPT_IX_AGGR))
     {
@@ -567,7 +596,8 @@ lsqpack_enc_init (struct lsqpack_enc *enc, void *logger_ctx,
     }
 
     enc->qpe_max_entries  = max_table_size / DYNAMIC_ENTRY_OVERHEAD;
-    enc->qpe_max_capacity = dyn_table_size;
+    enc->qpe_real_max_capacity = max_table_size;
+    enc->qpe_cur_max_capacity = dyn_table_size;
     enc->qpe_max_risked_streams = max_risked_streams;
     enc->qpe_buckets      = buckets;
     enc->qpe_nbits        = nbits;
@@ -576,7 +606,7 @@ lsqpack_enc_init (struct lsqpack_enc *enc, void *logger_ctx,
         enc->qpe_flags   |= LSQPACK_ENC_USE_DUP;
     enc->qpe_hist         = hist;
     E_DEBUG("initialized.  opts: 0x%X; max capacity: %u; max risked "
-        "streams: %u.", enc_opts, enc->qpe_max_capacity,
+        "streams: %u.", enc_opts, enc->qpe_cur_max_capacity,
         enc->qpe_max_risked_streams);
 
     return 0;
@@ -1140,7 +1170,7 @@ qenc_drop_oldest_entry (struct lsqpack_enc *enc)
     E_DEBUG("drop entry %u (`%.*s': `%.*s'), nelem: %u; capacity: %u",
         entry->ete_id, (int) entry->ete_name_len, ETE_NAME(entry),
         (int) entry->ete_val_len, ETE_VALUE(entry), enc->qpe_nelem - 1,
-        enc->qpe_cur_capacity - ETE_SIZE(entry));
+        enc->qpe_cur_bytes_used - ETE_SIZE(entry));
     STAILQ_REMOVE_HEAD(&enc->qpe_all_entries, ete_next_all);
     buckno = BUCKNO(enc->qpe_nbits, entry->ete_nameval_hash);
     assert(entry == STAILQ_FIRST(&enc->qpe_buckets[buckno].by_nameval));
@@ -1149,7 +1179,7 @@ qenc_drop_oldest_entry (struct lsqpack_enc *enc)
     assert(entry == STAILQ_FIRST(&enc->qpe_buckets[buckno].by_name));
     STAILQ_REMOVE_HEAD(&enc->qpe_buckets[buckno].by_name, ete_next_name);
 
-    enc->qpe_cur_capacity -= ETE_SIZE(entry);
+    enc->qpe_cur_bytes_used -= ETE_SIZE(entry);
     --enc->qpe_nelem;
     free(entry);
 }
@@ -1160,6 +1190,8 @@ qenc_effective_fill (const struct lsqpack_enc *enc)
 {
     struct lsqpack_enc_table_entry *entry, *dup;
     unsigned dups_size = 0;
+
+    assert(enc->qpe_cur_max_capacity);
 
     STAILQ_FOREACH(entry, &enc->qpe_all_entries, ete_next_all)
         for (dup = STAILQ_NEXT(entry, ete_next_all); dup;
@@ -1173,8 +1205,8 @@ qenc_effective_fill (const struct lsqpack_enc *enc)
                 break;
             }
 
-    return (float) (enc->qpe_cur_capacity - dups_size)
-                                        / (float) enc->qpe_max_capacity;
+    return (float) (enc->qpe_cur_bytes_used - dups_size)
+                                        / (float) enc->qpe_cur_max_capacity;
 }
 
 
@@ -1186,20 +1218,20 @@ qenc_remove_overflow_entries (struct lsqpack_enc *enc)
     int dropped;
 
     dropped = 0;
-    while (enc->qpe_cur_capacity > enc->qpe_max_capacity)
+    while (enc->qpe_cur_bytes_used > enc->qpe_cur_max_capacity)
     {
         qenc_drop_oldest_entry(enc);
         ++dropped;
     }
 
     /* Calculate draining index: */
-    if (dropped || enc->qpe_cur_capacity > enc->qpe_max_capacity * 3 / 4)
+    if (dropped || enc->qpe_cur_bytes_used > enc->qpe_cur_max_capacity * 3 / 4)
     {
         count = 0;
-        off = enc->qpe_max_capacity - enc->qpe_cur_capacity;
+        off = enc->qpe_cur_max_capacity - enc->qpe_cur_bytes_used;
         STAILQ_FOREACH(entry, &enc->qpe_all_entries, ete_next_all)
         {
-            if (off < enc->qpe_max_capacity / 4)
+            if (off < enc->qpe_cur_max_capacity / 4)
             {
                 ++count;
                 off += ETE_SIZE(entry);
@@ -1219,15 +1251,15 @@ qenc_remove_overflow_entries (struct lsqpack_enc *enc)
             */
     }
 
-    if (enc->qpe_logger_ctx)
+    if (enc->qpe_logger_ctx && enc->qpe_cur_max_capacity)
     {
         if (enc->qpe_flags & LSQPACK_ENC_USE_DUP)
             E_DEBUG("fill: %.2f; effective fill: %.2f",
-                (float) enc->qpe_cur_capacity / (float) enc->qpe_max_capacity,
+                (float) enc->qpe_cur_bytes_used / (float) enc->qpe_cur_max_capacity,
                 qenc_effective_fill(enc));
         else
             E_DEBUG("fill: %.2f",
-                (float) enc->qpe_cur_capacity / (float) enc->qpe_max_capacity);
+                (float) enc->qpe_cur_bytes_used / (float) enc->qpe_cur_max_capacity);
     }
 }
 
@@ -1322,12 +1354,12 @@ lsqpack_enc_push_entry (struct lsqpack_enc *enc, const char *name,
     STAILQ_INSERT_TAIL(&enc->qpe_buckets[buckno].by_name, entry,
                                                         ete_next_name);
 
-    enc->qpe_cur_capacity += ENTRY_COST(name_len, value_len);
+    enc->qpe_cur_bytes_used += ENTRY_COST(name_len, value_len);
     ++enc->qpe_nelem;
     E_DEBUG("pushed entry %u (`%.*s': `%.*s'), nelem: %u; capacity: %u",
         entry->ete_id, (int) entry->ete_name_len, ETE_NAME(entry),
         (int) entry->ete_val_len, ETE_VALUE(entry), enc->qpe_nelem,
-        enc->qpe_cur_capacity);
+        enc->qpe_cur_bytes_used);
     return entry;
 }
 
@@ -1565,7 +1597,7 @@ qenc_has_or_can_evict_at_least (const struct lsqpack_enc *enc,
     lsqpack_abs_id_t min_id;
     size_t avail;
 
-    avail = enc->qpe_max_capacity - enc->qpe_cur_capacity;
+    avail = enc->qpe_cur_max_capacity - enc->qpe_cur_bytes_used;
     if (avail >= new_entry_size)
         return 1;
 
@@ -1597,8 +1629,8 @@ qenc_duplicable_entry (const struct lsqpack_enc *enc,
     if (!(enc->qpe_flags & LSQPACK_ENC_USE_DUP))
         return 0;
 
-    fill = (float) (enc->qpe_cur_capacity + ETE_SIZE(entry))
-                                        / (float) enc->qpe_max_capacity;
+    fill = (float) (enc->qpe_cur_bytes_used + ETE_SIZE(entry))
+                                        / (float) enc->qpe_cur_max_capacity;
     if (fill < 0.8)
         return 0;
 
@@ -1610,7 +1642,7 @@ qenc_duplicable_entry (const struct lsqpack_enc *enc,
             off += ETE_SIZE(el);
 
     assert(el);
-    fraction = (float) off / (float) enc->qpe_max_capacity;
+    fraction = (float) off / (float) enc->qpe_cur_max_capacity;
     return fraction < 0.2f
         && qenc_has_or_can_evict_at_least(enc, ETE_SIZE(entry));
 }
@@ -2132,13 +2164,45 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
 }
 
 
-void
-lsqpack_enc_set_max_capacity (struct lsqpack_enc *enc, unsigned max_capacity)
+int
+lsqpack_enc_set_max_capacity (struct lsqpack_enc *enc, unsigned capacity,
+                                    unsigned char *tsu_buf, size_t *tsu_buf_sz)
 {
-    E_DEBUG("maximum capacity goes from %u to %u", enc->qpe_max_capacity,
-                                                                max_capacity);
-    enc->qpe_max_capacity = max_capacity;
+    unsigned char *p;
+
+    if (capacity > enc->qpe_real_max_capacity)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (capacity == enc->qpe_cur_max_capacity)
+    {
+        E_DEBUG("set_capacity: capacity stays unchanged at %u", capacity);
+        *tsu_buf_sz = 0;
+        return 0;
+    }
+
+    if (!(tsu_buf && tsu_buf_sz))
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    p = tsu_buf;
+    *p = 0x20;
+    p = lsqpack_enc_int(p, tsu_buf + *tsu_buf_sz, capacity, 5);
+    if (p <= tsu_buf)
+    {
+        errno = ENOBUFS;
+        return -1;
+    }
+    *tsu_buf_sz = p - tsu_buf;
+
+    E_DEBUG("maximum capacity goes from %u to %u", enc->qpe_cur_max_capacity,
+                                                                    capacity);
+    enc->qpe_cur_max_capacity = capacity;
     qenc_remove_overflow_entries(enc);
+    return 0;
 }
 
 
@@ -4817,6 +4881,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 if (TBSZ.new_size <= dec->qpd_max_capacity)
                 {
                     dec->qpd_enc_state.resume = 0;
+                    D_DEBUG("got TSU=%"PRIu64, TBSZ.new_size);
                     qdec_update_max_capacity(dec, TBSZ.new_size);
                     break;
                 }
@@ -4838,16 +4903,6 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
 #undef TBSZ
 
     return 0;
-}
-
-
-void
-lsqpack_dec_set_max_capacity (struct lsqpack_dec *dec, unsigned max_capacity)
-{
-    D_DEBUG("max capacity goes from %u to %u", dec->qpd_max_capacity,
-                                                            max_capacity);
-    dec->qpd_max_capacity = max_capacity;
-    qdec_update_max_capacity(dec, max_capacity);
 }
 
 

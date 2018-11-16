@@ -93,6 +93,12 @@ enum lsqpack_enc_opts
 void
 lsqpack_enc_preinit (struct lsqpack_enc *, void *logger_ctx);
 
+/**
+ * Number of bytes required to encode the longest possible Table Size Update
+ * instruction: 5-bit prefix encoded 2^30 - 1.
+ */
+#define LSQPACK_LONGEST_TSU 6
+
 int
 lsqpack_enc_init (struct lsqpack_enc *,
     /** `logger_ctx' can be set to NULL if no special logging is set up. */
@@ -106,12 +112,25 @@ lsqpack_enc_init (struct lsqpack_enc *,
      * Actual dynamic table size to use.
      */
     unsigned dyn_table_size,
-    unsigned max_risked_streams, enum lsqpack_enc_opts);
+    unsigned max_risked_streams, enum lsqpack_enc_opts,
+    /**
+     * If `dyn_table_size' is smaller than `max_table_size', TSU instruction
+     * is generated and placed into `tsu_buf'.  `tsu_buf_sz' parameter is
+     * used both for input and output.
+     *
+     * If the two table sizes are the same size, `tsu_buf' and `tsu_buf_sz'
+     * are optional.
+     */
+    unsigned char *tsu_buf, size_t *tsu_buf_sz);
 
-#if LSQPACK_DEVEL_MODE
-void
-lsqpack_enc_log (struct lsqpack_enc *, FILE *);
-#endif
+/**
+ * Set table size to `capacity'.  If necessary, TSU instruction is generated
+ * and placed into `tsu_buf'.  If `capacity' is larger than the maximum
+ * table size specified during initialization, an error is returned.
+ */
+int
+lsqpack_enc_set_max_capacity (struct lsqpack_enc *enc, unsigned capacity,
+                                    unsigned char *tsu_buf, size_t *tsu_buf_sz);
 
 /** Start a new header block.  Return 0 on success or -1 on error. */
 int
@@ -405,8 +424,9 @@ struct lsqpack_enc
         LSQPACK_ENC_USE_DUP = 1 << 1,
     }                           qpe_flags;
 
-    unsigned                    qpe_cur_capacity;
-    unsigned                    qpe_max_capacity;
+    unsigned                    qpe_cur_bytes_used;
+    unsigned                    qpe_cur_max_capacity;
+    unsigned                    qpe_real_max_capacity;
     unsigned                    qpe_max_entries;
 
     /* The maximum risked streams is the SETTINGS_QPACK_BLOCKED_STREAMS
