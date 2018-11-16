@@ -2212,11 +2212,34 @@ enc_proc_table_synch (struct lsqpack_enc *enc, uint64_t ins_count)
 static int
 enc_proc_stream_cancel (struct lsqpack_enc *enc, uint64_t stream_id)
 {
-    E_WARN("got Cancel Stream instruction (not implemented!); stream=%"PRIu64, 
-                                                                    stream_id);
+    struct lsqpack_header_info *hinfo, *next;
+    unsigned count;
+
+    E_DEBUG("got Cancel Stream instruction; stream=%"PRIu64, stream_id);
+
     if (stream_id > MAX_QUIC_STREAM_ID)
+    {
+        E_INFO("Invalid stream ID %"PRIu64" in Cancel Stream", stream_id);
         return -1;
-    return -1;  /* TODO */
+    }
+
+    count = 0;
+    for (hinfo = TAILQ_FIRST(&enc->qpe_hinfos); hinfo; hinfo = next)
+    {
+        next = TAILQ_NEXT(hinfo, qhi_next);
+        if (hinfo->qhi_stream_id == stream_id)
+        {
+            E_DEBUG("cancel header block for stream %"PRIu64", seqno %u",
+                stream_id, hinfo->qhi_seqno);
+            TAILQ_REMOVE(&enc->qpe_hinfos, hinfo, qhi_next);
+            enc_free_hinfo(enc, hinfo);
+            ++count;
+        }
+    }
+
+    E_DEBUG("cancelled %u header block%.*s of stream %"PRIu64,
+                                        count, count != 1, "s", stream_id);
+    return 0;
 }
 
 

@@ -123,6 +123,22 @@ ack_stream (struct lsqpack_enc *encoder, uint64_t stream_id)
 }
 
 
+static int
+cancel_stream (struct lsqpack_enc *encoder, uint64_t stream_id)
+{
+    unsigned char *end_cmd;
+    unsigned char cmd[80];
+
+    if (s_verbose)
+        fprintf(stderr, "Cancel stream ID %"PRIu64"\n", stream_id);
+
+    cmd[0] = 0x40;
+    end_cmd = lsqpack_enc_int(cmd, cmd + sizeof(cmd), stream_id, 6);
+    assert(end_cmd > cmd);
+    return lsqpack_enc_decoder_in(encoder, cmd, end_cmd - cmd);
+}
+
+
 int
 main (int argc, char **argv)
 {
@@ -285,6 +301,8 @@ main (int argc, char **argv)
                     exit(EXIT_FAILURE);
                 }
             }
+            else if (1 == sscanf(line, "## %*[c] %u", &arg))
+                cancel_stream(&encoder, arg);
             continue;
         }
 
