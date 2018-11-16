@@ -2570,6 +2570,7 @@ ringbuf_add (struct lsqpack_ringbuf *rbuf, void *el)
                 rbuf->rb_tail += rbuf->rb_nalloc;
 
             }
+            free(rbuf->rb_els);
             rbuf->rb_els = els;
             rbuf->rb_nalloc *= 2;
             goto insert;
