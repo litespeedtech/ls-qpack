@@ -226,8 +226,6 @@ struct lsqpack_header_info
     unsigned                            qhi_bytes_inserted;
     lsqpack_abs_id_t                    qhi_min_id;
     lsqpack_abs_id_t                    qhi_max_id;
-    /* TODO FIXME qhi_at_risk is never set */
-    signed char                         qhi_at_risk;
 };
 
 /* Absolute index starts with 1.  0 indicates that the value is not set */
@@ -1364,7 +1362,8 @@ lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
     if (seqno)
     {
         TAILQ_FOREACH(hinfo, &enc->qpe_hinfos, qhi_next)
-            if (hinfo->qhi_stream_id == stream_id && hinfo->qhi_at_risk)
+            if (hinfo->qhi_stream_id == stream_id
+                                && hinfo->qhi_max_id < enc->qpe_max_acked_id)
                 break;
         at_risk = hinfo != NULL;
     }
