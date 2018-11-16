@@ -353,6 +353,9 @@ main (int argc, char **argv)
 
     assert(TAILQ_EMPTY(&bufs));
 
+    if (s_out)
+        (void) fclose(s_out);
+
     exit(EXIT_SUCCESS);
 
   read_err:
