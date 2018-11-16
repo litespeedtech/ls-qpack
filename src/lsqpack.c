@@ -226,8 +226,6 @@ struct lsqpack_header_info
     unsigned                            qhi_bytes_inserted;
     lsqpack_abs_id_t                    qhi_min_id;
     lsqpack_abs_id_t                    qhi_max_id;
-    /* TODO FIXME qhi_ins_id is never used */
-    lsqpack_abs_id_t                    qhi_ins_id;
     /* TODO FIXME qhi_at_risk is never set */
     signed char                         qhi_at_risk;
 };
@@ -2110,7 +2108,6 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
             qenc_maybe_update_hinfo_min_max(enc->qpe_cur_header.hinfo,
                                                             new_entry->ete_id);
         }
-        enc->qpe_cur_header.hinfo->qhi_ins_id = new_entry->ete_id;
         break;
     default:
         assert(prog.ep_tab_action == ETA_NOOP);
