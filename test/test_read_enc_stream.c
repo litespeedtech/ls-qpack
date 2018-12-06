@@ -205,4 +205,6 @@ main (void)
 
     for (test = tests; test < tests + sizeof(tests) / sizeof(tests[0]); ++test)
         run_test(test);
+
+    return 0;
 }
