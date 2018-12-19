@@ -41,7 +41,7 @@ extern "C" {
  * qpack-11 (if such draft ever published) will correspond to version 0.11.
  */
 #define LSQPACK_MAJOR_VERSION 0
-#define LSQPACK_MINOR_VERSION 3
+#define LSQPACK_MINOR_VERSION 5
 #define LSQPACK_PATCH_VERSION 0
 
 /** Let's start with four billion for now */
@@ -49,9 +49,10 @@ typedef unsigned lsqpack_abs_id_t;
 
 #define LSQPACK_MAX_ABS_ID (~((lsqpack_abs_id_t) 0))
 
-#define LSQPACK_DEF_DYN_TABLE_SIZE  4096
-#define LSQPACK_DEF_MAX_RISKED_STREAMS 100
+#define LSQPACK_DEF_DYN_TABLE_SIZE      0
+#define LSQPACK_DEF_MAX_RISKED_STREAMS  0
 
+/* [draft-ietf-quic-qpack-05] Section 5 */
 #define LSQPACK_MAX_DYN_TABLE_SIZE ((1 << 30) - 1)
 #define LSQPACK_MAX_MAX_RISKED_STREAMS ((1 << 16) - 1)
 

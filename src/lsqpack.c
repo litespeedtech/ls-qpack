@@ -1470,7 +1470,7 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
         else
         {
             sign = 1;
-            diff = hinfo->qhi_max_id - enc->qpe_cur_header.base_idx;
+            diff = hinfo->qhi_max_id - enc->qpe_cur_header.base_idx - 1;
         }
         *buf = sign << 7;
         dst = lsqpack_enc_int(buf, end, diff, 7);
@@ -3960,7 +3960,7 @@ parse_header_prefix (struct lsqpack_dec *dec,
                 {
                     if (BI.sign)
                         read_ctx->hbrc_base_index =
-                                ID_MINUS(read_ctx->hbrc_largest_ref, BI.value);
+                            ID_MINUS(read_ctx->hbrc_largest_ref, BI.value + 1);
                     else
                         read_ctx->hbrc_base_index =
                                 ID_PLUS(read_ctx->hbrc_largest_ref, BI.value);
