@@ -178,8 +178,7 @@ run_test (const struct test_read_encoder_stream *test)
 
     for (chunk_sz = 1; chunk_sz <= test->input_sz; ++chunk_sz)
     {
-        lsqpack_dec_init(&dec, NULL, LSQPACK_DEF_DYN_TABLE_SIZE,
-            LSQPACK_DEF_MAX_RISKED_STREAMS, NULL);
+        lsqpack_dec_init(&dec, NULL, 0x1000, 100, NULL);
 
         off = 0;
         do

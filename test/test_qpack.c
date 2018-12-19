@@ -42,8 +42,8 @@ static const struct qpack_header_block_test
 
     {
         .qhbt_lineno        = __LINE__,
-        .qhbt_table_size    = LSQPACK_DEF_DYN_TABLE_SIZE,
-        .qhbt_max_risked_streams = LSQPACK_DEF_MAX_RISKED_STREAMS,
+        .qhbt_table_size    = 0x1000,
+        .qhbt_max_risked_streams = 100,
         .qhbt_n_headers     = 1,
         .qhbt_headers       = {
             { ":method", "GET", 0, },
@@ -59,8 +59,8 @@ static const struct qpack_header_block_test
 
     {
         .qhbt_lineno        = __LINE__,
-        .qhbt_table_size    = LSQPACK_DEF_DYN_TABLE_SIZE,
-        .qhbt_max_risked_streams = LSQPACK_DEF_MAX_RISKED_STREAMS,
+        .qhbt_table_size    = 0x1000,
+        .qhbt_max_risked_streams = 100,
         .qhbt_n_headers     = 1,
         .qhbt_headers       = {
             { ":method", "method", LQEF_NEVER_INDEX, },
@@ -78,7 +78,7 @@ static const struct qpack_header_block_test
 
     {
         .qhbt_lineno        = __LINE__,
-        .qhbt_table_size    = LSQPACK_DEF_DYN_TABLE_SIZE,
+        .qhbt_table_size    = 0x1000,
         .qhbt_max_risked_streams = 0,
         .qhbt_n_headers     = 1,
         .qhbt_headers       = {
@@ -102,8 +102,8 @@ static const struct qpack_header_block_test
 
     {
         .qhbt_lineno        = __LINE__,
-        .qhbt_table_size    = LSQPACK_DEF_DYN_TABLE_SIZE,
-        .qhbt_max_risked_streams = LSQPACK_DEF_DYN_TABLE_SIZE,
+        .qhbt_table_size    = 0x1000,
+        .qhbt_max_risked_streams = 0x1000,
         .qhbt_n_headers     = 1,
         .qhbt_headers       = {
             { ":method", "method", 0, },
@@ -115,7 +115,7 @@ static const struct qpack_header_block_test
             0xa4, 0xa9, 0x9c, 0xf2, 0x7f,
         },
         .qhbt_prefix_sz     = 2,
-        .qhbt_prefix_buf    = "\x02\x81",
+        .qhbt_prefix_buf    = "\x02\x80",
         .qhbt_header_sz     = 1,
         .qhbt_header_buf    = {
             0x10 | 0 /* Relative dynamic ID */,
@@ -124,8 +124,8 @@ static const struct qpack_header_block_test
 
     {
         .qhbt_lineno        = __LINE__,
-        .qhbt_table_size    = LSQPACK_DEF_DYN_TABLE_SIZE,
-        .qhbt_max_risked_streams = LSQPACK_DEF_DYN_TABLE_SIZE,
+        .qhbt_table_size    = 0x1000,
+        .qhbt_max_risked_streams = 0x1000,
         .qhbt_n_headers     = 1,
         .qhbt_headers       = {
             { "dude", "where is my car?", LQEF_NEVER_INDEX, },
@@ -145,7 +145,7 @@ static const struct qpack_header_block_test
 
     {
         .qhbt_lineno        = __LINE__,
-        .qhbt_table_size    = LSQPACK_DEF_DYN_TABLE_SIZE,
+        .qhbt_table_size    = 0x1000,
         .qhbt_max_risked_streams = 0,
         .qhbt_n_headers     = 1,
         .qhbt_headers       = {
@@ -173,7 +173,7 @@ static const struct qpack_header_block_test
 
     {
         .qhbt_lineno        = __LINE__,
-        .qhbt_table_size    = LSQPACK_DEF_DYN_TABLE_SIZE,
+        .qhbt_table_size    = 0x1000,
         .qhbt_max_risked_streams = 1,
         .qhbt_n_headers     = 1,
         .qhbt_headers       = {
@@ -188,7 +188,7 @@ static const struct qpack_header_block_test
             0x50, 0x83, 0xb3, 0xfc,
         },
         .qhbt_prefix_sz     = 2,
-        .qhbt_prefix_buf    = "\x02\x81",
+        .qhbt_prefix_buf    = "\x02\x80",
         .qhbt_header_sz     = 1,
         .qhbt_header_buf    = {
             0x10 | 0 /* Relative dynamic ID */,
