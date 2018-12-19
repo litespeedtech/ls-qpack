@@ -3167,6 +3167,13 @@ lsqpack_huff_decode (const unsigned char *src, int src_len,
     unsigned char *p_dst = dst;
     unsigned char *dst_end = dst + dst_len;
 
+    if (dst_len == 0)
+        return (struct huff_decode_retval) {
+            .status = HUFF_DEC_END_DST,
+            .n_dst  = 0,
+            .n_src  = 0,
+        };
+
     switch (state->resume)
     {
     case 0:
@@ -4798,7 +4805,10 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 WONR.str_off += hdr.n_dst;
                 break;
             case HUFF_DEC_END_DST:
-                WONR.alloced_len *= 2;
+                if (WONR.alloced_len)
+                    WONR.alloced_len *= 2;
+                else
+                    WONR.alloced_len = WONR.str_len + WONR.str_len / 4;
                 entry = realloc(WONR.entry, sizeof(*WONR.entry)
                                                         + WONR.alloced_len);
                 if (!entry)
