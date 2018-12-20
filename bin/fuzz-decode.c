@@ -191,6 +191,7 @@ main (int argc, char **argv)
             const unsigned char *cur = p;
             struct lsqpack_header_set *hset;
             enum lsqpack_read_header_status rhs;
+            size = MIN(size, end - p);
             rhs = lsqpack_dec_header_in(&decoder, NULL, stream_id,
                         size, &cur, size, &hset, NULL, NULL);
             (void) rhs;
