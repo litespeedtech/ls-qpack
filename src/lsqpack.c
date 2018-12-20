@@ -2377,6 +2377,25 @@ lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
 }
 
 
+typedef char unsigned_is_32bits[(sizeof(unsigned) == 4) - 1];
+
+int
+lsqpack_dec_int24 (const unsigned char **src_p, const unsigned char *src_end,
+                   unsigned prefix_bits, unsigned *value_p,
+                   struct lsqpack_dec_int_state *state)
+{
+    uint64_t val;
+    int r;
+
+    r = lsqpack_dec_int(src_p, src_end, prefix_bits, &val, state);
+    if (r == 0 && val < (1u << 24))
+    {
+        *value_p = val;
+        return 0;
+    }
+    else
+        return r;
+}
 
 
 int
@@ -4500,7 +4519,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             }
         case DEI_WINR_READ_NAME_IDX:
   dei_winr_read_name_idx:
-            r = lsqpack_dec_int(&buf, end, prefix_bits,
+            r = lsqpack_dec_int24(&buf, end, prefix_bits,
                                     &WINR.name_idx, &WINR.dec_int_state);
             if (r == 0)
             {
@@ -4533,7 +4552,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             prefix_bits = 7;
             /* fall-through */
         case DEI_WINR_READ_VAL_LEN:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &WINR.val_len,
+            r = lsqpack_dec_int24(&buf, end, prefix_bits, &WINR.val_len,
                                                         &WINR.dec_int_state);
             if (r == 0)
             {
@@ -4665,7 +4684,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             break;
         case DEI_WONR_READ_NAME_LEN:
   dei_wonr_read_name_idx:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &WONR.str_len,
+            r = lsqpack_dec_int24(&buf, end, prefix_bits, &WONR.str_len,
                                                         &DUPL.dec_int_state);
             if (r == 0)
             {
@@ -4753,7 +4772,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             prefix_bits = 7;
             /* fall-through */
         case DEI_WONR_READ_VAL_LEN:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &WONR.str_len,
+            r = lsqpack_dec_int24(&buf, end, prefix_bits, &WONR.str_len,
                                                         &WONR.dec_int_state);
             if (r == 0)
             {
@@ -4856,7 +4875,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             break;
         case DEI_DUP_READ_IDX:
   dei_dup_read_idx:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &DUPL.index,
+            r = lsqpack_dec_int24(&buf, end, prefix_bits, &DUPL.index,
                                                         &DUPL.dec_int_state);
             if (r == 0)
             {

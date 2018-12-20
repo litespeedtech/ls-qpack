@@ -588,8 +588,8 @@ struct lsqpack_dec
             struct {
                 struct lsqpack_dec_int_state        dec_int_state;
                 struct lsqpack_huff_decode_state    dec_huff_state;
-                uint64_t                            name_idx;
-                uint64_t                            val_len;
+                unsigned                            name_idx;
+                unsigned                            val_len;
                 struct lsqpack_dec_table_entry     *reffed_entry;
                 struct lsqpack_dec_table_entry     *entry;
                 const char                         *name;
@@ -607,7 +607,7 @@ struct lsqpack_dec
             struct {
                 struct lsqpack_dec_int_state        dec_int_state;
                 struct lsqpack_huff_decode_state    dec_huff_state;
-                uint64_t                            str_len;
+                unsigned                            str_len;
                 struct lsqpack_dec_table_entry     *entry;
                 unsigned                            alloced_len;
                 unsigned                            str_off;
@@ -617,7 +617,7 @@ struct lsqpack_dec
 
             struct {
                 struct lsqpack_dec_int_state        dec_int_state;
-                uint64_t                            index;
+                unsigned                            index;
             }                                               duplicate;
 
             struct {
