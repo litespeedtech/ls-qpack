@@ -2394,8 +2394,10 @@ lsqpack_dec_int24 (const unsigned char **src_p, const unsigned char *src_end,
         *value_p = val;
         return 0;
     }
-    else
+    else if (r != 0)
         return r;
+    else
+        return -2;
 }
 
 
