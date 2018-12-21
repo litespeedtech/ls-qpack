@@ -2379,6 +2379,7 @@ lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
 
 typedef char unsigned_is_32bits[(sizeof(unsigned) == 4) - 1];
 
+/* TODO: rewrite as a standalone function */
 int
 lsqpack_dec_int24 (const unsigned char **src_p, const unsigned char *src_end,
                    unsigned prefix_bits, unsigned *value_p,
@@ -2892,7 +2893,7 @@ struct header_block_read_ctx
                 /* Indexed Header Field */
                 struct {
                     struct lsqpack_dec_int_state    dec_int_state;
-                    uint64_t                        value;
+                    unsigned                        value;
                     int                             is_static;
                 }                                           ihf;
 
@@ -2935,7 +2936,7 @@ struct header_block_read_ctx
                 /* Indexed Header Field With Post-Base Index */
                 struct {
                     struct lsqpack_dec_int_state    dec_int_state;
-                    uint64_t                        value;
+                    unsigned                        value;
                 }                                           ipbi;
 
                 /* Literal Header Field With Post-Base Name Reference */
@@ -3257,7 +3258,7 @@ parse_header_data (struct lsqpack_dec *dec,
 {
     const unsigned char *const end = buf + bufsz;
     struct huff_decode_retval hdr;
-    uint64_t value;
+    unsigned value;
     size_t size;
     char *str;
     unsigned prefix_bits = -1;
@@ -3332,7 +3333,7 @@ parse_header_data (struct lsqpack_dec *dec,
             }
         case DATA_STATE_READ_IHF_IDX:
   data_state_read_ihf_idx:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &IHF.value,
+            r = lsqpack_dec_int24(&buf, end, prefix_bits, &IHF.value,
                                                         &IHF.dec_int_state);
             if (r == 0)
             {
@@ -3357,7 +3358,7 @@ parse_header_data (struct lsqpack_dec *dec,
 #undef IHF
         case DATA_STATE_READ_LFINR_IDX:
   data_state_read_lfinr_idx:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &value,
+            r = lsqpack_dec_int24(&buf, end, prefix_bits, &value,
                                                         &LFINR.dec_int_state);
             if (r == 0)
             {
@@ -3394,7 +3395,7 @@ parse_header_data (struct lsqpack_dec *dec,
                                     = DATA_STATE_READ_LFINR_VAL_LEN;
             /* Fall-through */
         case DATA_STATE_READ_LFINR_VAL_LEN:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &value,
+            r = lsqpack_dec_int24(&buf, end, prefix_bits, &value,
                                                         &LFINR.dec_int_state);
             if (r == 0)
             {
@@ -3520,7 +3521,7 @@ parse_header_data (struct lsqpack_dec *dec,
 #undef LFINR
         case DATA_STATE_READ_LFONR_NAME_LEN:
   data_state_read_lfonr_name_len:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &value,
+            r = lsqpack_dec_int24(&buf, end, prefix_bits, &value,
                                                         &LFONR.dec_int_state);
             if (r == 0)
             {
@@ -3600,7 +3601,7 @@ parse_header_data (struct lsqpack_dec *dec,
                                             = DATA_STATE_READ_LFONR_VAL_LEN;
             /* Fall-through */
         case DATA_STATE_READ_LFONR_VAL_LEN:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &value,
+            r = lsqpack_dec_int24(&buf, end, prefix_bits, &value,
                                                         &LFONR.dec_int_state);
             if (r == 0)
             {
@@ -3702,7 +3703,7 @@ parse_header_data (struct lsqpack_dec *dec,
 #undef LFONR
         case DATA_STATE_READ_LFPBNR_IDX:
   data_state_read_lfpbnr_idx:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &value,
+            r = lsqpack_dec_int24(&buf, end, prefix_bits, &value,
                                                         &LFPBNR.dec_int_state);
             if (r == 0)
             {
@@ -3730,7 +3731,7 @@ parse_header_data (struct lsqpack_dec *dec,
                                     = DATA_STATE_READ_LFPBNR_VAL_LEN;
             /* Fall-through */
         case DATA_STATE_READ_LFPBNR_VAL_LEN:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &value,
+            r = lsqpack_dec_int24(&buf, end, prefix_bits, &value,
                                                         &LFPBNR.dec_int_state);
             if (r == 0)
             {
@@ -3840,7 +3841,7 @@ parse_header_data (struct lsqpack_dec *dec,
 #undef LFPBNR
         case DATA_STATE_READ_IPBI_IDX:
   data_state_read_ipbi_idx:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &IPBI.value,
+            r = lsqpack_dec_int24(&buf, end, prefix_bits, &IPBI.value,
                                                         &IPBI.dec_int_state);
             if (r == 0)
             {
