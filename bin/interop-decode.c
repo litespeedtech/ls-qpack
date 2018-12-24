@@ -75,6 +75,12 @@ header_block_done (const struct buf *buf, struct lsqpack_header_set *set)
 {
     unsigned n;
 
+    if (!set)
+    {
+        fprintf(stderr, "Stream %"PRIu64" has empty header set\n", buf->stream_id);
+        return;
+    }
+
     if (s_verbose)
     {
         fprintf(stderr, "Have headers for stream %"PRIu64":\n", buf->stream_id);
