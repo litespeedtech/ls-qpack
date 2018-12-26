@@ -38,6 +38,14 @@ SOFTWARE.
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
+#if LSQPACK_ENABLE_VERSION_SWITCH
+#define ENC_USE_QPACK_05 enc->qpe_use_qpack_05
+#define DEC_USE_QPACK_05 dec->qpd_use_qpack_05
+#else
+#define ENC_USE_QPACK_05 1
+#define DEC_USE_QPACK_05 1
+#endif
+
 struct static_table_entry
 {
     const char       *name;
@@ -608,6 +616,12 @@ lsqpack_enc_init (struct lsqpack_enc *enc, void *logger_ctx,
     E_DEBUG("initialized.  opts: 0x%X; max capacity: %u; max risked "
         "streams: %u.", enc_opts, enc->qpe_cur_max_capacity,
         enc->qpe_max_risked_streams);
+#if LSQPACK_ENABLE_VERSION_SWITCH
+    {
+        const char *s = getenv("USE_QPACK_05");
+        enc->qpe_use_qpack_05 = !s || atoi(s);
+    }
+#endif
 
     return 0;
 }
@@ -1470,7 +1484,8 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
         else
         {
             sign = 1;
-            diff = hinfo->qhi_max_id - enc->qpe_cur_header.base_idx - 1;
+            diff = hinfo->qhi_max_id - enc->qpe_cur_header.base_idx
+                                                        - ENC_USE_QPACK_05;
         }
         *buf = sign << 7;
         dst = lsqpack_enc_int(buf, end, diff, 7);
@@ -2722,6 +2737,12 @@ lsqpack_dec_init (struct lsqpack_dec *dec, void *logger_ctx,
     for (i = 0; i < (1 << LSQPACK_DEC_BLOCKED_BITS); ++i)
         TAILQ_INIT(&dec->qpd_blocked_headers[i]);
     STAILQ_INIT(&dec->qpd_dinsts);
+#if LSQPACK_ENABLE_VERSION_SWITCH
+    {
+        const char *s = getenv("USE_QPACK_05");
+        dec->qpd_use_qpack_05 = !s || atoi(s);
+    }
+#endif
     D_DEBUG("initialized.  max capacity=%u; max risked streams=%u",
         dec->qpd_max_capacity, dec->qpd_max_risked_streams);
 }
@@ -3989,7 +4010,8 @@ parse_header_prefix (struct lsqpack_dec *dec,
                 {
                     if (BI.sign)
                         read_ctx->hbrc_base_index =
-                            ID_MINUS(read_ctx->hbrc_largest_ref, BI.value + 1);
+                            ID_MINUS(read_ctx->hbrc_largest_ref,
+                                                BI.value + DEC_USE_QPACK_05);
                     else
                         read_ctx->hbrc_base_index =
                                 ID_PLUS(read_ctx->hbrc_largest_ref, BI.value);

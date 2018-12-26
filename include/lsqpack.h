@@ -503,6 +503,9 @@ struct lsqpack_enc
                                                         unsigned);
     int                       (*qpe_hist_seen_name)(struct lsqpack_enc_hist *,
                                                         unsigned);
+#if LSQPACK_ENABLE_VERSION_SWITCH
+    int                         qpe_use_qpack_05;
+#endif
 };
 
 struct lsqpack_ringbuf
@@ -627,6 +630,9 @@ struct lsqpack_dec
         }               ctx_u;
     }                       qpd_enc_state;
     struct lsqpack_dec_err  qpd_err;
+#if LSQPACK_ENABLE_VERSION_SWITCH
+    int                     qpd_use_qpack_05;
+#endif
 };
 
 #ifdef __cplusplus
