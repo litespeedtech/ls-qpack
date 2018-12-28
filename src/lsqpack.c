@@ -1977,6 +1977,8 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     switch (prog.ep_enc_action)
     {
     case EEA_DUP:
+        if (enc_buf >= enc_buf_end)
+            return LQES_NOBUF_ENC;
         dst = enc_buf;
         *dst = 0;
         dst = lsqpack_enc_int(dst, enc_buf_end, enc->qpe_ins_count - id, 5);
@@ -1985,6 +1987,8 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         enc_sz = dst - enc_buf;
         break;
     case EEA_INS_NAMEREF_STATIC:
+        if (enc_buf >= enc_buf_end)
+            return LQES_NOBUF_ENC;
         dst = enc_buf;
         *dst = 0x80 | 0x40;
         dst = lsqpack_enc_int(dst, enc_buf_end, id, 6);
@@ -1998,6 +2002,8 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         enc_sz = dst - enc_buf;
         break;
     case EEA_INS_NAMEREF_DYNAMIC:
+        if (enc_buf >= enc_buf_end)
+            return LQES_NOBUF_ENC;
         dst = enc_buf;
         *dst = 0x80;
         dst = lsqpack_enc_int(dst, enc_buf_end, enc->qpe_ins_count - id, 6);
@@ -2012,6 +2018,8 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         break;
     case EEA_INS_LIT:
     case EEA_INS_LIT_NAME:
+        if (enc_buf >= enc_buf_end)
+            return LQES_NOBUF_ENC;
         dst = enc_buf;
         *dst = 0x40;
         r = lsqpack_enc_enc_str(5, dst, enc_buf_end - dst,

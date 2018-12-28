@@ -222,17 +222,39 @@ run_header_test (const struct qpack_header_block_test *test)
     header_off = 0, enc_off = 0;
     for (i = 0; i < test->qhbt_n_headers; ++i)
     {
-        enc_sz = sizeof(enc_buf) - enc_off;
-        header_sz = sizeof(header_buf) - header_off;
-        enc_st = lsqpack_enc_encode(&enc,
-                enc_buf + enc_off, &enc_sz,
-                header_buf + header_off, &header_sz,
-                test->qhbt_headers[i].name,
-                strlen(test->qhbt_headers[i].name),
-                test->qhbt_headers[i].value,
-                strlen(test->qhbt_headers[i].value),
-                test->qhbt_headers[i].flags);
-        assert(enc_st == LQES_OK);
+        /* Increase buffers one by one to exercise error conditions */
+        enc_sz = 0;
+        header_sz = 0;
+        while (1)
+        {
+            enc_st = lsqpack_enc_encode(&enc,
+                    enc_buf + enc_off, &enc_sz,
+                    header_buf + header_off, &header_sz,
+                    test->qhbt_headers[i].name,
+                    strlen(test->qhbt_headers[i].name),
+                    test->qhbt_headers[i].value,
+                    strlen(test->qhbt_headers[i].value),
+                    test->qhbt_headers[i].flags);
+            switch (enc_st)
+            {
+            case LQES_NOBUF_ENC:
+                if (enc_sz < sizeof(enc_buf) - enc_off)
+                    ++enc_sz;
+                else
+                    assert(0);
+                break;
+            case LQES_NOBUF_HEAD:
+                if (header_sz < sizeof(header_buf) - header_off)
+                    ++header_sz;
+                else
+                    assert(0);
+                break;
+            default:
+                assert(enc_st == LQES_OK);
+                goto end_encode_one_header;
+            }
+        }
+  end_encode_one_header:
         enc_off += enc_sz;
         header_off += header_sz;
     }
