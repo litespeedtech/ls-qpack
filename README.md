@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/litespeedtech/ls-qpack.svg?branch=master)](https://travis-ci.org/litespeedtech/ls-qpack)
+
 # ls-qpack
 QPACK compression library for use with HTTP/QUIC
 
