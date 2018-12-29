@@ -2,15 +2,17 @@ language: cpp
 sudo: false
 addons:
   apt:
-    sources:
-    - ubuntu-toolchain-r-test
-    packages:
 matrix:
     include:
-        - name: Linux (gcc-5)
+        - name: Linux (gcc-8)
           os: linux
           dist: xenial
-          compiler: gcc
+          compiler: gcc-8
+          addons:
+             apt:
+               sources:
+                 - ubuntu-toolchain-r-test
+               packages: g++-8
         - name: Linux (clang)
           os: linux
           dist: xenial
