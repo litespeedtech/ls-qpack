@@ -5,7 +5,25 @@
  */
 
 #include <assert.h>
+
+#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__)
+#include <sys/endian.h>
+#define bswap_16 bswap16
+#define bswap_32 bswap32
+#define bswap_64 bswap64
+#elif defined(__APPLE__)
+#include <libkern/OSByteOrder.h>
+#define bswap_16 OSSwapInt16
+#define bswap_32 OSSwapInt32
+#define bswap_64 OSSwapInt64
+#elif defined(WIN32)
+#define bswap_16 _byteswap_ushort
+#define bswap_32 _byteswap_ulong
+#define bswap_64 _byteswap_uint64
+#else
 #include <byteswap.h>
+#endif
+
 #include <errno.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -219,7 +237,7 @@ main (int argc, char **argv)
         }
         memset(buf, 0, sizeof(*buf));
         nr = read(in, buf->buf, size);
-        if (nr != size)
+        if (nr != (ssize_t) size)
             goto read_err;
         off += nr;
         buf->dec = &decoder;
@@ -246,14 +264,14 @@ main (int argc, char **argv)
             if (*line == '#')
                 continue;
 
-            if (3 == sscanf(line, " %[s] %lu %u ", command, &stream_id, &size))
+            if (3 == sscanf(line, " %[s] %"PRIu64" %"PRIu32" ", command, &stream_id, &size))
             {
                 TAILQ_FOREACH(buf, &bufs, next_buf)
                     if (stream_id == buf->stream_id)
                         break;
                 if (!buf)
                 {
-                    fprintf(stderr, "stream %lu not found (recipe line %u)\n",
+                    fprintf(stderr, "stream %"PRIu64" not found (recipe line %u)\n",
                         stream_id, lineno);
                     exit(EXIT_FAILURE);
                 }
@@ -279,8 +297,8 @@ main (int argc, char **argv)
                     break;
                 default:
                     assert(rhs == LQRHS_ERROR);
-                    fprintf(stderr, "recipe line %u: stream %lu: header_in error\n",
-                        lineno, stream_id);
+                    fprintf(stderr, "recipe line %u: stream %"PRIu64": "
+                        "header_in error\n", lineno, stream_id);
                     exit(EXIT_FAILURE);
                 }
             }
@@ -335,12 +353,12 @@ main (int argc, char **argv)
                 break;
             case LQRHS_NEED:
                 fprintf(stderr, "This can't be right: all bytes were given.  "
-                    "stream %lu\n", buf->stream_id);
+                    "stream %"PRIu64"\n", buf->stream_id);
                 exit(EXIT_FAILURE);
             default:
                 assert(rhs == LQRHS_ERROR);
-                fprintf(stderr, "stream %lu: header block error starting at "
-                    "off %zu\n", stream_id, buf->off);
+                fprintf(stderr, "stream %"PRIu64": header block error "
+                    "starting at off %zu\n", stream_id, buf->off);
                 exit(EXIT_FAILURE);
             }
         }

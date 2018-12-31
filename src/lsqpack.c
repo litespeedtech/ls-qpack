@@ -1151,7 +1151,7 @@ lsqpack_enc_enc_str (unsigned prefix_bits, unsigned char *const dst,
             *dst |= 1 << prefix_bits;
             lsqpack_enc_int_nocheck(dst, enc_size_bytes, prefix_bits);
             p = qenc_huffman_enc(str, str + str_len, dst + len_size);
-            assert(p - dst == len_size + enc_size_bytes);
+            assert((unsigned) (p - dst) == len_size + enc_size_bytes);
             return p - dst;
         }
         else

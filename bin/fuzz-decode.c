@@ -5,7 +5,25 @@
  */
 
 #include <assert.h>
+
+#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__)
+#include <sys/endian.h>
+#define bswap_16 bswap16
+#define bswap_32 bswap32
+#define bswap_64 bswap64
+#elif defined(__APPLE__)
+#include <libkern/OSByteOrder.h>
+#define bswap_16 OSSwapInt16
+#define bswap_32 OSSwapInt32
+#define bswap_64 OSSwapInt64
+#elif defined(WIN32)
+#define bswap_16 _byteswap_ushort
+#define bswap_32 _byteswap_ulong
+#define bswap_64 _byteswap_uint64
+#else
 #include <byteswap.h>
+#endif
+
 #include <errno.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -144,7 +162,7 @@ main (int argc, char **argv)
             enum lsqpack_read_header_status rhs;
             rhs = lsqpack_dec_header_in(&decoder, NULL, stream_id,
                         size, &cur, size, &hset, NULL, NULL);
-            if (rhs != LQRHS_DONE || cur - p != size)
+            if (rhs != LQRHS_DONE || (uint32_t) (cur - p) != size)
                 abort();
             lsqpack_dec_destroy_header_set(hset);
         }
@@ -183,7 +201,7 @@ main (int argc, char **argv)
 #endif
         if (stream_id == 0)
         {
-            r = lsqpack_dec_enc_in(&decoder, p, MIN(size, end - p));
+            r = lsqpack_dec_enc_in(&decoder, p, MIN(size, (uint32_t) (end - p)));
             (void) r;
         }
         else
@@ -191,7 +209,7 @@ main (int argc, char **argv)
             const unsigned char *cur = p;
             struct lsqpack_header_set *hset;
             enum lsqpack_read_header_status rhs;
-            size = MIN(size, end - p);
+            size = MIN(size, (uint32_t) (end - p));
             rhs = lsqpack_dec_header_in(&decoder, NULL, stream_id,
                         size, &cur, size, &hset, NULL, NULL);
             (void) rhs;
