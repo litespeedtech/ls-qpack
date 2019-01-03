@@ -1,0 +1,235 @@
+:method	GET
+:scheme	http
+:authority	www.netbsd.org
+:path	/
+user-agent	Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0
+accept	text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+accept-language	en-US,en;q=0.5
+accept-encoding	gzip, deflate
+connection	keep-alive
+upgrade-insecure-requests	1
+pragma	no-cache
+cache-control	no-cache
+
+:method	GET
+:scheme	http
+:authority	www.netbsd.org
+:path	/global.css
+user-agent	Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0
+accept	text/css,*/*;q=0.1
+accept-language	en-US,en;q=0.5
+accept-encoding	gzip, deflate
+referer	http://www.netbsd.org/
+connection	keep-alive
+pragma	no-cache
+cache-control	no-cache
+
+:method	GET
+:scheme	http
+:authority	www.netbsd.org
+:path	/global.js
+user-agent	Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0
+accept	*/*
+accept-language	en-US,en;q=0.5
+accept-encoding	gzip, deflate
+referer	http://www.netbsd.org/
+connection	keep-alive
+pragma	no-cache
+cache-control	no-cache
+
+:method	GET
+:scheme	http
+:authority	www.netbsd.org
+:path	/donations/donors.js
+user-agent	Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0
+accept	*/*
+accept-language	en-US,en;q=0.5
+accept-encoding	gzip, deflate
+referer	http://www.netbsd.org/
+connection	keep-alive
+pragma	no-cache
+cache-control	no-cache
+
+:method	GET
+:scheme	http
+:authority	www.netbsd.org
+:path	/images/NetBSD-smaller.png
+user-agent	Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0
+accept	*/*
+accept-language	en-US,en;q=0.5
+accept-encoding	gzip, deflate
+referer	http://www.netbsd.org/
+connection	keep-alive
+pragma	no-cache
+cache-control	no-cache
+
+:method	GET
+:scheme	http
+:authority	www.netbsd.org
+:path	/images/download-icon-orange.png
+user-agent	Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0
+accept	*/*
+accept-language	en-US,en;q=0.5
+accept-encoding	gzip, deflate
+referer	http://www.netbsd.org/
+connection	keep-alive
+pragma	no-cache
+cache-control	no-cache
+
+:method	GET
+:scheme	http
+:authority	www.netbsd.org
+:path	/images/support-icon-orange.png
+user-agent	Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0
+accept	*/*
+accept-language	en-US,en;q=0.5
+accept-encoding	gzip, deflate
+referer	http://www.netbsd.org/
+connection	keep-alive
+pragma	no-cache
+cache-control	no-cache
+
+:method	GET
+:scheme	http
+:authority	www.netbsd.org
+:path	/images/community-icon-orange.png
+user-agent	Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0
+accept	*/*
+accept-language	en-US,en;q=0.5
+accept-encoding	gzip, deflate
+referer	http://www.netbsd.org/
+connection	keep-alive
+pragma	no-cache
+cache-control	no-cache
+
+:method	GET
+:scheme	http
+:authority	www.netbsd.org
+:path	/images/develop-icon-orange.png
+user-agent	Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0
+accept	*/*
+accept-language	en-US,en;q=0.5
+accept-encoding	gzip, deflate
+referer	http://www.netbsd.org/
+connection	keep-alive
+pragma	no-cache
+cache-control	no-cache
+
+:method	GET
+:scheme	http
+:authority	www.netbsd.org
+:path	/images/donate-icon-orange.png
+user-agent	Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0
+accept	*/*
+accept-language	en-US,en;q=0.5
+accept-encoding	gzip, deflate
+referer	http://www.netbsd.org/
+connection	keep-alive
+pragma	no-cache
+cache-control	no-cache
+
+:method	GET
+:scheme	http
+:authority	www.netbsd.org
+:path	/images/links/paypal.gif
+user-agent	Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0
+accept	*/*
+accept-language	en-US,en;q=0.5
+accept-encoding	gzip, deflate
+referer	http://www.netbsd.org/
+connection	keep-alive
+pragma	no-cache
+cache-control	no-cache
+
+:method	GET
+:scheme	http
+:authority	www.netbsd.org
+:path	/images/links/stripe-black-donate-small.png
+user-agent	Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0
+accept	*/*
+accept-language	en-US,en;q=0.5
+accept-encoding	gzip, deflate
+referer	http://www.netbsd.org/
+connection	keep-alive
+pragma	no-cache
+cache-control	no-cache
+
+:method	GET
+:scheme	http
+:authority	www.netbsd.org
+:path	/images/links/cafepress.png
+user-agent	Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0
+accept	*/*
+accept-language	en-US,en;q=0.5
+accept-encoding	gzip, deflate
+referer	http://www.netbsd.org/
+connection	keep-alive
+pragma	no-cache
+cache-control	no-cache
+
+:method	GET
+:scheme	http
+:authority	www.netbsd.org
+:path	/images/westernlogo_sm.png
+user-agent	Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0
+accept	*/*
+accept-language	en-US,en;q=0.5
+accept-encoding	gzip, deflate
+referer	http://www.netbsd.org/
+connection	keep-alive
+pragma	no-cache
+cache-control	no-cache
+
+:method	GET
+:scheme	http
+:authority	www.netbsd.org
+:path	/images/columbia.jpg
+user-agent	Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0
+accept	*/*
+accept-language	en-US,en;q=0.5
+accept-encoding	gzip, deflate
+referer	http://www.netbsd.org/
+connection	keep-alive
+pragma	no-cache
+cache-control	no-cache
+
+:method	GET
+:scheme	http
+:authority	www.netbsd.org
+:path	/images/fastly.png
+user-agent	Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0
+accept	*/*
+accept-language	en-US,en;q=0.5
+accept-encoding	gzip, deflate
+referer	http://www.netbsd.org/
+connection	keep-alive
+pragma	no-cache
+cache-control	no-cache
+
+:method	GET
+:scheme	http
+:authority	www.netbsd.org
+:path	/images/navBar-gradient.png
+user-agent	Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0
+accept	*/*
+accept-language	en-US,en;q=0.5
+accept-encoding	gzip, deflate
+referer	http://www.netbsd.org/global.css
+connection	keep-alive
+pragma	no-cache
+cache-control	no-cache
+
+:method	GET
+:scheme	https
+:authority	www.paypalobjects.com
+:path	/en_US/i/btn/btn_subscribe_SM.gif
+user-agent	Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0
+accept	*/*
+accept-language	en-US,en;q=0.5
+accept-encoding	gzip, deflate, br
+referer	http://www.netbsd.org/
+cookie	PYPF=CT-2
+connection	keep-alive
+pragma	no-cache
+cache-control	no-cache
+

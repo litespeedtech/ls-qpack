@@ -1,7 +1,6 @@
 # The following variable can be defined on the command line:
 #
 #   SHARED
-#   RELEASE
 #   NDEBUG
 #   XXH_HEADER_NAME
 #   XXH_INCLUDE_DIR
@@ -29,13 +28,9 @@ ENDIF()
 SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} -Wall -Wextra -Wno-unused-parameter")
 SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} -fno-omit-frame-pointer")
 SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} $ENV{EXTRA_CFLAGS}")
-IF (RELEASE EQUAL 1)
-    SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} -O3 -g0")
-ELSE()
-    SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} -O0 -g3")
-    # -Werror is used to force us to fix warnings early.
-    #SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} -Werror")
-ENDIF()
+
+SET(CMAKE_C_FLAGS_DEBUG "-O0 -g3")
+SET(CMAKE_C_FLAGS_RELEASE "-O3 -g0")
 
 IF (NDEBUG EQUAL 1)
     SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} -DNDEBUG")

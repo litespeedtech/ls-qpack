@@ -1,8 +1,12 @@
 #!/bin/bash
 #
-# Script to run a scenario file.  A scenario file contains encoder parameters
-# as well as a list of headers in QIF format.  The headers are encoded and
-# the output is then decoded and compared to the original.
+# Script to run a QIF file.  The following environment variables are expected
+# to be set:
+#
+#   AGGRESSIVE
+#   TABLE_SIZE
+#   IMMEDIATE_ACK
+#   RISKED_STREAMS
 
 set -x
 set -e
@@ -27,11 +31,7 @@ if [ -z "$DO_CLEANUP" -o "$DO_CLEANUP" != 0 ]; then
     trap cleanup EXIT
 fi
 
-RECIPE=$1
-
-source $RECIPE
-
-DIR=/tmp/recipe-out-$$$RANDOM
+DIR=/tmp/run-qif-out-$$$RANDOM
 ENCODE_LOG=$DIR/encode.log
 QIF_FILE=$DIR/qif
 BIN_FILE=$DIR/out
@@ -56,7 +56,7 @@ if [ -n "$TABLE_SIZE" ]; then
     DECODE_ARGS="$DECODE_ARGS -t $TABLE_SIZE"
 fi
 
-echo -e "$QIF"\\n > $QIF_FILE
+cp -v $1 $QIF_FILE
 
 interop-encode $ENCODE_ARGS -i $QIF_FILE -o $BIN_FILE 2>$ENCODE_LOG
 interop-decode $DECODE_ARGS -i $BIN_FILE -o $RESULTING_QIF_FILE
