@@ -9,9 +9,11 @@ CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
 PROJECT(ls-qpack)
 
 IF (SHARED EQUAL 1)
-    ADD_LIBRARY(ls-qpack SHARED src/lsqpack.c)
+    ADD_LIBRARY(ls-qpack SHARED src/lsqpack.c deps/xxhash/xxhash.c)
+    ADD_LIBRARY(ls-qpack-noxxh SHARED src/lsqpack.c)
 ELSE()
-    ADD_LIBRARY(ls-qpack STATIC src/lsqpack.c)
+    ADD_LIBRARY(ls-qpack STATIC src/lsqpack.c deps/xxhash/xxhash.c)
+    ADD_LIBRARY(ls-qpack-noxxh STATIC src/lsqpack.c)
 ENDIF()
 INCLUDE_DIRECTORIES(include)
 
