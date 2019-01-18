@@ -59,10 +59,6 @@ typedef unsigned lsqpack_abs_id_t;
 struct lsqpack_enc;
 struct lsqpack_dec;
 
-typedef void (*lsqpack_stream_write_f)(void *stream, void *buf, size_t sz);
-typedef void (*lsqpack_stream_wantread_f)(void *stream, int wantread);
-typedef void (*lsqpack_stream_wantwrite_f)(void *stream, int wantwrite);
-
 enum lsqpack_enc_opts
 {
     /**
