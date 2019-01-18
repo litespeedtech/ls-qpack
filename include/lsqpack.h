@@ -160,7 +160,7 @@ enum lsqpack_enc_flags
      * Never index this field.  This will set the 'N' bit on Literal Header
      * Field With Name Reference, Literal Header Field With Post-Base Name
      * Reference, and Literal Header Field Without Name Reference instructions
-     * in the header block.  Implies LQEF_DONT_INDEX.
+     * in the header block.  Implies LQEF_NO_INDEX.
      */
     LQEF_NEVER_INDEX = 1 << 1,
 };
