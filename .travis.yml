@@ -19,6 +19,9 @@ matrix:
           compiler: clang
         - name: macOS (xcode)
           os: osx
+        - name: macOS (xcode 10.1)
+          os: osx
+          image: xcode10.1
 before_install:
   - $CC --version
   - cmake --version
