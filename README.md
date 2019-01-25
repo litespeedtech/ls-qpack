@@ -1,4 +1,5 @@
 [![Build Status](https://travis-ci.org/litespeedtech/ls-qpack.svg?branch=master)](https://travis-ci.org/litespeedtech/ls-qpack)
+[![Build Status](https://api.cirrus-ci.com/github/<USER OR ORGANIZATION>/<REPOSITORY>.svg)](https://cirrus-ci.com/github/litespeedtech/ls-qpack)
 
 # ls-qpack
 QPACK compression library for use with HTTP/3
