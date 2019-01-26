@@ -177,17 +177,17 @@ static const struct static_table_entry static_table[] =
 #ifdef LSQPACK_ENC_LOGGER_HEADER
 #include LSQPACK_ENC_LOGGER_HEADER
 #else
-#define E_LOG(prefix, args...) do {                                     \
+#define E_LOG(prefix, ...) do {                                         \
     if (enc->qpe_logger_ctx) {                                          \
         fprintf(enc->qpe_logger_ctx, prefix);                           \
-        fprintf(enc->qpe_logger_ctx,  args);                            \
+        fprintf(enc->qpe_logger_ctx, __VA_ARGS__);                      \
         fprintf(enc->qpe_logger_ctx, "\n");                             \
     }                                                                   \
 } while (0)
-#define E_DEBUG(args...) E_LOG("qenc: debug: ", args)
-#define E_INFO(args...)  E_LOG("qenc: info: ", args)
-#define E_WARN(args...)  E_LOG("qenc: warn: ", args)
-#define E_ERROR(args...) E_LOG("qenc: error: ", args)
+#define E_DEBUG(...) E_LOG("qenc: debug: ", __VA_ARGS__)
+#define E_INFO(...)  E_LOG("qenc: info: ", __VA_ARGS__)
+#define E_WARN(...)  E_LOG("qenc: warn: ", __VA_ARGS__)
+#define E_ERROR(...) E_LOG("qenc: error: ", __VA_ARGS__)
 #endif
 
 /* Entries in the encoder's dynamic table are hashed 1) by name and 2) by
@@ -1861,13 +1861,14 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                                              ENTRY_COST(name_len, value_len))))
         {
             static const struct encode_program programs[2][2][2] = {
-#define A 0 ... 1
-                [0][A][A] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
+                [0][0][0] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
+                [0][0][1] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
+                [0][1][0] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
+                [0][1][1] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
                 [1][0][0] = { EEA_INS_NAMEREF_STATIC, EHA_LIT_WITH_NAME_STAT, ETA_NEW,  0, },
                 [1][0][1] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
                 [1][1][0] = { EEA_INS_NAMEREF_STATIC, EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
                 [1][1][1] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },   /* Invalid state */
-#undef A
             };
             seen_nameval = enc->qpe_hist_seen_nameval(enc->qpe_hist, nameval_hash);
             prog = programs[seen_nameval][risk][use_dyn_table && n_cand > 0];
@@ -2400,7 +2401,7 @@ lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
 }
 
 
-typedef char unsigned_is_32bits[(sizeof(unsigned) == 4) - 1];
+typedef char unsigned_is_32bits[(sizeof(unsigned) == 4) ? 1 : -1];
 
 /* TODO: rewrite as a standalone function */
 int
@@ -2499,17 +2500,17 @@ lsqpack_enc_ratio (const struct lsqpack_enc *enc)
 #ifdef LSQPACK_DEC_LOGGER_HEADER
 #include LSQPACK_DEC_LOGGER_HEADER
 #else
-#define D_LOG(prefix, args...) do {                                     \
+#define D_LOG(prefix, ...) do {                                     \
     if (dec->qpd_logger_ctx) {                                          \
         fprintf(dec->qpd_logger_ctx, prefix);                           \
-        fprintf(dec->qpd_logger_ctx,  args);                            \
+        fprintf(dec->qpd_logger_ctx, __VA_ARGS__);                      \
         fprintf(dec->qpd_logger_ctx, "\n");                             \
     }                                                                   \
 } while (0)
-#define D_DEBUG(args...) D_LOG("qdec: debug: ", args)
-#define D_INFO(args...)  D_LOG("qdec: info: ", args)
-#define D_WARN(args...)  D_LOG("qdec: warn: ", args)
-#define D_ERROR(args...) D_LOG("qdec: error: ", args)
+#define D_DEBUG(...) D_LOG("qdec: debug: ", __VA_ARGS__)
+#define D_INFO(...)  D_LOG("qdec: info: ", __VA_ARGS__)
+#define D_WARN(...)  D_LOG("qdec: warn: ", __VA_ARGS__)
+#define D_ERROR(...) D_LOG("qdec: error: ", __VA_ARGS__)
 #endif
 
 

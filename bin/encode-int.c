@@ -4,7 +4,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#ifdef WIN32
+#define STDOUT_FILENO 1
+#else
 #include <unistd.h>
+#endif
 
 static unsigned char *
 enc_int (unsigned char *dst, unsigned char *const end, uint64_t value,

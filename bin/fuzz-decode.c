@@ -4,6 +4,19 @@
  * forgoes several advanced options.
  */
 
+#ifdef WIN32
+
+#include <stdio.h>
+
+int
+main (int argc, char **argv)
+{
+    fprintf(stderr, "%s is not supported on Windows: need mmap(2)\n", argv[0]);
+    return 1;
+}
+
+#else
+
 #include <assert.h>
 
 #if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__)
@@ -226,3 +239,5 @@ main (int argc, char **argv)
 
     exit(0);
 }
+
+#endif

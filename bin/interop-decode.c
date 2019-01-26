@@ -29,7 +29,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef WIN32
+#include "getopt.h"
+#define STDIN_FILENO 0
+#else
 #include <unistd.h>
+#endif
 #include <sys/queue.h>
 #include <sys/types.h>
 #include <sys/stat.h>

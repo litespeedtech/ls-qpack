@@ -9,7 +9,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
+#ifdef WIN32
+#include "getopt.h"
+#endif
 
 #include "lsqpack.h"
 #include "lsqpack-test.h"
