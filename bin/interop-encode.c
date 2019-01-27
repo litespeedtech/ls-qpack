@@ -30,6 +30,8 @@
 #include <string.h>
 #ifdef WIN32
 #include "getopt.h"
+#else
+#include <unistd.h>
 #endif
 #include <sys/types.h>
 #include <sys/stat.h>

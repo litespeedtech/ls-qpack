@@ -31,6 +31,8 @@
 #include <string.h>
 #ifdef WIN32
 #include "getopt.h"
+#else
+#include <unistd.h>
 #endif
 #include <sys/queue.h>
 #include <sys/types.h>
@@ -222,16 +224,16 @@ main (int argc, char **argv)
             break;
         if (nr != sizeof(stream_id))
         {
-            fprintf(stderr, "could not read %zu bytes (stream id) at offset %zu: %s\n",
-                sizeof(stream_id), off, strerror(errno));
+            fprintf(stderr, "could not read %zu bytes (stream id) at "
+                "offset %zu: %s\n", sizeof(stream_id), off, strerror(errno));
             goto read_err;
         }
         off += nr;
         nr = fread(&size, 1, sizeof(size), in);
         if (nr != sizeof(size))
         {
-            fprintf(stderr, "could not read %zu bytes (size) at offset %zu: %s\n",
-                sizeof(size), off, strerror(errno));
+            fprintf(stderr, "could not read %zu bytes (size) at "
+                "offset %zu: %s\n", sizeof(size), off, strerror(errno));
             goto read_err;
         }
         off += nr;
@@ -249,8 +251,8 @@ main (int argc, char **argv)
         nr = fread(buf->buf, 1, size, in);
         if (nr != (ssize_t) size)
         {
-            fprintf(stderr, "could not read %zu bytes (buffer) at offset %zu: %s\n",
-                size, off, strerror(errno));
+            fprintf(stderr, "could not read %"PRIu32" bytes (buffer) at "
+                "offset %zu: %s\n", size, off, strerror(errno));
             goto read_err;
         }
         off += nr;

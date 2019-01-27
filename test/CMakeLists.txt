@@ -31,8 +31,6 @@ FOREACH(QIF ${QIFS})
                     SET(TEST_NAME qif-${FILE_NAME}-t${TABLE_SIZE}-s${RISKED_STREAMS}-a${IMMEDIATE_ACK}-A${AGGRESSIVE})
                     ADD_TEST(NAME ${TEST_NAME}
                              COMMAND perl run-qif.pl --table-size ${TABLE_SIZE} --risked-streams ${RISKED_STREAMS} --immed-ack ${IMMEDIATE_ACK} --aggressive ${AGGRESSIVE} ${QIF})
-		     #                    SET_TESTS_PROPERTIES(${TEST_NAME} PROPERTIES
-		     #	    ENVIRONMENT "PATH=$ENV{PATH}:../bin:../Debug/bin:../tools")
                 ENDFOREACH()
             ENDFOREACH()
         ENDFOREACH()
