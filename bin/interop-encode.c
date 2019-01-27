@@ -30,9 +30,6 @@
 #include <string.h>
 #ifdef WIN32
 #include "getopt.h"
-#define STDOUT_FILENO 1
-#else
-#include <unistd.h>
 #endif
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -75,10 +72,11 @@ usage (const char *name)
 
 
 static void
-write_enc_stream (int out, const unsigned char *enc_buf, size_t enc_sz)
+write_enc_stream (FILE *out, const unsigned char *enc_buf, size_t enc_sz)
 {
     uint64_t stream_id_enc;
     uint32_t length_enc;
+    size_t written;
 
     stream_id_enc = 0;
     length_enc = enc_sz;
@@ -86,21 +84,39 @@ write_enc_stream (int out, const unsigned char *enc_buf, size_t enc_sz)
     stream_id_enc = bswap_64(stream_id_enc);
     length_enc = bswap_32(length_enc);
 #endif
-    write(out, &stream_id_enc, sizeof(stream_id_enc));
-    write(out, &length_enc, sizeof(length_enc));
-    write(out, enc_buf, enc_sz);
+    written = fwrite(&stream_id_enc, 1, sizeof(stream_id_enc), out);
+    if (written != sizeof(stream_id_enc))
+    {
+        perror("fwrite");
+        exit(EXIT_FAILURE);
+    }
+    written = fwrite(&length_enc, 1, sizeof(length_enc), out);
+    if (written != sizeof(length_enc))
+    {
+        perror("fwrite");
+        exit(EXIT_FAILURE);
+    }
+    written = fwrite(enc_buf, 1, enc_sz, out);
+    if (written != enc_sz)
+    {
+        perror("fwrite");
+        exit(EXIT_FAILURE);
+    }
 }
 
 
-/* XXX For brevity, we assume that write(2) is successful. */
 static void
-write_enc_and_header_streams (int out, unsigned stream_id,
+write_enc_and_header_streams (FILE *out, unsigned stream_id,
                               const unsigned char *enc_buf, size_t enc_sz,
                               const unsigned char *pref_buf, size_t pref_sz,
                               const unsigned char *hea_buf, size_t hea_sz)
 {
     uint64_t stream_id_enc;
     uint32_t length_enc;
+    size_t written;
+
+    if (s_verbose)
+        fprintf(stderr, "%s: stream %"PRIu32"\n", __func__, stream_id);
 
     if (enc_sz)
     {
@@ -110,9 +126,15 @@ write_enc_and_header_streams (int out, unsigned stream_id,
         stream_id_enc = bswap_64(stream_id_enc);
         length_enc = bswap_32(length_enc);
 #endif
-        write(out, &stream_id_enc, sizeof(stream_id_enc));
-        write(out, &length_enc, sizeof(length_enc));
-        write(out, enc_buf, enc_sz);
+        written = fwrite(&stream_id_enc, 1, sizeof(stream_id_enc), out);
+        if (written != sizeof(stream_id_enc))
+            goto write_err;
+        written = fwrite(&length_enc, 1, sizeof(length_enc), out);
+        if (written != sizeof(length_enc))
+            goto write_err;
+        written = fwrite(enc_buf, 1, enc_sz, out);
+        if (written != enc_sz)
+            goto write_err;
     }
 
     stream_id_enc = stream_id;
@@ -121,10 +143,23 @@ write_enc_and_header_streams (int out, unsigned stream_id,
     stream_id_enc = bswap_64(stream_id_enc);
     length_enc = bswap_32(length_enc);
 #endif
-    write(out, &stream_id_enc, sizeof(stream_id_enc));
-    write(out, &length_enc, sizeof(length_enc));
-    write(out, pref_buf, pref_sz);
-    write(out, hea_buf, hea_sz);
+    written = fwrite(&stream_id_enc, 1, sizeof(stream_id_enc), out);
+    if (written != sizeof(stream_id_enc))
+        goto write_err;
+    written = fwrite(&length_enc, 1, sizeof(length_enc), out);
+    if (written != sizeof(length_enc))
+        goto write_err;
+    written = fwrite(pref_buf, 1, pref_sz, out);
+    if (written != pref_sz)
+        goto write_err;
+    written = fwrite(hea_buf, 1, hea_sz, out);
+    if (written != hea_sz)
+        goto write_err;
+    return;
+
+  write_err:
+    perror("fwrite");
+    exit(EXIT_FAILURE);
 }
 
 
@@ -184,7 +219,7 @@ int
 main (int argc, char **argv)
 {
     FILE *in = stdin;
-    int out = STDOUT_FILENO;
+    FILE *out = stdout;
     int opt;
     unsigned dyn_table_size     = LSQPACK_DEF_DYN_TABLE_SIZE,
              max_risked_streams = LSQPACK_DEF_MAX_RISKED_STREAMS;
@@ -238,8 +273,8 @@ main (int argc, char **argv)
         case 'o':
             if (0 != strcmp(optarg, "-"))
             {
-                out = open(optarg, O_WRONLY|O_CREAT|O_TRUNC, 0644);
-                if (out < 0)
+                out = fopen(optarg, "wb");
+                if (!out)
                 {
                     fprintf(stderr, "cannot open `%s' for writing: %s\n",
                                                 optarg, strerror(errno));
@@ -398,10 +433,15 @@ main (int argc, char **argv)
         hea_off += hea_sz;
     }
 
+    if (s_verbose)
+        fprintf(stderr, "exited while loop\n");
+
     (void) fclose(in);
 
     if (header_opened)
     {
+        if (s_verbose)
+            fprintf(stderr, "close opened header\n");
         pref_sz = lsqpack_enc_end_header(&encoder, pref_buf, sizeof(pref_buf));
         if (pref_sz < 0)
         {
@@ -424,6 +464,12 @@ main (int argc, char **argv)
     }
 
     lsqpack_enc_cleanup(&encoder);
+
+    if (0 != fclose(out))
+    {
+        perror("fclose(out)");
+        exit(EXIT_FAILURE);
+    }
 
     exit(EXIT_SUCCESS);
 }

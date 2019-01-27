@@ -31,9 +31,6 @@
 #include <string.h>
 #ifdef WIN32
 #include "getopt.h"
-#define STDIN_FILENO 0
-#else
-#include <unistd.h>
 #endif
 #include <sys/queue.h>
 #include <sys/types.h>
@@ -129,7 +126,7 @@ header_block_done (const struct buf *buf, struct lsqpack_header_set *set)
 int
 main (int argc, char **argv)
 {
-    int in = STDIN_FILENO;
+    FILE *in = stdin;
     FILE *recipe = NULL;
     int opt;
     unsigned dyn_table_size     = LSQPACK_DEF_DYN_TABLE_SIZE,
@@ -158,8 +155,8 @@ main (int argc, char **argv)
         case 'i':
             if (0 != strcmp(optarg, "-"))
             {
-                in = open(optarg, O_RDONLY);
-                if (in < 0)
+                in = fopen(optarg, "rb");
+                if (!in)
                 {
                     fprintf(stderr, "cannot open `%s' for reading: %s\n",
                                                 optarg, strerror(errno));
@@ -220,15 +217,23 @@ main (int argc, char **argv)
     while (1)
     {
         file_off = off;
-        nr = read(in, &stream_id, sizeof(stream_id));
+        nr = fread(&stream_id, 1, sizeof(stream_id), in);
         if (nr == 0)
             break;
         if (nr != sizeof(stream_id))
+        {
+            fprintf(stderr, "could not read %zu bytes (stream id) at offset %zu: %s\n",
+                sizeof(stream_id), off, strerror(errno));
             goto read_err;
+        }
         off += nr;
-        nr = read(in, &size, sizeof(size));
+        nr = fread(&size, 1, sizeof(size), in);
         if (nr != sizeof(size))
+        {
+            fprintf(stderr, "could not read %zu bytes (size) at offset %zu: %s\n",
+                sizeof(size), off, strerror(errno));
             goto read_err;
+        }
         off += nr;
 #if __BYTE_ORDER == __LITTLE_ENDIAN
         stream_id = bswap_64(stream_id);
@@ -241,9 +246,13 @@ main (int argc, char **argv)
             exit(EXIT_FAILURE);
         }
         memset(buf, 0, sizeof(*buf));
-        nr = read(in, buf->buf, size);
+        nr = fread(buf->buf, 1, size, in);
         if (nr != (ssize_t) size)
+        {
+            fprintf(stderr, "could not read %zu bytes (buffer) at offset %zu: %s\n",
+                size, off, strerror(errno));
             goto read_err;
+        }
         off += nr;
         buf->dec = &decoder;
         buf->stream_id = stream_id;
@@ -393,6 +402,6 @@ main (int argc, char **argv)
     else if (nr == 0)
         fprintf(stderr, "unexpected EOF\n");
     else
-        fprintf(stderr, "not enough bytes read\n");
+        fprintf(stderr, "not enough bytes read (%zu)\n", nr);
     exit(EXIT_FAILURE);
 }

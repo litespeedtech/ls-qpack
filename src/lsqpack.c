@@ -1300,7 +1300,7 @@ qenc_grow_tables (struct lsqpack_enc *enc)
         STAILQ_INIT(&new[1]->by_name);
         STAILQ_INIT(&new[0]->by_nameval);
         STAILQ_INIT(&new[1]->by_nameval);
-        while ((entry = STAILQ_FIRST(&enc->qpe_buckets[n].by_name)))
+        while (entry = STAILQ_FIRST(&enc->qpe_buckets[n].by_name), entry != NULL)
         {
             STAILQ_REMOVE_HEAD(&enc->qpe_buckets[n].by_name, ete_next_name);
             idx = (BUCKNO(old_nbits + 1, entry->ete_name_hash)
@@ -3237,7 +3237,7 @@ lsqpack_huff_decode (const unsigned char *src, int src_len,
             if (p_dst == dst_end)
             {
                 state->resume = 2;
-                return (struct huff_decode_retval) {
+                return (const struct huff_decode_retval) {
                                 .status = HUFF_DEC_END_DST,
                                 .n_dst  = dst_len,
                                 .n_src  = p_src - src,

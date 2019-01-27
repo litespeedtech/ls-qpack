@@ -61,13 +61,30 @@ if (defined $table_size) {
 
 copy($ARGV[0], $qif_file) or die "cannot copy original $ARGV[0] to $qif_file";
 
-system("interop-encode $encode_args -i $qif_file -o $bin_file 2>$encode_log")
-    and die "interop-encode failed";
-system("interop-decode $decode_args -i $bin_file -o $resulting_qif_file")
+system('interop-encode', $encode_args, '-i', $qif_file, '-o', $bin_file)
+    and die "interop-encode failed oh";
+system('interop-decode', $decode_args, '-i', $bin_file, '-o', $resulting_qif_file)
     and die "interop-decode failed";
-system("sort-qif.pl --strip $qif_file > $qif_file.canonical")
-    and die "sort-qif.pl $qif_file failed";
-system("sort-qif.pl --strip $resulting_qif_file>$resulting_qif_file.canonical")
-    and die "sort-qif.pl $qif_file failed";
+
+sub sort_qif {
+    no warnings 'uninitialized';
+    my ($in, $out) = @_;
+    local $/ = "\n\n";
+    open F, $in or die "cannot open $in for reading: $!";
+    my @chunks = map $$_[1],
+		 sort { $$a[0] <=> $$b[0] }
+		 map { /^#\s*stream\s+(\d+)/; [ $1, $_ ] }
+		 <F>;
+    close F;
+    for (@chunks) {
+	s/^#.*\n//mg;
+    }
+    open F, ">", $out or die "cannot open $out for writing: $!";
+    print F @chunks;
+    close F;
+}
+
+sort_qif($qif_file, "$qif_file.canonical");
+sort_qif($resulting_qif_file, "$resulting_qif_file.canonical");
 
 exit compare "$qif_file.canonical", "$resulting_qif_file.canonical";
