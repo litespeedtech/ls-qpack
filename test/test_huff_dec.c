@@ -11,6 +11,8 @@
 #include <string.h>
 #ifdef WIN32
 #include "getopt.h"
+#else
+#include <unistd.h>
 #endif
 
 #include "lsqpack.h"
