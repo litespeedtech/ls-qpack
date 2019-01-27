@@ -30,19 +30,9 @@ FOREACH(QIF ${QIFS})
                 FOREACH(AGGRESSIVE 0 1)
                     SET(TEST_NAME qif-${FILE_NAME}-t${TABLE_SIZE}-s${RISKED_STREAMS}-a${IMMEDIATE_ACK}-A${AGGRESSIVE})
                     ADD_TEST(NAME ${TEST_NAME}
-                             COMMAND bash run-qif.sh ${QIF})
+                             COMMAND perl run-qif.pl --table-size ${TABLE_SIZE} --risked-streams ${RISKED_STREAMS} --immed-ack ${IMMEDIATE_ACK} --aggressive ${AGGRESSIVE} ${QIF})
                     SET_TESTS_PROPERTIES(${TEST_NAME} PROPERTIES
                                             ENVIRONMENT "PATH=$ENV{PATH}:../bin:../tools")
-                    # Uncomment to retain results:
-                    #SET_PROPERTY(TEST ${TEST_NAME} APPEND PROPERTY ENVIRONMENT "DO_CLEANUP=0")
-                    SET_PROPERTY(TEST ${TEST_NAME} APPEND
-                        PROPERTY ENVIRONMENT "TABLE_SIZE=${TABLE_SIZE}")
-                    SET_PROPERTY(TEST ${TEST_NAME} APPEND
-                        PROPERTY ENVIRONMENT "RISKED_STREAMS=${RISKED_STREAMS}")
-                    SET_PROPERTY(TEST ${TEST_NAME} APPEND
-                        PROPERTY ENVIRONMENT "IMMEDIATE_ACK=${IMMEDIATE_ACK}")
-                    SET_PROPERTY(TEST ${TEST_NAME} APPEND
-                        PROPERTY ENVIRONMENT "AGGRESSIVE=${AGGRESSIVE}")
                 ENDFOREACH()
             ENDFOREACH()
         ENDFOREACH()
