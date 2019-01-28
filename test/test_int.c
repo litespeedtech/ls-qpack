@@ -255,8 +255,8 @@ main (void)
         /* Test that it decodes in one shot as well: */
         for (; sz <= sizeof(buf); ++sz)
         {
-            struct lsqpack_enc_int_state state =
-                                { .resume = 0, .value = test->it_decoded, };
+            state = (struct lsqpack_enc_int_state)  {
+                                    .resume = 0, .value = test->it_decoded, };
             buf[0] = '\0';
             dst = lsqpack_enc_int_r(buf, buf + sz, &state, test->it_prefix_bits);
             assert(state.resume == 0);

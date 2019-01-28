@@ -314,7 +314,7 @@ main (int argc, char **argv)
     hea_off = 0;
     header_opened = 0;
 
-    while ((line = fgets(line_buf, sizeof(line_buf), in)))
+    while (line = fgets(line_buf, sizeof(line_buf), in), line != NULL)
     {
         ++lineno;
         end = strchr(line, '\n');

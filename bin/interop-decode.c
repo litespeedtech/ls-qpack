@@ -266,7 +266,7 @@ main (int argc, char **argv)
     if (recipe)
     {
         lineno = 0;
-        while ((line = fgets(line_buf, sizeof(line_buf), recipe)))
+        while (line = fgets(line_buf, sizeof(line_buf), recipe), line != NULL)
         {
             ++lineno;
             end = strchr(line, '\n');
@@ -331,7 +331,7 @@ main (int argc, char **argv)
         fclose(recipe);
     }
 
-    while ((buf = TAILQ_FIRST(&bufs)))
+    while (buf = TAILQ_FIRST(&bufs), buf != NULL)
     {
         TAILQ_REMOVE(&bufs, buf, next_buf);
         if (buf->stream_id == 0)
@@ -404,6 +404,6 @@ main (int argc, char **argv)
     else if (nr == 0)
         fprintf(stderr, "unexpected EOF\n");
     else
-        fprintf(stderr, "not enough bytes read (%zu)\n", nr);
+        fprintf(stderr, "not enough bytes read (%zu)\n", (size_t) nr);
     exit(EXIT_FAILURE);
 }
