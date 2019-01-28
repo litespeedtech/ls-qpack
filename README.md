@@ -1,4 +1,5 @@
 [![Build Status](https://travis-ci.org/litespeedtech/ls-qpack.svg?branch=master)](https://travis-ci.org/litespeedtech/ls-qpack)
+[![Build status](https://ci.appveyor.com/api/projects/status/kat31lt42ds0rmom?svg=true)](https://ci.appveyor.com/project/litespeedtech/ls-qpack)
 [![Build Status](https://api.cirrus-ci.com/github/litespeedtech/ls-qpack.svg)](https://cirrus-ci.com/github/litespeedtech/ls-qpack)
 
 # ls-qpack
