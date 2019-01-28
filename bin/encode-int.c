@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <unistd.h>
+
 
 static unsigned char *
 enc_int (unsigned char *dst, unsigned char *const end, uint64_t value,
@@ -24,14 +24,14 @@ enc_int (unsigned char *dst, unsigned char *const end, uint64_t value,
         {
             if (dst < end)
             {
-                *dst++ = (0x80 | value);
+                *dst++ = 0x80 | (unsigned char) value;
                 value >>= 7;
             }
             else
                 return dst_orig;
         }
         if (dst < end)
-            *dst++ = value;
+            *dst++ = (unsigned char) value;
         else
             return dst_orig;
     }
@@ -79,7 +79,7 @@ main (int argc, char **argv)
 
     if (p > buf)
     {
-        write(STDOUT_FILENO, buf, p - buf);
+        fwrite(buf, 1, p - buf, stdout);
         exit(EXIT_SUCCESS);
     }
     else

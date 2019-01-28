@@ -36,6 +36,11 @@ extern "C" {
 #include <stdint.h>
 #include <stdio.h>
 
+#if defined(_MSC_VER)
+#include <BaseTsd.h>
+typedef SSIZE_T ssize_t;
+#endif
+
 /* Until the RFC is published, the minor version will be the same as the
  * draft version, while the major version will be zero.  For example,
  * qpack-11 (if such draft ever published) will correspond to version 0.11.

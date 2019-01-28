@@ -46,6 +46,12 @@ SOFTWARE.
 #define DEC_USE_QPACK_05 1
 #endif
 
+static unsigned char *
+qenc_huffman_enc (const unsigned char *, const unsigned char *const, unsigned char *);
+
+static unsigned
+qenc_enc_str_size (const unsigned char *, unsigned);
+
 struct static_table_entry
 {
     const char       *name;
@@ -177,17 +183,17 @@ static const struct static_table_entry static_table[] =
 #ifdef LSQPACK_ENC_LOGGER_HEADER
 #include LSQPACK_ENC_LOGGER_HEADER
 #else
-#define E_LOG(prefix, args...) do {                                     \
+#define E_LOG(prefix, ...) do {                                         \
     if (enc->qpe_logger_ctx) {                                          \
         fprintf(enc->qpe_logger_ctx, prefix);                           \
-        fprintf(enc->qpe_logger_ctx,  args);                            \
+        fprintf(enc->qpe_logger_ctx, __VA_ARGS__);                      \
         fprintf(enc->qpe_logger_ctx, "\n");                             \
     }                                                                   \
 } while (0)
-#define E_DEBUG(args...) E_LOG("qenc: debug: ", args)
-#define E_INFO(args...)  E_LOG("qenc: info: ", args)
-#define E_WARN(args...)  E_LOG("qenc: warn: ", args)
-#define E_ERROR(args...) E_LOG("qenc: error: ", args)
+#define E_DEBUG(...) E_LOG("qenc: debug: ", __VA_ARGS__)
+#define E_INFO(...)  E_LOG("qenc: info: ", __VA_ARGS__)
+#define E_WARN(...)  E_LOG("qenc: warn: ", __VA_ARGS__)
+#define E_ERROR(...) E_LOG("qenc: error: ", __VA_ARGS__)
 #endif
 
 /* Entries in the encoder's dynamic table are hashed 1) by name and 2) by
@@ -998,14 +1004,14 @@ lsqpack_enc_int (unsigned char *dst, unsigned char *const end, uint64_t value,
         {
             if (dst < end)
             {
-                *dst++ = (0x80 | value);
+                *dst++ = 0x80 | (unsigned char) value;
                 value >>= 7;
             }
             else
                 return dst_orig;
         }
         if (dst < end)
-            *dst++ = value;
+            *dst++ = (unsigned char) value;
         else
             return dst_orig;
     }
@@ -1031,7 +1037,7 @@ lsqpack_enc_int_r (unsigned char *dst, unsigned char *const end,
                 {
                     if (dst < end)
                     {
-    case 1:             *dst++ = (0x80 | state->value);
+    case 1:             *dst++ = 0x80 | (unsigned char) state->value;
                         state->value >>= 7;
                     }
                     else
@@ -1041,7 +1047,7 @@ lsqpack_enc_int_r (unsigned char *dst, unsigned char *const end,
                     }
                 }
                 if (dst < end)
-    case 2:         *dst++ = state->value;
+    case 2:         *dst++ = (unsigned char) state->value;
                 else
                 {
                     state->resume = 2;
@@ -1067,10 +1073,10 @@ lsqpack_enc_int_nocheck (unsigned char *dst, uint64_t value,
         value -= (1 << prefix_bits) - 1;
         while (value >= 128)
         {
-            *dst++ = (0x80 | value);
+            *dst++ = 0x80 | (unsigned char) value;
             value >>= 7;
         }
-        *dst++ = value;
+        *dst++ = (unsigned char) value;
     }
 }
 
@@ -1080,57 +1086,6 @@ struct encode_el
     uint32_t code;
     int      bits;
 };
-
-
-static const struct encode_el encode_table[257];
-
-
-static unsigned char *
-qenc_huffman_enc (const unsigned char *src, const unsigned char *const src_end,
-                                                                unsigned char *dst)
-{
-    uint64_t bits = 0;
-    int bits_left = 40;
-    struct encode_el cur_enc_code;
-
-    while (src != src_end)
-    {
-        cur_enc_code = encode_table[(int) *src++];
-        assert(bits_left >= cur_enc_code.bits); //  (possible negative shift, undefined behavior)
-        bits |= (uint64_t)cur_enc_code.code << (bits_left - cur_enc_code.bits);
-        bits_left -= cur_enc_code.bits;
-        while (bits_left <= 32)
-        {
-            *dst++ = bits >> 32;
-            bits <<= 8;
-            bits_left += 8;
-        }
-    }
-
-    if (bits_left != 40)
-    {
-        assert(bits_left < 40 && bits_left > 0);
-        bits |= ((uint64_t)1 << bits_left) - 1;
-        *dst++ = bits >> 32;
-    }
-
-    return dst;
-}
-
-
-static unsigned
-qenc_enc_str_size (const unsigned char *str, unsigned str_len)
-{
-    unsigned const char *const end = str + str_len;
-    unsigned enc_size_bits, enc_size_bytes;
-
-    enc_size_bits = 0;
-    while (str < end)
-        enc_size_bits += encode_table[ *str++ ].bits;
-    enc_size_bytes = enc_size_bits / 8 + ((enc_size_bits & 7) != 0);
-
-    return enc_size_bytes;
-}
 
 
 int
@@ -1300,14 +1255,14 @@ qenc_grow_tables (struct lsqpack_enc *enc)
         STAILQ_INIT(&new[1]->by_name);
         STAILQ_INIT(&new[0]->by_nameval);
         STAILQ_INIT(&new[1]->by_nameval);
-        while ((entry = STAILQ_FIRST(&enc->qpe_buckets[n].by_name)))
+        while (entry = STAILQ_FIRST(&enc->qpe_buckets[n].by_name), entry != NULL)
         {
             STAILQ_REMOVE_HEAD(&enc->qpe_buckets[n].by_name, ete_next_name);
             idx = (BUCKNO(old_nbits + 1, entry->ete_name_hash)
                                                         >> old_nbits) & 1;
             STAILQ_INSERT_TAIL(&new[idx]->by_name, entry, ete_next_name);
         }
-        while ((entry = STAILQ_FIRST(&enc->qpe_buckets[n].by_nameval)))
+        while (entry = STAILQ_FIRST(&enc->qpe_buckets[n].by_nameval), entry != NULL)
         {
             STAILQ_REMOVE_HEAD(&enc->qpe_buckets[n].by_nameval,
                                                         ete_next_nameval);
@@ -1487,7 +1442,7 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
             diff = hinfo->qhi_max_id - enc->qpe_cur_header.base_idx
                                                         - ENC_USE_QPACK_05;
         }
-        *buf = sign << 7;
+        *buf = (unsigned char) (sign << 7);
         dst = lsqpack_enc_int(buf, end, diff, 7);
         if (dst <= buf)
             return 0;
@@ -1741,6 +1696,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         use_dyn_table = 0;
         risk = 0;
         entry = NULL;
+        index = 0;
 #endif
         goto execute_program;
     }
@@ -1858,16 +1814,17 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     {
         id = static_id;
         if (index && (enough_room = qenc_has_or_can_evict_at_least(enc,
-                                             ENTRY_COST(name_len, value_len))))
+                                             ENTRY_COST(name_len, value_len)), enough_room != 0))
         {
             static const struct encode_program programs[2][2][2] = {
-#define A 0 ... 1
-                [0][A][A] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
+                [0][0][0] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
+                [0][0][1] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
+                [0][1][0] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
+                [0][1][1] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
                 [1][0][0] = { EEA_INS_NAMEREF_STATIC, EHA_LIT_WITH_NAME_STAT, ETA_NEW,  0, },
                 [1][0][1] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },
                 [1][1][0] = { EEA_INS_NAMEREF_STATIC, EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
                 [1][1][1] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },   /* Invalid state */
-#undef A
             };
             seen_nameval = enc->qpe_hist_seen_nameval(enc->qpe_hist, nameval_hash);
             prog = programs[seen_nameval][risk][use_dyn_table && n_cand > 0];
@@ -2270,7 +2227,14 @@ enc_proc_table_synch (struct lsqpack_enc *enc, uint64_t ins_count)
         return -1;
     }
 
-    max_acked = ins_count + enc->qpe_last_tss;
+    if (ins_count > LSQPACK_MAX_ABS_ID)
+    {
+	    /* We never insert this many */
+        E_INFO("insertion count too high: %"PRIu64, ins_count);
+        return -1;
+    }
+
+    max_acked = (lsqpack_abs_id_t) ins_count + enc->qpe_last_tss;
     if (max_acked > enc->qpe_ins_count)
     {
         E_DEBUG("TSS: max_acked %u is larger than number of inserts %u",
@@ -2400,7 +2364,7 @@ lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
 }
 
 
-typedef char unsigned_is_32bits[(sizeof(unsigned) == 4) - 1];
+typedef char unsigned_is_32bits[(sizeof(unsigned) == 4) ? 1 : -1];
 
 /* TODO: rewrite as a standalone function */
 int
@@ -2414,7 +2378,7 @@ lsqpack_dec_int24 (const unsigned char **src_p, const unsigned char *src_end,
     r = lsqpack_dec_int(src_p, src_end, prefix_bits, &val, state);
     if (r == 0 && val < (1u << 24))
     {
-        *value_p = val;
+        *value_p = (unsigned int) val;
         return 0;
     }
     else if (r != 0)
@@ -2431,7 +2395,7 @@ lsqpack_enc_decoder_in (struct lsqpack_enc *enc,
     const unsigned char *const end = buf + buf_sz;
     uint64_t val;
     int r;
-    unsigned prefix_bits = -1;  /* This can be any value in a resumed call
+    unsigned prefix_bits = ~0u; /* This can be any value in a resumed call
                                  * to the integer decoder -- it is only
                                  * used in the first call.
                                  */
@@ -2499,17 +2463,17 @@ lsqpack_enc_ratio (const struct lsqpack_enc *enc)
 #ifdef LSQPACK_DEC_LOGGER_HEADER
 #include LSQPACK_DEC_LOGGER_HEADER
 #else
-#define D_LOG(prefix, args...) do {                                     \
+#define D_LOG(prefix, ...) do {                                     \
     if (dec->qpd_logger_ctx) {                                          \
         fprintf(dec->qpd_logger_ctx, prefix);                           \
-        fprintf(dec->qpd_logger_ctx,  args);                            \
+        fprintf(dec->qpd_logger_ctx, __VA_ARGS__);                      \
         fprintf(dec->qpd_logger_ctx, "\n");                             \
     }                                                                   \
 } while (0)
-#define D_DEBUG(args...) D_LOG("qdec: debug: ", args)
-#define D_INFO(args...)  D_LOG("qdec: info: ", args)
-#define D_WARN(args...)  D_LOG("qdec: warn: ", args)
-#define D_ERROR(args...) D_LOG("qdec: error: ", args)
+#define D_DEBUG(...) D_LOG("qdec: debug: ", __VA_ARGS__)
+#define D_INFO(...)  D_LOG("qdec: info: ", __VA_ARGS__)
+#define D_WARN(...)  D_LOG("qdec: warn: ", __VA_ARGS__)
+#define D_ERROR(...) D_LOG("qdec: error: ", __VA_ARGS__)
 #endif
 
 
@@ -3048,13 +3012,13 @@ hset_add_static_entry (struct lsqpack_dec *dec,
 {
     struct header_internal *hint;
 
-    if (idx < QPACK_STATIC_TABLE_SIZE && (hint = allocate_hint(read_ctx)))
+    if (idx < QPACK_STATIC_TABLE_SIZE && (hint = allocate_hint(read_ctx), hint != NULL))
     {
         hint->hi_uhead.qh_name      = static_table[ idx ].name;
         hint->hi_uhead.qh_value     = static_table[ idx ].val;
         hint->hi_uhead.qh_name_len  = static_table[ idx ].name_len;
         hint->hi_uhead.qh_value_len = static_table[ idx ].val_len;
-        hint->hi_uhead.qh_static_id = idx;
+        hint->hi_uhead.qh_static_id = (unsigned int) idx;
         hint->hi_uhead.qh_flags     = QH_ID_SET;
         return 0;
     }
@@ -3065,13 +3029,13 @@ hset_add_static_entry (struct lsqpack_dec *dec,
 
 static int
 hset_add_dynamic_entry (struct lsqpack_dec *dec,
-                    struct header_block_read_ctx *read_ctx, uint64_t idx)
+                    struct header_block_read_ctx *read_ctx, lsqpack_abs_id_t idx)
 {
     struct lsqpack_dec_table_entry *entry;
     struct header_internal *hint;
 
-    if ((entry = qdec_get_table_entry_abs(dec, idx))
-                                    && (hint = allocate_hint(read_ctx)))
+    if ((entry = qdec_get_table_entry_abs(dec, idx), entry != NULL)
+                                    && (hint = allocate_hint(read_ctx), hint != NULL))
     {
         hint->hi_uhead.qh_name      = DTE_NAME(entry);
         hint->hi_uhead.qh_value     = DTE_VALUE(entry);
@@ -3093,7 +3057,8 @@ hset_add_static_nameref_entry (struct header_block_read_ctx *read_ctx,
 {
     struct header_internal *hint;
 
-    if ((hint = allocate_hint(read_ctx)))
+	hint = allocate_hint(read_ctx);
+	if (hint)
     {
         hint->hi_uhead.qh_name      = static_table[ idx ].name;
         hint->hi_uhead.qh_name_len  = static_table[ idx ].name_len;
@@ -3119,7 +3084,8 @@ hset_add_dynamic_nameref_entry (struct header_block_read_ctx *read_ctx,
 {
     struct header_internal *hint;
 
-    if ((hint = allocate_hint(read_ctx)))
+	hint = allocate_hint(read_ctx);
+	if (hint)
     {
         hint->hi_uhead.qh_name      = DTE_NAME(entry);
         hint->hi_uhead.qh_name_len  = entry->dte_name_len;
@@ -3145,7 +3111,8 @@ hset_add_literal_entry (struct header_block_read_ctx *read_ctx,
 {
     struct header_internal *hint;
 
-    if ((hint = allocate_hint(read_ctx)))
+	hint = allocate_hint(read_ctx);
+	if (hint)
     {
         hint->hi_uhead.qh_name      = nameandval;
         hint->hi_uhead.qh_name_len  = name_len;
@@ -3171,27 +3138,9 @@ struct decode_el
     uint8_t sym;
 };
 
-static const struct decode_el decode_tables[256][16];
 
 static unsigned char *
-qdec_huff_dec4bits (uint8_t src_4bits, unsigned char *dst,
-                                        struct lsqpack_decode_status *status)
-{
-    const struct decode_el cur_dec_code =
-        decode_tables[status->state][src_4bits];
-    if (cur_dec_code.flags & HPACK_HUFFMAN_FLAG_FAIL) {
-        return NULL; //failed
-    }
-    if (cur_dec_code.flags & HPACK_HUFFMAN_FLAG_SYM)
-    {
-        *dst = cur_dec_code.sym;
-        dst++;
-    }
-
-    status->state = cur_dec_code.state;
-    status->eos = ((cur_dec_code.flags & HPACK_HUFFMAN_FLAG_ACCEPTED) != 0);
-    return dst;
-}
+qdec_huff_dec4bits (uint8_t, unsigned char *, struct lsqpack_decode_status *);
 
 
 struct huff_decode_retval
@@ -3236,7 +3185,7 @@ lsqpack_huff_decode (const unsigned char *src, int src_len,
             if (p_dst == dst_end)
             {
                 state->resume = 2;
-                return (struct huff_decode_retval) {
+                return (const struct huff_decode_retval) {
                                 .status = HUFF_DEC_END_DST,
                                 .n_dst  = dst_len,
                                 .n_src  = p_src - src,
@@ -3292,7 +3241,7 @@ parse_header_data (struct lsqpack_dec *dec,
     unsigned value;
     size_t size;
     char *str;
-    unsigned prefix_bits = -1;
+    unsigned prefix_bits = ~0u;
     int r;
 
 #define RETURN_ERROR() do { dec->qpd_err.line = __LINE__; goto err; } while (0)
@@ -3372,7 +3321,7 @@ parse_header_data (struct lsqpack_dec *dec,
                     r = hset_add_static_entry(dec, read_ctx, IHF.value);
                 else
                     r = hset_add_dynamic_entry(dec, read_ctx,
-                            ID_MINUS(read_ctx->hbrc_base_index, IHF.value));
+                            (lsqpack_abs_id_t) ID_MINUS(read_ctx->hbrc_base_index, IHF.value));
                 if (r == 0)
                 {
                     read_ctx->hbrc_parse_ctx_u.data.state
@@ -3877,7 +3826,7 @@ parse_header_data (struct lsqpack_dec *dec,
             if (r == 0)
             {
                 r = hset_add_dynamic_entry(dec, read_ctx,
-                        ID_PLUS(read_ctx->hbrc_base_index, IPBI.value + 1));
+                        (lsqpack_abs_id_t) ID_PLUS(read_ctx->hbrc_base_index, IPBI.value + 1));
                 if (r == 0)
                 {
                     read_ctx->hbrc_parse_ctx_u.data.state
@@ -3949,7 +3898,7 @@ parse_header_prefix (struct lsqpack_dec *dec,
                                                                 size_t bufsz)
 {
     const unsigned char *const end = buf + bufsz;
-    unsigned prefix_bits = -1;
+    unsigned prefix_bits = ~0u;
     int r;
 
 #define LR read_ctx->hbrc_parse_ctx_u.prefix.u.lar_ref
@@ -4501,7 +4450,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
     const unsigned char *const end = buf + buf_sz;
     struct lsqpack_dec_table_entry *entry, *new_entry;
     struct huff_decode_retval hdr;
-    unsigned prefix_bits = -1;
+    unsigned prefix_bits = ~0u;
     size_t size;
     int r;
 
@@ -4944,7 +4893,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 {
                     dec->qpd_enc_state.resume = 0;
                     D_DEBUG("got TSU=%"PRIu64, TBSZ.new_size);
-                    qdec_update_max_capacity(dec, TBSZ.new_size);
+                    qdec_update_max_capacity(dec, (unsigned int) TBSZ.new_size);
                     break;
                 }
                 else
@@ -5280,6 +5229,54 @@ static const struct encode_el encode_table[257] =
     {  0x3ffffee,    26},    //        (255)
     { 0x3fffffff,    30}    //    EOS (256)
 };
+
+
+static unsigned char *
+qenc_huffman_enc (const unsigned char *src, const unsigned char *const src_end,
+    unsigned char *dst)
+{
+    uint64_t bits = 0;
+    int bits_left = 40;
+    struct encode_el cur_enc_code;
+
+    while (src != src_end)
+    {
+        cur_enc_code = encode_table[(int)*src++];
+        assert(bits_left >= cur_enc_code.bits); //  (possible negative shift, undefined behavior)
+        bits |= (uint64_t)cur_enc_code.code << (bits_left - cur_enc_code.bits);
+        bits_left -= cur_enc_code.bits;
+        while (bits_left <= 32)
+        {
+            *dst++ = (unsigned char)(bits >> 32);
+            bits <<= 8;
+            bits_left += 8;
+        }
+    }
+
+    if (bits_left != 40)
+    {
+        assert(bits_left < 40 && bits_left > 0);
+        bits |= ((uint64_t)1 << bits_left) - 1;
+        *dst++ = (unsigned char)(bits >> 32);
+    }
+
+    return dst;
+}
+
+
+static unsigned
+qenc_enc_str_size (const unsigned char *str, unsigned str_len)
+{
+    unsigned const char *const end = str + str_len;
+    unsigned enc_size_bits, enc_size_bytes;
+
+    enc_size_bits = 0;
+    while (str < end)
+        enc_size_bits += encode_table[*str++].bits;
+    enc_size_bytes = enc_size_bits / 8 + ((enc_size_bits & 7) != 0);
+
+    return enc_size_bytes;
+}
 
 
 static const struct decode_el decode_tables[256][16] =
@@ -10149,3 +10146,24 @@ static const struct decode_el decode_tables[256][16] =
         { 0, 0x04, 0 },
     },
 };
+
+
+static unsigned char *
+qdec_huff_dec4bits (uint8_t src_4bits, unsigned char *dst,
+    struct lsqpack_decode_status *status)
+{
+    const struct decode_el cur_dec_code =
+        decode_tables[status->state][src_4bits];
+    if (cur_dec_code.flags & HPACK_HUFFMAN_FLAG_FAIL) {
+        return NULL; //failed
+    }
+    if (cur_dec_code.flags & HPACK_HUFFMAN_FLAG_SYM)
+    {
+        *dst = cur_dec_code.sym;
+        dst++;
+    }
+
+    status->state = cur_dec_code.state;
+    status->eos = ((cur_dec_code.flags & HPACK_HUFFMAN_FLAG_ACCEPTED) != 0);
+    return dst;
+}

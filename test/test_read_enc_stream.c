@@ -66,6 +66,7 @@ static const struct test_read_encoder_stream tests[] =
         15,
         0,
         {
+            { NULL, NULL, },
         },
     },
 

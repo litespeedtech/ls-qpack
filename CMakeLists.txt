@@ -27,12 +27,35 @@ ELSE()
     INCLUDE_DIRECTORIES(deps/xxhash)
 ENDIF()
 
-SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} -Wall -Wextra -Wno-unused-parameter")
-SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} -fno-omit-frame-pointer")
+IF (MSVC)
+    INCLUDE_DIRECTORIES(wincompat)
+ENDIF()
+
+IF (MSVC)
+    SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} /Wall")
+    SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} /wd4100") # unreffed parameter
+    SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} /wd4200") # zero-sized array
+    # Apparently this C99 construct is not supported properly by VS:
+    #   https://stackoverflow.com/questions/1064930/struct-initializer-typedef-with-visual-studio
+    SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} /wd4204") # non-constant aggregate initializer
+    SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} /wd4255") # no function prototype (getopt)
+    SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} /wd4820") # padding
+    SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} /wd4668") # undefined macro
+    SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} /wd4710") # not inlined by default
+    SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} /wd4996") # unsafe function
+ELSE()
+    SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} -Wall -Wextra -Wno-unused-parameter")
+    SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} -fno-omit-frame-pointer")
+ENDIF()
 SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} $ENV{EXTRA_CFLAGS}")
 
-SET(CMAKE_C_FLAGS_DEBUG "-O0 -g3")
-SET(CMAKE_C_FLAGS_RELEASE "-O3 -g0")
+IF (MSVC)
+    SET(CMAKE_C_FLAGS_DEBUG "/Od /Zi")
+    SET(CMAKE_C_FLAGS_RELEASE "/O2")
+ELSE()
+    SET(CMAKE_C_FLAGS_DEBUG "-O0 -g3")
+    SET(CMAKE_C_FLAGS_RELEASE "-O3 -g0")
+ENDIF()
 
 IF (NDEBUG EQUAL 1)
     SET(MY_CMAKE_FLAGS "${MY_CMAKE_FLAGS} -DNDEBUG")

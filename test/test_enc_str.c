@@ -119,17 +119,21 @@ main (void)
 {
     const struct str_test *test;
     int r;
-    unsigned char out[0x100000];
+    unsigned char *out= malloc(0x1000);
+
+    if (!out)
+        return 1;
 
     for (test = tests; test < tests + sizeof(tests) / sizeof(tests[0]); ++test)
     {
         out[0] = 0;
-        r = lsqpack_enc_enc_str(test->strt_prefix_bits, out, sizeof(out),
+        r = lsqpack_enc_enc_str(test->strt_prefix_bits, out, 0x1000,
                                          test->strt_in_str, test->strt_in_len);
         assert(r == test->strt_retval);
         if (r > 0)
             assert(0 == memcmp(test->strt_out_buf, out, r));
     }
 
+    free(out);
     return 0;
 }
