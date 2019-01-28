@@ -61,10 +61,17 @@ if (defined $table_size) {
 
 copy($ARGV[0], $qif_file) or die "cannot copy original $ARGV[0] to $qif_file";
 
-system('interop-encode', $encode_args, '-i', $qif_file, '-o', $bin_file)
-    and die "interop-encode failed oh";
-system('interop-decode', $decode_args, '-i', $bin_file, '-o', $resulting_qif_file)
-    and die "interop-decode failed";
+if ($^O eq 'MSWin32') {
+    system('strace', 'interop-encode', $encode_args, '-i', $qif_file, '-o', $bin_file)
+        and die "interop-encode failed";
+    system('interop-decode', $decode_args, '-i', $bin_file, '-o', $resulting_qif_file)
+        and die "interop-decode failed";
+} else {
+    system("interop-encode $encode_args -i $qif_file -o $bin_file")
+        and die "interop-encode failed";
+    system("interop-decode $decode_args -i $bin_file -o $resulting_qif_file")
+        and die "interop-decode failed";
+}
 
 sub sort_qif {
     no warnings 'uninitialized';
@@ -77,7 +84,7 @@ sub sort_qif {
 		 <F>;
     close F;
     for (@chunks) {
-	s/^#.*\n//mg;
+        s/^#.*\n//mg;
     }
     open F, ">", $out or die "cannot open $out for writing: $!";
     print F @chunks;
