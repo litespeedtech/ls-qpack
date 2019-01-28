@@ -21,7 +21,7 @@ ELSE()
 	ADD_TEST(NAME scenario-${TEST_NAME}
 		 COMMAND bash run-scenario.sh ${SCENARIO})
 	SET_TESTS_PROPERTIES(scenario-${TEST_NAME} PROPERTIES
-		ENVIRONMENT "PATH=$ENV{PATH}:../bin:../Debug/bin:../tools")
+		ENVIRONMENT "PATH=$ENV{PATH}:../bin:../tools")
     ENDFOREACH()
 ENDIF()
 
@@ -41,7 +41,11 @@ ELSE()
 			SET(TEST_NAME qif-${FILE_NAME}-t${TABLE_SIZE}-s${RISKED_STREAMS}-a${IMMEDIATE_ACK}-A${AGGRESSIVE})
 			ADD_TEST(NAME ${TEST_NAME}
 			    COMMAND ${PERL} run-qif.pl --table-size ${TABLE_SIZE} --risked-streams ${RISKED_STREAMS} --immed-ack ${IMMEDIATE_ACK} --aggressive ${AGGRESSIVE} ${QIF})
-		    ENDFOREACH()
+                        IF (NOT MSVC)
+                            SET_TESTS_PROPERTIES(${TEST_NAME} PROPERTIES
+                                    ENVIRONMENT "PATH=$ENV{PATH}:../bin:../tools")
+                        ENDIF()
+                    ENDFOREACH()
 		ENDFOREACH()
 	    ENDFOREACH()
 	ENDFOREACH()
