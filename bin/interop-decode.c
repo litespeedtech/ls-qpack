@@ -374,7 +374,10 @@ main (int argc, char **argv)
             default:
                 assert(rhs == LQRHS_ERROR);
                 fprintf(stderr, "stream %"PRIu64": header block error "
-                    "starting at off %zu\n", stream_id, buf->off);
+                    "starting at off %zu\n", buf->stream_id, buf->off);
+                err = lsqpack_dec_get_err_info(&decoder);
+                fprintf(stderr, "encoder_in error; off %"PRIu64", line %d\n",
+                                                            err->off, err->line);
                 exit(EXIT_FAILURE);
             }
         }
