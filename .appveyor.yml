@@ -1,0 +1,21 @@
+version: 1.0.{build}
+
+build_script:
+
+- cmd: >-
+
+    cmake .
+
+
+
+    msbuild ALL_BUILD.vcxproj
+
+test_script:
+
+- cmd: >-
+
+    set path=%path%;c:\projects\ls-qpack\bin\Debug
+
+
+
+    msbuild RUN_TESTS.vcxproj
