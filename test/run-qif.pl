@@ -62,7 +62,7 @@ if (defined $table_size) {
 copy($ARGV[0], $qif_file) or die "cannot copy original $ARGV[0] to $qif_file";
 
 if ($^O eq 'MSWin32') {
-    system('strace', 'interop-encode', $encode_args, '-i', $qif_file, '-o', $bin_file)
+    system('interop-encode', $encode_args, '-i', $qif_file, '-o', $bin_file)
         and die "interop-encode failed";
     system('interop-decode', $decode_args, '-i', $bin_file, '-o', $resulting_qif_file)
         and die "interop-decode failed";
