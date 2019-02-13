@@ -1,53 +1,73 @@
-ENABLE_TESTING()
+function(lsqpack_add_test TARGET)
+    add_executable(test_${TARGET} "")
+    target_sources(test_${TARGET} PRIVATE test_${TARGET}.c)
+    target_link_libraries(test_${TARGET} ls-qpack)
 
-IF (MSVC)
-    SET(AUX ../deps/xxhash/xxhash.c ../wincompat/getopt.c ../wincompat/getopt1.c)
-ELSE()
-    SET(AUX ../deps/xxhash/xxhash.c)
-ENDIF()
+    if(MSVC)
+        target_include_directories(test_${TARGET} PRIVATE ../wincompat)
+        target_sources(test_${TARGET} PRIVATE 
+            ../wincompat/getopt.c 
+            ../wincompat/getopt1.c
+        )
+    endif()
 
-FOREACH(TEST_NAME int enc_str huff_dec read_enc_stream qpack)
-    ADD_EXECUTABLE(test_${TEST_NAME} test_${TEST_NAME}.c ${AUX})
-    TARGET_LINK_LIBRARIES(test_${TEST_NAME} ls-qpack)
-    ADD_TEST(${TEST_NAME} test_${TEST_NAME})
-ENDFOREACH()
+    add_test(${TARGET} test_${TARGET})
+endfunction()
 
-IF (MSVC)
-    MESSAGE(WARNING "Scenario tests are disabled on Windows (TODO)")
-ELSE()
-    FILE(GLOB SCENARIOS scenarios/*.sce)
-    FOREACH(SCENARIO ${SCENARIOS})
-	GET_FILENAME_COMPONENT(TEST_NAME ${SCENARIO} NAME)
-	ADD_TEST(NAME scenario-${TEST_NAME}
-		 COMMAND bash run-scenario.sh ${SCENARIO})
-	SET_TESTS_PROPERTIES(scenario-${TEST_NAME} PROPERTIES
-		ENVIRONMENT "PATH=$ENV{PATH}:../bin:../tools")
-    ENDFOREACH()
-ENDIF()
+lsqpack_add_test(int)
+lsqpack_add_test(enc_str)
+lsqpack_add_test(huff_dec)
+lsqpack_add_test(read_enc_stream)
+lsqpack_add_test(qpack)
 
-FIND_PROGRAM(PERL NAMES perl)
+if(MSVC)
+    message(WARNING "Scenario tests are disabled on Windows (TODO)")
+else()
+    file(GLOB SCENARIOS scenarios/*.sce)
+    foreach(SCENARIO ${SCENARIOS})
+        get_filename_component(TEST_NAME ${SCENARIO} NAME)
+        add_test(
+            NAME scenario-${TEST_NAME}
+            COMMAND bash run-scenario.sh ${SCENARIO}
+            WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/test
+        )
+        set_tests_properties(scenario-${TEST_NAME} PROPERTIES
+            ENVIRONMENT "PATH=$ENV{PATH}:${PROJECT_BINARY_DIR}/bin:${PROJECT_SOURCE_DIR}/tools"
+        )
+    endforeach()
+endif()
 
-IF (PERL STREQUAL "PERL-NOTFOUND")
-    MESSAGE(WARNING "Perl not found: QIF tests won't be run")
-ELSE()
-    MESSAGE(STATUS "Found Perl interpreter: ${PERL}")
-    FILE(GLOB QIFS qifs/*.qif)
-    FOREACH(QIF ${QIFS})
-	GET_FILENAME_COMPONENT(FILE_NAME ${QIF} NAME)
-	FOREACH(TABLE_SIZE 0 256 512 1024 4096)
-	    FOREACH(RISKED_STREAMS 0 100)
-		FOREACH(IMMEDIATE_ACK 0 1)
-		    FOREACH(AGGRESSIVE 0 1)
-			SET(TEST_NAME qif-${FILE_NAME}-t${TABLE_SIZE}-s${RISKED_STREAMS}-a${IMMEDIATE_ACK}-A${AGGRESSIVE})
-			ADD_TEST(NAME ${TEST_NAME}
-			    COMMAND ${PERL} run-qif.pl --table-size ${TABLE_SIZE} --risked-streams ${RISKED_STREAMS} --immed-ack ${IMMEDIATE_ACK} --aggressive ${AGGRESSIVE} ${QIF})
-                        IF (NOT MSVC)
-                            SET_TESTS_PROPERTIES(${TEST_NAME} PROPERTIES
-                                    ENVIRONMENT "PATH=$ENV{PATH}:../bin:../tools")
-                        ENDIF()
-                    ENDFOREACH()
-		ENDFOREACH()
-	    ENDFOREACH()
-	ENDFOREACH()
-    ENDFOREACH()
-ENDIF()
+find_package(Perl)
+
+if(PERL_FOUND)
+    message(STATUS "Found Perl interpreter: ${PERL}")
+    file(GLOB QIFS qifs/*.qif)
+    
+    foreach(QIF ${QIFS})
+        get_filename_component(FILE_NAME ${QIF} NAME)
+        
+        foreach(TABLE_SIZE 0 256 512 1024 4096)
+            foreach(RISKED_STREAMS 0 100)
+                foreach(IMMEDIATE_ACK 0 1)
+                    foreach(AGGRESSIVE 0 1)
+                        set(TEST_NAME qif-${FILE_NAME}-t${TABLE_SIZE}-s${RISKED_STREAMS}-a${IMMEDIATE_ACK}-A${AGGRESSIVE})
+                        
+                        add_test(
+                            NAME ${TEST_NAME}
+                            COMMAND ${PERL} run-qif.pl --table-size ${TABLE_SIZE} --risked-streams ${RISKED_STREAMS} --immed-ack ${IMMEDIATE_ACK} --aggressive ${AGGRESSIVE} ${QIF}
+                            WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/test
+                        )
+                        
+                        if(NOT MSVC)
+                            set_tests_properties(${TEST_NAME} PROPERTIES
+                                ENVIRONMENT "PATH=$ENV{PATH}:${PROJECT_BINARY_DIR}/bin:${PROJECT_SOURCE_DIR}/tools"
+                            )
+                        endif()
+                    endforeach()
+                endforeach()
+            endforeach()
+        endforeach()
+    endforeach()
+else()
+    message(WARNING "Perl not found: QIF tests won't be run")
+endif()

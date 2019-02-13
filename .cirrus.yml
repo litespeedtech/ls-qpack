@@ -3,4 +3,4 @@ freebsd_instance:
 
 task:
     install_script: pkg install -y cmake bash perl5
-    script: cmake . && make && make test
+    script: cmake -DLSQPACK_TESTS=ON . && make && make test

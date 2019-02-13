@@ -1,12 +1,19 @@
-ENABLE_TESTING()
+function(lsqpack_add_executable TARGET)
+    add_executable(${TARGET} "")
+    target_link_libraries(${TARGET} PRIVATE ls-qpack)
 
-IF (MSVC)
-    SET(AUX ../deps/xxhash/xxhash.c ../wincompat/getopt.c ../wincompat/getopt1.c)
-ELSE()
-    SET(AUX ../deps/xxhash/xxhash.c)
-ENDIF()
+    target_sources(${TARGET} PRIVATE ${TARGET}.c)
 
-FOREACH(BIN_NAME interop-encode interop-decode encode-int fuzz-decode)
-    ADD_EXECUTABLE(${BIN_NAME} ${BIN_NAME}.c ${AUX})
-    TARGET_LINK_LIBRARIES(${BIN_NAME} ls-qpack-noxxh)
-ENDFOREACH()
+    if(MSVC)
+        target_include_directories(${TARGET} PRIVATE ../wincompat)
+        target_sources(${TARGET} PRIVATE 
+            ../wincompat/getopt.c 
+            ../wincompat/getopt1.c
+        )
+    endif()
+endfunction()
+
+lsqpack_add_executable(interop-encode)
+lsqpack_add_executable(interop-decode)
+lsqpack_add_executable(encode-int)
+lsqpack_add_executable(fuzz-decode)

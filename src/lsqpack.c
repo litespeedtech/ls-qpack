@@ -34,7 +34,8 @@ SOFTWARE.
 #include <inttypes.h>
 
 #include "lsqpack.h"
-#include XXH_HEADER_NAME
+
+#include <xxhash.h>
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 

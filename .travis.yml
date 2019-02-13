@@ -26,7 +26,7 @@ before_install:
   - $CC --version
   - cmake --version
 before_script:
-  - cmake .
+  - cmake -DLSQPACK_TESTS=ON .
 script:
   - make
   - make test
