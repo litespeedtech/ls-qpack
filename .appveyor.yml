@@ -10,4 +10,4 @@ before_test:
   - set PATH=%PATH%;c:\projects\ls-qpack\bin\Debug
 
 test_script:
-  - ctest 
+  - msbuild RUN_TESTS.vcxproj 
