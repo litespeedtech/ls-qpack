@@ -1,7 +1,7 @@
 version: 1.0.{build}
 
 before_build:
-  - cmake .
+  - cmake -DLSQPACK_TESTS=ON .
 
 build_script:
   - cmake --build .
@@ -10,4 +10,4 @@ before_test:
   - set PATH=%PATH%;c:\projects\ls-qpack\bin\Debug
 
 test_script:
-  - msbuild RUN_TESTS.vcxproj 
+  - ctest 
