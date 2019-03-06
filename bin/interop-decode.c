@@ -350,10 +350,11 @@ main (int argc, char **argv)
         }
         else
         {
+        dec_header:
             p = buf->buf + buf->off;
             if (buf->off == 0)
                 rhs = lsqpack_dec_header_in(&decoder, buf, buf->stream_id,
-                                buf->size, &p, buf->size, &hset, NULL, NULL);
+                                buf->size, &p, buf->size / 2, &hset, NULL, NULL);
             else
                 rhs = lsqpack_dec_header_read(buf->dec, buf, &p,
                                 buf->size - buf->off, &hset, NULL, NULL);
@@ -368,9 +369,8 @@ main (int argc, char **argv)
                 buf->off += (unsigned) (p - buf->buf);
                 break;
             case LQRHS_NEED:
-                fprintf(stderr, "This can't be right: all bytes were given.  "
-                    "stream %"PRIu64"\n", buf->stream_id);
-                exit(EXIT_FAILURE);
+                buf->off += (unsigned) (p - buf->buf);
+                goto dec_header;
             default:
                 assert(rhs == LQRHS_ERROR);
                 fprintf(stderr, "stream %"PRIu64": header block error "
