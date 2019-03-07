@@ -69,7 +69,7 @@ if ($^O eq 'MSWin32') {
 } else {
     system("interop-encode $encode_args -i $qif_file -o $bin_file")
         and die "interop-encode failed";
-    system("interop-decode $decode_args -i $bin_file -o $resulting_qif_file")
+    system("interop-decode $decode_args -m 1 -i $bin_file -o $resulting_qif_file")
         and die "interop-decode failed";
 }
 

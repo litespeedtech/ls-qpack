@@ -3306,6 +3306,7 @@ parse_header_data (struct lsqpack_dec *dec,
             {
                 prefix_bits = 3;
                 LFPBNR.is_never = buf[0] & 0x08;
+                LFPBNR.dec_int_state.resume = 0;
                 LFPBNR.value = NULL;
                 LFPBNR.reffed_entry = NULL;
                 read_ctx->hbrc_parse_ctx_u.data.state
