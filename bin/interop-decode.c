@@ -47,11 +47,7 @@ static int s_verbose;
 
 static FILE *s_out;
 
-static unsigned
-min(unsigned a, unsigned b)
-{
-    return (a < b) ? a : b;
-}
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
 
 static void
 usage (const char *name)
@@ -68,11 +64,11 @@ usage (const char *name)
 "                 order.\n"
 "   -s NUMBER   Maximum number of risked streams.  Defaults to %u.\n"
 "   -t NUMBER   Dynamic table size.  Defaults to %u.\n"
-"   -m NUMBER   Maximum read size.  Defaults to SIZE_MAX.\n"
+"   -m NUMBER   Maximum read size.  Defaults to %zu.\n"
 "   -v          Verbose: print headers and table state to stderr.\n"
 "\n"
 "   -h          Print this help screen and exit\n"
-    , name, LSQPACK_DEF_MAX_RISKED_STREAMS, LSQPACK_DEF_DYN_TABLE_SIZE);
+    , name, LSQPACK_DEF_MAX_RISKED_STREAMS, LSQPACK_DEF_DYN_TABLE_SIZE, SIZE_MAX);
 }
 
 
@@ -366,11 +362,11 @@ main (int argc, char **argv)
             p = buf->buf + buf->off;
             if (buf->off == 0)
                 rhs = lsqpack_dec_header_in(&decoder, buf, buf->stream_id,
-                                buf->size, &p, min(s_max_read_size, buf->size),
+                                buf->size, &p, MIN(s_max_read_size, buf->size),
                                 &hset, NULL, NULL);
             else
                 rhs = lsqpack_dec_header_read(buf->dec, buf, &p,
-                                min(s_max_read_size, (buf->size - buf->off)),
+                                MIN(s_max_read_size, (buf->size - buf->off)),
                                 &hset, NULL, NULL);
             switch (rhs)
             {
