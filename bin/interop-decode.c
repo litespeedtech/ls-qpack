@@ -47,6 +47,8 @@ static int s_verbose;
 
 static FILE *s_out;
 
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
 static void
 usage (const char *name)
 {
@@ -62,10 +64,11 @@ usage (const char *name)
 "                 order.\n"
 "   -s NUMBER   Maximum number of risked streams.  Defaults to %u.\n"
 "   -t NUMBER   Dynamic table size.  Defaults to %u.\n"
+"   -m NUMBER   Maximum read size.  Defaults to %zu.\n"
 "   -v          Verbose: print headers and table state to stderr.\n"
 "\n"
 "   -h          Print this help screen and exit\n"
-    , name, LSQPACK_DEF_MAX_RISKED_STREAMS, LSQPACK_DEF_DYN_TABLE_SIZE);
+    , name, LSQPACK_DEF_MAX_RISKED_STREAMS, LSQPACK_DEF_DYN_TABLE_SIZE, SIZE_MAX);
 }
 
 
@@ -150,7 +153,7 @@ main (int argc, char **argv)
     char command[0x100];
     char line_buf[0x100];
 
-    while (-1 != (opt = getopt(argc, argv, "i:o:r:s:t:hv")))
+    while (-1 != (opt = getopt(argc, argv, "i:o:r:s:t:m:hv")))
     {
         switch (opt)
         {
@@ -197,6 +200,9 @@ main (int argc, char **argv)
             break;
         case 't':
             dyn_table_size = atoi(optarg);
+            break;
+        case 'm':
+            s_max_read_size = atoi(optarg);
             break;
         case 'h':
             usage(argv[0]);
@@ -260,6 +266,8 @@ main (int argc, char **argv)
         buf->stream_id = stream_id;
         buf->size = size;
         buf->file_off = file_off;
+        if (buf->size == 0)
+            exit(EXIT_FAILURE);
         TAILQ_INSERT_TAIL(&bufs, buf, next_buf);
     }
 
@@ -350,13 +358,16 @@ main (int argc, char **argv)
         }
         else
         {
+        dec_header:
             p = buf->buf + buf->off;
             if (buf->off == 0)
                 rhs = lsqpack_dec_header_in(&decoder, buf, buf->stream_id,
-                                buf->size, &p, buf->size, &hset, NULL, NULL);
+                                buf->size, &p, MIN(s_max_read_size, buf->size),
+                                &hset, NULL, NULL);
             else
                 rhs = lsqpack_dec_header_read(buf->dec, buf, &p,
-                                buf->size - buf->off, &hset, NULL, NULL);
+                                MIN(s_max_read_size, (buf->size - buf->off)),
+                                &hset, NULL, NULL);
             switch (rhs)
             {
             case LQRHS_DONE:
@@ -365,12 +376,11 @@ main (int argc, char **argv)
                 free(buf);
                 break;
             case LQRHS_BLOCKED:
-                buf->off += (unsigned) (p - buf->buf);
+                buf->off = (unsigned) (p - buf->buf);
                 break;
             case LQRHS_NEED:
-                fprintf(stderr, "This can't be right: all bytes were given.  "
-                    "stream %"PRIu64"\n", buf->stream_id);
-                exit(EXIT_FAILURE);
+                buf->off = (unsigned) (p - buf->buf);
+                goto dec_header;
             default:
                 assert(rhs == LQRHS_ERROR);
                 fprintf(stderr, "stream %"PRIu64": header block error "
