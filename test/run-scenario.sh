@@ -46,6 +46,10 @@ if [ "$IMMEDIATE_ACK" = 1 ]; then
     ENCODE_ARGS="$ENCODE_ARGS -a 1"
 fi
 
+if [ "$ANNOTATIONS" = 1 ]; then
+    ENCODE_ARGS="$ENCODE_ARGS -n"
+fi
+
 if [ -n "$RISKED_STREAMS" ]; then
     ENCODE_ARGS="$ENCODE_ARGS -s $RISKED_STREAMS"
     DECODE_ARGS="$DECODE_ARGS -s $RISKED_STREAMS"
