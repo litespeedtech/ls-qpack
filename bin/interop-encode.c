@@ -332,7 +332,7 @@ main (int argc, char **argv)
             if (header_opened)
             {
                 size_t sz, pref_max = sizeof(pref_buf);
-                for (size_t sz = 0; sz < pref_max; sz++)
+                for (sz = 0; sz < pref_max; sz++)
                 {
                     pref_sz = lsqpack_enc_end_header(&encoder, pref_buf, sz);
                     if (pref_sz > 0)

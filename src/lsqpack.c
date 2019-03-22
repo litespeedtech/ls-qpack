@@ -1452,6 +1452,8 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
         }
         *buf = (unsigned char) (sign << 7);
         dst = lsqpack_enc_int(buf, end, diff, 7);
+        if (dst <= buf)
+            return 0;
 
         E_DEBUG("ended header for stream %"PRIu64"; max ref: %u encoded as %u; "
             "risked: %d", hinfo->qhi_stream_id, hinfo->qhi_max_id,
