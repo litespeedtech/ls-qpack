@@ -247,6 +247,8 @@ main (int argc, char **argv)
         stream_id = bswap_64(stream_id);
         size = bswap_32(size);
 #endif
+        if (stream_id == 0 && size == 0)
+            continue;
         buf = malloc(sizeof(*buf) + size);
         if (!buf)
         {

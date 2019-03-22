@@ -80,6 +80,8 @@ write_enc_stream (FILE *out, const unsigned char *enc_buf, size_t enc_sz)
     uint32_t length_enc;
     size_t written;
 
+    if (enc_sz <= 0)
+        return;
     stream_id_enc = 0;
     length_enc = enc_sz;
 #if __BYTE_ORDER == __LITTLE_ENDIAN
