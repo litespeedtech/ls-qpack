@@ -40,7 +40,7 @@ my $qif_file = catfile($dir, "qif");
 my $bin_file = catfile($dir, "out");
 my $resulting_qif_file = catfile($dir, "qif-result");
 
-my ($encode_args, $decode_args) = ('', '');
+my ($encode_args, $decode_args) = ('-n', '');
 if ($aggressive) {
     $encode_args="$encode_args -A";
 }
