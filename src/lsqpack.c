@@ -35,7 +35,11 @@ SOFTWARE.
 
 #include "lsqpack.h"
 
+#ifdef XXH_HEADER_NAME
+#include XXH_HEADER_NAME
+#else
 #include <xxhash.h>
+#endif
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
