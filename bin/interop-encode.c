@@ -331,8 +331,14 @@ main (int argc, char **argv)
         {
             if (header_opened)
             {
-                pref_sz = lsqpack_enc_end_header(&encoder, pref_buf,
-                                                                sizeof(pref_buf));
+                size_t sz, pref_max = sizeof(pref_buf);
+                for (size_t sz = 0; sz < pref_max; sz++)
+                {
+                    pref_sz = lsqpack_enc_end_header(&encoder, pref_buf, sz);
+                    if (pref_sz > 0)
+                        break;
+                }
+                assert(pref_sz <= lsqpack_enc_header_data_prefix_size(&encoder));
                 if (pref_sz < 0)
                 {
                     fprintf(stderr, "end_header failed: %s", strerror(errno));
