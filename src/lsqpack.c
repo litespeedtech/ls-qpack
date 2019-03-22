@@ -1415,6 +1415,9 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
     lsqpack_abs_id_t diff, encoded_largest_ref;
     unsigned sign;
 
+    if (sz == 0)
+        return -1;
+
     if (!(enc->qpe_flags & LSQPACK_ENC_HEADER))
         return -1;
 
