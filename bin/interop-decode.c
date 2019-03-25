@@ -404,6 +404,8 @@ main (int argc, char **argv)
      * an error.
      */
 
+    lsqpack_dec_print_table(&decoder, stderr);
+
     lsqpack_dec_cleanup(&decoder);
 
     assert(TAILQ_EMPTY(&bufs));
