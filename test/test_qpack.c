@@ -210,6 +210,7 @@ run_header_test (const struct qpack_header_block_test *test)
     size_t nw;
     int s;
     enum lsqpack_enc_status enc_st;
+    float ratio;
 
     s = lsqpack_enc_init(&enc, stderr, test->qhbt_table_size,
                 test->qhbt_table_size, test->qhbt_max_risked_streams,
@@ -266,6 +267,7 @@ run_header_test (const struct qpack_header_block_test *test)
     assert(0 == memcmp(test->qhbt_enc_buf, enc_buf, enc_off));
     assert(header_off == test->qhbt_header_sz);
     assert(0 == memcmp(test->qhbt_header_buf, header_buf, header_off));
+    assert(lsqpack_enc_ratio(&enc) > 0.0);
 
     lsqpack_enc_cleanup(&enc);
 }
