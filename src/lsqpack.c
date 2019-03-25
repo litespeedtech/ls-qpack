@@ -407,15 +407,12 @@ qenc_grow_history (struct lsqpack_enc_hist *hist)
         return; /* Doing nothing is the correct graceful fallback */
 
     assert(hist->ehi_wrapped);
-    if (hist->ehi_wrapped)
-    {
-        memcpy(els, hist->ehi_els + hist->ehi_idx,
-                sizeof(els[0]) * (hist->ehi_nels - hist->ehi_idx));
-        memcpy(els + (hist->ehi_nels - hist->ehi_idx), hist->ehi_els,
-                sizeof(els[0]) * hist->ehi_idx);
-        hist->ehi_wrapped = 0;
-        hist->ehi_idx = hist->ehi_nels;
-    }
+    memcpy(els, hist->ehi_els + hist->ehi_idx,
+            sizeof(els[0]) * (hist->ehi_nels - hist->ehi_idx));
+    memcpy(els + (hist->ehi_nels - hist->ehi_idx), hist->ehi_els,
+            sizeof(els[0]) * hist->ehi_idx);
+    hist->ehi_wrapped = 0;
+    hist->ehi_idx = hist->ehi_nels;
     hist->ehi_nels = nelem;
     free(hist->ehi_els);
     hist->ehi_els = els;
@@ -1357,7 +1354,7 @@ lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
     else
         E_INFO("could not allocate hinfo for stream %"PRIu64, stream_id);
     enc->qpe_cur_header.n_risked = 0;
-    enc->qpe_cur_header.n_headers = 0;
+    enc->qpe_cur_header.n_hdr_in_hist = 0;
     enc->qpe_cur_header.base_idx = enc->qpe_ins_count;
 
     /* Check if there are other header blocks with the same stream ID that
@@ -1731,12 +1728,14 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     nameval_hash = XXH32_digest(&hash_state);
     E_DEBUG("name hash: 0x%X; nameval hash: 0x%X", name_hash, nameval_hash);
 
-    ++enc->qpe_cur_header.n_headers;
-    if (enc->qpe_hist
-            && enc->qpe_cur_header.n_headers > enc->qpe_hist->ehi_nels)
-        qenc_grow_history(enc->qpe_hist);
-
-    enc->qpe_hist_add(enc->qpe_hist, name_hash, nameval_hash);
+    /* Add header to history if it exists */
+    if (enc->qpe_hist)
+    {
+        ++enc->qpe_cur_header.n_hdr_in_hist;
+        if (enc->qpe_cur_header.n_hdr_in_hist > enc->qpe_hist->ehi_nels)
+            qenc_grow_history(enc->qpe_hist);
+        enc->qpe_hist_add(enc->qpe_hist, name_hash, nameval_hash);
+    }
 
   restart:
     /* Look for a full match in the dynamic table */
