@@ -416,8 +416,6 @@ qenc_grow_history (struct lsqpack_enc_hist *hist)
         hist->ehi_wrapped = 0;
         hist->ehi_idx = hist->ehi_nels;
     }
-    else
-        memcpy(els, hist->ehi_els, hist->ehi_idx);
     hist->ehi_nels = nelem;
     free(hist->ehi_els);
     hist->ehi_els = els;
