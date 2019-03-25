@@ -359,8 +359,7 @@ main (int argc, char **argv)
                         exit(EXIT_FAILURE);
                     }
                 }
-                if (s_verbose)
-                    fprintf(stderr, "compression ratio: %.3f\n",
+                fprintf(stderr, "compression ratio: %.3f\n",
                         lsqpack_enc_ratio(&encoder));
                 write_enc_and_header_streams(out, stream_id, enc_buf, enc_off,
                                              pref_buf, pref_sz, hea_buf, hea_off);
