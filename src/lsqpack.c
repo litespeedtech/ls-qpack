@@ -1354,7 +1354,7 @@ lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
     else
         E_INFO("could not allocate hinfo for stream %"PRIu64, stream_id);
     enc->qpe_cur_header.n_risked = 0;
-    enc->qpe_cur_header.n_hdr_in_hist = 0;
+    enc->qpe_cur_header.n_hdr_added_to_hist = 0;
     enc->qpe_cur_header.base_idx = enc->qpe_ins_count;
 
     /* Check if there are other header blocks with the same stream ID that
@@ -1731,8 +1731,8 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     /* Add header to history if it exists */
     if (enc->qpe_hist)
     {
-        ++enc->qpe_cur_header.n_hdr_in_hist;
-        if (enc->qpe_cur_header.n_hdr_in_hist > enc->qpe_hist->ehi_nels)
+        ++enc->qpe_cur_header.n_hdr_added_to_hist;
+        if (enc->qpe_cur_header.n_hdr_added_to_hist > enc->qpe_hist->ehi_nels)
             qenc_grow_history(enc->qpe_hist);
         enc->qpe_hist_add(enc->qpe_hist, name_hash, nameval_hash);
     }
