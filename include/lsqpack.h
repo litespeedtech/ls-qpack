@@ -473,8 +473,8 @@ struct lsqpack_enc
 
         /* Number of at-risk references in this header block */
         unsigned            n_risked;
-        /* Number of headers in this header list */
-        unsigned            n_headers;
+        /* Number of headers in this header list added to the history */
+        unsigned            n_hdr_added_to_hist;
         /* True if there are other header blocks with the same stream ID
          * that are at risk.  (This means we can risk this header block
          * as well.)
