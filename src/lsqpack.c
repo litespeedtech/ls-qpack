@@ -1464,11 +1464,11 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
 
     if (sz >= 2)
     {
+        memset(buf, 0, 2);
         if (enc->qpe_cur_header.hinfo)
         {
             E_DEBUG("ended header for stream %"PRIu64"; dynamic table not "
                 "referenced", enc->qpe_cur_header.hinfo->qhi_stream_id);
-            memset(buf, 0, 2);
             enc_free_hinfo(enc, enc->qpe_cur_header.hinfo);
             enc->qpe_cur_header.hinfo = NULL;
         }
