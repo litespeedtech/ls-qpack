@@ -445,12 +445,8 @@ struct lsqpack_enc
     unsigned                    qpe_max_risked_streams;
     unsigned                    qpe_cur_streams_at_risk;
 
-    /* Number of used entries in qpe_hinfos[]. */
-    unsigned                    qpe_hinfos_count;
-    /* Number of entries allocated in qpe_hinfos_arr[].  There is always
-     * an extra element at the end for use as sentinel.
-     */
-    unsigned                    qpe_hinfos_nalloc;
+    /* Number of used entries in qpe_hinfo_arrs */
+    unsigned                    qpe_hinfo_arrs_count;
 
     /* Dynamic table entries (struct enc_table_entry) live in two hash
      * tables: name/value hash table and name hash table.  These tables

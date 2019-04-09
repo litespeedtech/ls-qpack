@@ -299,11 +299,16 @@ enc_alloc_hinfo (struct lsqpack_enc *enc)
 
     if (!hiarr)
     {
+        /* Guards against tracking too much state */
+        if (enc->qpe_hinfo_arrs_count * sizeof(*hiarr)
+                                            >= enc->qpe_cur_max_capacity)
+            return NULL;
         hiarr = malloc(sizeof(*hiarr));
         if (!hiarr)
             return NULL;
         hiarr->hia_slots = 0;
         STAILQ_INSERT_TAIL(&enc->qpe_hinfo_arrs, hiarr, hia_next);
+        ++enc->qpe_hinfo_arrs_count;
     }
 
     slot = find_free_slot(hiarr->hia_slots);
