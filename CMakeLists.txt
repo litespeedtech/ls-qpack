@@ -12,15 +12,18 @@ cmake_minimum_required(VERSION 3.1)
 project(ls-qpack LANGUAGES C)
 
 option(LSQPACK_TESTS "Build tests")
+option(LSQPACK_BIN "Build binaries" ON)
+option(LSQPACK_XXH "Include XXH" ON)
 
 # Use `cmake -DBUILD_SHARED_LIBS=OFF` to build a static library.
 add_library(ls-qpack "")
 target_include_directories(ls-qpack PUBLIC include)
 target_sources(ls-qpack PRIVATE src/lsqpack.c)
 
-# xxhash
 target_include_directories(ls-qpack PRIVATE deps/xxhash/)
-target_sources(ls-qpack PRIVATE deps/xxhash/xxhash.c)
+if(LSQPACK_XXH)
+    target_sources(ls-qpack PRIVATE deps/xxhash/xxhash.c)
+endif()
 
 if(MSVC)
     target_include_directories(ls-qpack PRIVATE wincompat)
@@ -54,4 +57,6 @@ if(LSQPACK_TESTS)
     add_subdirectory(test)
 endif()
 
-add_subdirectory(bin)
+if(LSQPACK_BIN)
+    add_subdirectory(bin)
+endif()
