@@ -17,8 +17,8 @@ option(LSQPACK_XXH "Include XXH" ON)
 
 # Use `cmake -DBUILD_SHARED_LIBS=OFF` to build a static library.
 add_library(ls-qpack "")
-target_include_directories(ls-qpack PUBLIC include)
-target_sources(ls-qpack PRIVATE src/lsqpack.c)
+target_include_directories(ls-qpack PUBLIC .)
+target_sources(ls-qpack PRIVATE lsqpack.c)
 
 target_include_directories(ls-qpack PRIVATE deps/xxhash/)
 if(LSQPACK_XXH)
