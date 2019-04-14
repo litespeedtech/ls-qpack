@@ -1068,13 +1068,12 @@ qenc_grow_tables (struct lsqpack_enc *enc)
 
 
 static struct lsqpack_enc_table_entry *
-lsqpack_enc_push_entry (struct lsqpack_enc *enc, const char *name,
-                        unsigned name_len, const char *value,
-                        unsigned value_len)
+lsqpack_enc_push_entry (struct lsqpack_enc *enc, uint32_t name_hash,
+                uint32_t nameval_hash, const char *name, unsigned name_len,
+                const char *value, unsigned value_len)
 {
-    unsigned name_hash, nameval_hash, buckno;
     struct lsqpack_enc_table_entry *entry;
-    XXH32_state_t hash_state;
+    unsigned buckno;
     size_t size;
 
     if (enc->qpe_nelem >= N_BUCKETS(enc->qpe_nbits) / 2 &&
@@ -1085,12 +1084,6 @@ lsqpack_enc_push_entry (struct lsqpack_enc *enc, const char *name,
     entry = malloc(size);
     if (!entry)
         return NULL;
-
-    XXH32_reset(&hash_state, LSQPACK_XXH_SEED);
-    XXH32_update(&hash_state, name, name_len);
-    name_hash = XXH32_digest(&hash_state);
-    XXH32_update(&hash_state, value, value_len);
-    nameval_hash = XXH32_digest(&hash_state);
 
     entry->ete_name_hash = name_hash;
     entry->ete_nameval_hash = nameval_hash;
@@ -1889,8 +1882,8 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     {
     case ETA_NEW:
     case ETA_NEW_NAME:
-        new_entry = lsqpack_enc_push_entry(enc, name, name_len, value,
-                                prog.ep_tab_action == ETA_NEW ? value_len : 0);
+        new_entry = lsqpack_enc_push_entry(enc, name_hash, nameval_hash, name,
+                name_len, value, prog.ep_tab_action == ETA_NEW ? value_len : 0);
         if (!new_entry)
         {   /* Push can only fail due to inability to allocate memory.
              * In this case, fall back on encoding without indexing.
