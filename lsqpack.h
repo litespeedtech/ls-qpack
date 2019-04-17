@@ -427,6 +427,9 @@ struct lsqpack_enc
     lsqpack_abs_id_t            qpe_ins_count;
     lsqpack_abs_id_t            qpe_max_acked_id;
     lsqpack_abs_id_t            qpe_last_tss;
+    /* The smallest absolute index in the dynamic table that the encoder
+     * will emit a reference for.
+     */
     lsqpack_abs_id_t            qpe_drain_idx;
 
     enum {

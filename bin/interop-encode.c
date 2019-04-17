@@ -204,6 +204,22 @@ ack_stream (struct lsqpack_enc *encoder, uint64_t stream_id)
 
 
 static int
+sync_table (struct lsqpack_enc *encoder, uint64_t num_inserts)
+{
+    unsigned char *end_cmd;
+    unsigned char cmd[80];
+
+    if (s_verbose)
+        fprintf(stderr, "Sync table num inserts %"PRIu64"\n", num_inserts);
+
+    cmd[0] = 0x00;
+    end_cmd = lsqpack_enc_int(cmd, cmd + sizeof(cmd), num_inserts, 6);
+    assert(end_cmd > cmd);
+    return lsqpack_enc_decoder_in(encoder, cmd, end_cmd - cmd);
+}
+
+
+static int
 cancel_stream (struct lsqpack_enc *encoder, uint64_t stream_id)
 {
     unsigned char *end_cmd;
@@ -389,6 +405,8 @@ main (int argc, char **argv)
                     exit(EXIT_FAILURE);
                 }
             }
+            else if (1 == sscanf(line, "## %*[s] %u", &arg))
+                sync_table(&encoder, arg);
             else if (1 == sscanf(line, "## %*[c] %u", &arg))
                 cancel_stream(&encoder, arg);
             else if (1 == sscanf(line, "## %*[t] %u", &arg))
