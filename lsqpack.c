@@ -2978,6 +2978,7 @@ lsqpack_huff_decode (const unsigned char *src, int src_len,
                                 .n_src  = p_src - src,
                 };
             }
+            /* falls through */
     case 2:
             if ((p_dst = qdec_huff_dec4bits(*p_src >> 4, p_dst, &state->status))
                     == NULL)
@@ -2992,6 +2993,7 @@ lsqpack_huff_decode (const unsigned char *src, int src_len,
                                 .n_src  = p_src - src,
                 };
             }
+            /* falls through */
     case 3:
             if ((p_dst = qdec_huff_dec4bits(*p_src & 0xf, p_dst, &state->status))
                     == NULL)
