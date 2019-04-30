@@ -319,7 +319,7 @@ main (int argc, char **argv)
         }
     }
 
-    if (0 != lsqpack_enc_init(&encoder, stderr,  dyn_table_size,
+    if (0 != lsqpack_enc_init(&encoder, s_verbose ? stderr : NULL, dyn_table_size,
                     dyn_table_size, max_risked_streams, enc_opts, NULL, NULL))
     {
         perror("lsqpack_enc_init");
@@ -441,12 +441,33 @@ main (int argc, char **argv)
             }
             header_opened = 1;
         }
-
-        enc_sz = sizeof(enc_buf) - enc_off;
-        hea_sz = sizeof(hea_buf) - hea_off;
-        st = lsqpack_enc_encode(&encoder, enc_buf + enc_off, &enc_sz,
-                    hea_buf + hea_off, &hea_sz, line, tab - line,
-                    tab + 1, end - tab - 1, 0);
+        /* Increase buffers one by one to exercise error conditions */
+        enc_sz = 0;
+        hea_sz = 0;
+        while (1)
+        {
+            st = lsqpack_enc_encode(&encoder, enc_buf + enc_off, &enc_sz,
+                        hea_buf + hea_off, &hea_sz, line, tab - line,
+                        tab + 1, end - tab - 1, 0);
+            switch (st)
+            {
+            case LQES_NOBUF_ENC:
+                if (enc_sz < sizeof(enc_buf) - enc_off)
+                    ++enc_sz;
+                else
+                    assert(0);
+                break;
+            case LQES_NOBUF_HEAD:
+                if (hea_sz < sizeof(hea_buf) - hea_off)
+                    ++hea_sz;
+                else
+                    assert(0);
+                break;
+            default:
+                assert(st == LQES_OK);
+                goto end_encode_one_header;
+            }
+        }
         if (st != LQES_OK)
         {
             /* It could only run of of output space, so it's not really an
@@ -457,6 +478,7 @@ main (int argc, char **argv)
                                                                 lineno, st);
             exit(EXIT_FAILURE);
         }
+    end_encode_one_header:
         enc_off += enc_sz;
         hea_off += hea_sz;
     }
