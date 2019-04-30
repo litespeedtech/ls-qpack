@@ -319,7 +319,7 @@ main (int argc, char **argv)
         }
     }
 
-    if (0 != lsqpack_enc_init(&encoder, NULL,  dyn_table_size,
+    if (0 != lsqpack_enc_init(&encoder, s_verbose ? stderr : NULL, dyn_table_size,
                     dyn_table_size, max_risked_streams, enc_opts, NULL, NULL))
     {
         perror("lsqpack_enc_init");
