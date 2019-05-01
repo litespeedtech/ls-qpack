@@ -26,7 +26,7 @@ if(LSQPACK_XXH)
 endif()
 
 if(MSVC)
-    target_include_directories(ls-qpack PRIVATE wincompat)
+    target_include_directories(ls-qpack PUBLIC wincompat)
 endif()
 
 if(MSVC)
