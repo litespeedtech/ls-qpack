@@ -1180,6 +1180,29 @@ lsqpack_enc_header_data_prefix_size (const struct lsqpack_enc *enc)
 }
 
 
+int 
+lsqpack_enc_cancel_header (struct lsqpack_enc *enc)
+{
+    /* No header has been started. */
+    if (!(enc->qpe_flags & LSQPACK_ENC_HEADER))
+        return -1;
+
+    /* Cancellation is not (yet) allowed if the dynamic table is used since 
+     * ls-qpack's state is changed when the dynamic table is used. 
+     */
+    if (enc->qpe_cur_header.hinfo && HINFO_IDS_SET(enc->qpe_cur_header.hinfo))
+        return -1;
+
+    if (enc->qpe_cur_header.hinfo) {
+        enc_free_hinfo(enc, enc->qpe_cur_header.hinfo);
+        enc->qpe_cur_header.hinfo = NULL;
+    }
+
+    enc->qpe_flags &= ~LSQPACK_ENC_HEADER;
+
+    return 0;
+}
+
 ssize_t
 lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
 {

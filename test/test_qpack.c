@@ -272,6 +272,44 @@ run_header_test (const struct qpack_header_block_test *test)
     lsqpack_enc_cleanup(&enc);
 }
 
+static void
+run_header_cancellation_test(const struct qpack_header_block_test *test) {
+    unsigned char header_buf[HEADER_BUF_SZ];
+    size_t header_sz, enc_sz;
+    struct lsqpack_enc enc;
+    int s;
+    enum lsqpack_enc_status enc_st;
+
+    s = lsqpack_enc_init(&enc, stderr, 0, 0, test->qhbt_max_risked_streams, 
+                         LSQPACK_ENC_OPT_IX_AGGR, NULL, NULL);
+    assert(s == 0);
+
+    s = lsqpack_enc_start_header(&enc, 0, 0);
+    assert(s == 0);
+
+    header_sz = HEADER_BUF_SZ;
+    enc_sz = 0;
+
+    enc_st = lsqpack_enc_encode(&enc,
+                    NULL, &enc_sz,
+                    header_buf, &header_sz,
+                    test->qhbt_headers[0].name,
+                    strlen(test->qhbt_headers[0].name),
+                    test->qhbt_headers[0].value,
+                    strlen(test->qhbt_headers[0].value),
+                    0);
+    assert(enc_st == LQES_OK);
+
+    s = lsqpack_enc_cancel_header(&enc);
+    assert(s == 0);
+
+    /* Check that we can start again after cancelling. */
+    s = lsqpack_enc_start_header(&enc, 0, 0);
+    assert(s == 0);
+
+    lsqpack_enc_cleanup(&enc);
+}
+
 
 int
 main (void)
@@ -281,6 +319,8 @@ main (void)
     for (i = 0; i < sizeof(header_block_tests)
                                 / sizeof(header_block_tests[0]); ++i)
         run_header_test(&header_block_tests[i]);
+
+    run_header_cancellation_test(&header_block_tests[0]);
 
     return 0;
 }

@@ -186,6 +186,13 @@ lsqpack_enc_encode (struct lsqpack_enc *,
     enum lsqpack_enc_flags);
 
 /**
+ * Cancel current header block. Cancellation is only allowed if the dynamic 
+ * table is not used. Returns 0 on success, -1 on failure.
+ */
+int 
+lsqpack_enc_cancel_header (struct lsqpack_enc *);
+
+/**
  * End current header block.  The Header Data Prefix is written to `buf'.
  *
  * Returns:
