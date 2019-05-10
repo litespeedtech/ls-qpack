@@ -3319,16 +3319,19 @@ parse_header_data (struct lsqpack_dec *dec,
                 LFONR.nread = 0;
                 LFONR.str_off = 0;
                 LFONR.str_len = value;
-                LFONR.nalloc = value * 2;
                 if (LFONR.is_huffman)
                 {
+                    LFONR.nalloc = value + value / 2;
                     LFONR.dec_huff_state.resume = 0;
                     read_ctx->hbrc_parse_ctx_u.data.state
                                         = DATA_STATE_READ_LFONR_NAME_HUFFMAN;
                 }
                 else
+                {
+                    LFONR.nalloc = value;
                     read_ctx->hbrc_parse_ctx_u.data.state
                                         = DATA_STATE_READ_LFONR_NAME_PLAIN;
+                }
                 LFONR.name = malloc(LFONR.nalloc);
                 if (LFONR.name)
                     break;
