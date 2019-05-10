@@ -4487,7 +4487,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 /* TODO: Check that the name is not larger than the max dynamic
                  * table capacity, for example.
                  */
-                WONR.alloced_len = WONR.str_len ? WONR.str_len * 2 : 16;
+                WONR.alloced_len = WONR.str_len ? WONR.str_len + WONR.str_len / 2 : 16;
                 size = sizeof(*new_entry) + WONR.alloced_len;
                 WONR.entry = malloc(size);
                 if (!WONR.entry)
