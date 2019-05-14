@@ -4364,7 +4364,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                     WINR.name = DTE_NAME(WINR.reffed_entry);
                 }
                 if (WINR.is_huffman)
-                    WINR.alloced_val_len = WINR.val_len + WINR.val_len / 4;
+                    WINR.alloced_val_len = WINR.val_len + WINR.val_len / 2;
                 else
                     WINR.alloced_val_len = WINR.val_len;
                 WINR.entry = malloc(sizeof(*WINR.entry) + WINR.name_len
@@ -4441,16 +4441,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             }
             break;
         case DEI_WINR_READ_VALUE_PLAIN:
-            if (WINR.alloced_val_len < WINR.val_len)
-            {
-                WINR.alloced_val_len = WINR.val_len;
-                entry = realloc(WINR.entry, sizeof(*WINR.entry)
-                                                        + WINR.alloced_val_len);
-                if (entry)
-                    WINR.entry = entry;
-                else
-                    return -1;
-            }
+            assert(WINR.alloced_val_len >= WINR.val_len);
             size = MIN((unsigned) (end - buf), WINR.val_len - WINR.val_off);
             memcpy(DTE_VALUE(WINR.entry) + WINR.val_off, buf, size);
             WINR.val_off += size;
