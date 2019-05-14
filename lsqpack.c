@@ -4532,16 +4532,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             }
             break;
         case DEI_WONR_READ_NAME_PLAIN:
-            if (WONR.alloced_len < WONR.str_len)
-            {
-                WONR.alloced_len = WONR.str_len * 2;
-                entry = realloc(WONR.entry, sizeof(*WONR.entry)
-                                                        + WONR.alloced_len);
-                if (entry)
-                    WONR.entry = entry;
-                else
-                    return -1;
-            }
+            assert(WONR.alloced_len >= WONR.str_len);
             size = MIN((unsigned) (end - buf), WONR.str_len - WONR.str_off);
             memcpy(DTE_NAME(WONR.entry) + WONR.str_off, buf, size);
             WONR.str_off += size;
@@ -4611,10 +4602,8 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 WONR.str_off += hdr.n_dst;
                 break;
             case HUFF_DEC_END_DST:
-                if (WONR.alloced_len)
-                    WONR.alloced_len *= 2;
-                else
-                    WONR.alloced_len = WONR.str_len + WONR.str_len / 4;
+                assert(WONR.alloced_len);
+                WONR.alloced_len *= 2;
                 entry = realloc(WONR.entry, sizeof(*WONR.entry)
                                                         + WONR.alloced_len);
                 if (!entry)

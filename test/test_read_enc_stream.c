@@ -116,6 +116,24 @@ static const struct test_read_encoder_stream tests[] =
         },
     },
 
+    {   __LINE__,
+        "\x40\x88\xcc\x6a\x0d\x48\xea\xe8\x3b\x0f",
+        10,
+        1,
+        {
+            { "", "Kilimanjaro", },
+        },
+    },
+
+    {   __LINE__,
+        "\x43\x7a\x7a\x7a\x00",
+        5,
+        1,
+        {
+            { "zzz", "", },
+        },
+    },
+
 };
 
 
