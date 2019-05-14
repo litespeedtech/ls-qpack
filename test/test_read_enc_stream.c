@@ -134,6 +134,15 @@ static const struct test_read_encoder_stream tests[] =
         },
     },
 
+    {   __LINE__,
+        "\x40\x00",
+        2,
+        1,
+        {
+            { "", "", },
+        },
+    },
+
 };
 
 
