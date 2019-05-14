@@ -52,6 +52,15 @@ static const struct test_read_encoder_stream tests[] =
     },
 
     {   __LINE__,
+        "\xc0\x00",
+        2,
+        1,
+        {
+            { ":authority", "", },
+        },
+    },
+
+    {   __LINE__,
         "\xc0\x8b\xf1\xe3\xc2\xf5\x15\x31\xa2\x45\xcf\x64\xdf\x00",
         14,
         2,
@@ -112,6 +121,16 @@ static const struct test_read_encoder_stream tests[] =
         8,
         1,
         {
+            { "zzz", "aaz", },
+        },
+    },
+
+    {   __LINE__,
+        "\x43\x7a\x7a\x7a\x03\x61\x61\x61\x80\x03\x61\x61\x7a",
+        13,
+        2,
+        {
+            { "zzz", "aaa", },
             { "zzz", "aaz", },
         },
     },
