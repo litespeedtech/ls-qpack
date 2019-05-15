@@ -1,3 +1,8 @@
+# This scenario is designed to reach the `case EEA_INS_NAMEREF_DYNAMIC`
+# in the `lsqpack_enc_encode` function. It is intended to fail the integer
+# encoding due to buffer length. To trigger this case, many names must be
+# inserted into the dynamic table so that the integer encoding requires
+# more than one byte.
 TABLE_SIZE=16384
 AGGRESSIVE=1
 IMMEDIATE_ACK=0
