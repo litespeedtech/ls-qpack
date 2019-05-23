@@ -552,7 +552,7 @@ lsqpack_enc_init (struct lsqpack_enc *enc, void *logger_ctx,
     if (!(enc_opts & LSQPACK_ENC_OPT_STAGE_2))
         lsqpack_enc_preinit(enc, logger_ctx);
 
-    if (dyn_table_size < max_table_size)
+    if (dyn_table_size != LSQPACK_DEF_DYN_TABLE_SIZE)
     {
         if (!(tsu_buf && tsu_buf_sz))
         {

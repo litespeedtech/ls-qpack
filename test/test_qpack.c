@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "lsqpack.h"
+#include "lsqpack-test.h"
 
 #define ENC_BUF_SZ 200
 #define HEADER_BUF_SZ 200
@@ -204,17 +205,19 @@ run_header_test (const struct qpack_header_block_test *test)
     unsigned char header_buf[HEADER_BUF_SZ], enc_buf[ENC_BUF_SZ],
         prefix_buf[PREFIX_BUF_SZ];
     unsigned header_off, enc_off;
-    size_t header_sz, enc_sz;
+    size_t header_sz, enc_sz, dec_sz;
     struct lsqpack_enc enc;
     unsigned i;
     size_t nw;
     int s;
     enum lsqpack_enc_status enc_st;
     float ratio;
+    unsigned char dec_buf[LSQPACK_LONGEST_TSU];
 
+    dec_sz = sizeof(dec_buf);
     s = lsqpack_enc_init(&enc, stderr, test->qhbt_table_size,
                 test->qhbt_table_size, test->qhbt_max_risked_streams,
-                LSQPACK_ENC_OPT_IX_AGGR, NULL, NULL);
+                LSQPACK_ENC_OPT_IX_AGGR, dec_buf, &dec_sz);
     assert(s == 0);
 
     s = lsqpack_enc_start_header(&enc, 0, 0);
@@ -311,6 +314,51 @@ run_header_cancellation_test(const struct qpack_header_block_test *test) {
 }
 
 
+static void
+test_enc_init (void)
+{
+    struct lsqpack_enc enc;
+    size_t dec_sz;
+    int s;
+    unsigned i;
+    const unsigned char *p;
+    uint64_t val;
+    struct lsqpack_dec_int_state state;
+    unsigned char dec_buf[LSQPACK_LONGEST_TSU];
+
+    const struct {
+        unsigned    peer_max_size;  /* Value provided by peer */
+        unsigned    our_max_size;   /* Value to use */
+        int         expected_tsu;   /* Expecting TSU instruction? */
+    } tests[] = {
+        {   0x1000,     0x1000,     1,  },
+        {   0x1000,     1,          1,  },
+        {    0x100,     0x100,      1,  },
+        {   0x1000,     0,          0,  },
+    };
+
+    for (i = 0; i < sizeof(tests) / sizeof(tests[0]); ++i)
+    {
+        dec_sz = sizeof(dec_buf);
+        s = lsqpack_enc_init(&enc, stderr, tests[i].peer_max_size,
+                        tests[i].our_max_size, 0, 0, dec_buf, &dec_sz);
+        assert(s == 0);
+        if (tests[i].expected_tsu)
+        {
+            assert(dec_sz > 0);
+            assert((dec_buf[0] & 0xE0) == 0x20);
+            p = dec_buf;
+            s = lsqpack_dec_int(&p, p + dec_sz, 5, &val, &state);
+            assert(s == 0);
+            assert(val == tests[i].our_max_size);
+        }
+        else
+            assert(dec_sz == 0);
+        lsqpack_enc_cleanup(&enc);
+    }
+}
+
+
 int
 main (void)
 {
@@ -321,6 +369,7 @@ main (void)
         run_header_test(&header_block_tests[i]);
 
     run_header_cancellation_test(&header_block_tests[0]);
+    test_enc_init();
 
     return 0;
 }

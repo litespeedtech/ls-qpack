@@ -319,8 +319,10 @@ main (int argc, char **argv)
         }
     }
 
+    tsu_buf_sz = sizeof(tsu_buf);
     if (0 != lsqpack_enc_init(&encoder, s_verbose ? stderr : NULL, dyn_table_size,
-                    dyn_table_size, max_risked_streams, enc_opts, NULL, NULL))
+                    dyn_table_size, max_risked_streams, enc_opts, tsu_buf,
+                    &tsu_buf_sz))
     {
         perror("lsqpack_enc_init");
         exit(EXIT_FAILURE);
