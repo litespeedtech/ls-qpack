@@ -348,6 +348,7 @@ test_enc_init (void)
             assert(dec_sz > 0);
             assert((dec_buf[0] & 0xE0) == 0x20);
             p = dec_buf;
+            state.resume = 0;
             s = lsqpack_dec_int(&p, p + dec_sz, 5, &val, &state);
             assert(s == 0);
             assert(val == tests[i].our_max_size);
