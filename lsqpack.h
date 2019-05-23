@@ -46,8 +46,8 @@ typedef SSIZE_T ssize_t;
  * qpack-11 (if such draft ever published) will correspond to version 0.11.
  */
 #define LSQPACK_MAJOR_VERSION 0
-#define LSQPACK_MINOR_VERSION 7
-#define LSQPACK_PATCH_VERSION 2
+#define LSQPACK_MINOR_VERSION 8
+#define LSQPACK_PATCH_VERSION 0
 
 /** Let's start with four billion for now */
 typedef unsigned lsqpack_abs_id_t;
