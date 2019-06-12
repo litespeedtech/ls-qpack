@@ -15,7 +15,7 @@ we will use it in our own software products.
 
 ## API
 
-The API is documented in the header file, [include/lsqpack.h](include/lsqpack.h).
+The API is documented in the header file, [include/lsqpack.h](lsqpack.h).
 One example how it is used in real code can be seen in
 [lsquic-client](https://github.com/litespeedtech/lsquic-client).  (At the
 time of this writing, the IETF code is on a branch.  Looks for the latest.)
