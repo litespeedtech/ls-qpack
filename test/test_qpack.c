@@ -360,6 +360,83 @@ test_enc_init (void)
 }
 
 
+/* Test that push promise header does not use the dynamic table, nor does
+ * it update history.
+ */
+static void
+test_push_promise (void)
+{
+    struct lsqpack_enc enc;
+    ssize_t nw;
+    enum lsqpack_enc_status enc_st;
+    int s;
+    unsigned i;
+    const unsigned char *p;
+    uint64_t val;
+    struct lsqpack_dec_int_state state;
+    unsigned char dec_buf[LSQPACK_LONGEST_TSU];
+    unsigned char header_buf[HEADER_BUF_SZ], enc_buf[ENC_BUF_SZ],
+        prefix_buf[PREFIX_BUF_SZ];
+    size_t header_sz, enc_sz, dec_sz;
+
+    s = lsqpack_enc_init(&enc, stderr, 0x1000, 0x1000, 100, 0, dec_buf, &dec_sz);
+    assert(0 == s);
+
+    (void) dec_sz;  /* We don't care for this test */
+
+    s = lsqpack_enc_start_header(&enc, 0, 0);
+    assert(0 == s);
+    enc_sz = sizeof(enc_buf);
+    header_sz = sizeof(header_buf);
+    enc_st = lsqpack_enc_encode(&enc,
+            enc_buf, &enc_sz, header_buf, &header_sz,
+            ":method", 7, "dude!", 5, 0);
+    assert(LQES_OK == enc_st);
+    enc_sz = sizeof(enc_buf);
+    header_sz = sizeof(header_buf);
+    enc_st = lsqpack_enc_encode(&enc,
+            enc_buf, &enc_sz, header_buf, &header_sz,
+            ":method", 7, "dude!", 5, 0);
+    assert(LQES_OK == enc_st);
+    nw = lsqpack_enc_end_header(&enc, prefix_buf, sizeof(prefix_buf));
+    assert(2 == nw);
+    assert(!(prefix_buf[0] == 0 && prefix_buf[1] == 0)); /* Dynamic table used */
+
+    s = lsqpack_enc_start_header(&enc, 0, 0);
+    assert(0 == s);
+    enc_sz = sizeof(enc_buf);
+    header_sz = sizeof(header_buf);
+    enc_st = lsqpack_enc_encode(&enc,
+            enc_buf, &enc_sz, header_buf, &header_sz,
+            ":method", 7, "dude!", 5, LQEF_NO_HIST_UPD|LQEF_NO_DYN);
+    assert(LQES_OK == enc_st);
+    enc_sz = sizeof(enc_buf);
+    header_sz = sizeof(header_buf);
+    enc_st = lsqpack_enc_encode(&enc,
+            enc_buf, &enc_sz, header_buf, &header_sz,
+            ":method", 7, "where is my car?", 16, LQEF_NO_HIST_UPD|LQEF_NO_DYN);
+    nw = lsqpack_enc_end_header(&enc, prefix_buf, sizeof(prefix_buf));
+    assert(2 == nw);
+    assert(prefix_buf[0] == 0 && prefix_buf[1] == 0); /* Dynamic table not used */
+
+    /* Last check that history was not updated: */
+    s = lsqpack_enc_start_header(&enc, 4, 0);
+    assert(0 == s);
+    enc_sz = sizeof(enc_buf);
+    header_sz = sizeof(header_buf);
+    enc_st = lsqpack_enc_encode(&enc,
+            enc_buf, &enc_sz, header_buf, &header_sz,
+            ":method", 7, "where is my car?", 16, 0);
+    assert(enc_sz == 0);
+    assert(LQES_OK == enc_st);
+    nw = lsqpack_enc_end_header(&enc, prefix_buf, sizeof(prefix_buf));
+    assert(2 == nw);
+    assert(prefix_buf[0] == 0 && prefix_buf[1] == 0); /* Dynamic table not used */
+
+    lsqpack_enc_cleanup(&enc);
+}
+
+
 int
 main (void)
 {
@@ -371,6 +448,7 @@ main (void)
 
     run_header_cancellation_test(&header_block_tests[0]);
     test_enc_init();
+    test_push_promise();
 
     return 0;
 }

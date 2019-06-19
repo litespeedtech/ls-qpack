@@ -47,7 +47,7 @@ typedef SSIZE_T ssize_t;
  */
 #define LSQPACK_MAJOR_VERSION 0
 #define LSQPACK_MINOR_VERSION 8
-#define LSQPACK_PATCH_VERSION 0
+#define LSQPACK_PATCH_VERSION 1
 
 /** Let's start with four billion for now */
 typedef unsigned lsqpack_abs_id_t;
@@ -168,6 +168,16 @@ enum lsqpack_enc_flags
      * in the header block.  Implies LQEF_NO_INDEX.
      */
     LQEF_NEVER_INDEX = 1 << 1,
+    /**
+     * Do not update history.
+     */
+    LQEF_NO_HIST_UPD = 1 << 2,
+    /**
+     * Do not use the dynamic table.  This is stricter than LQEF_NO_INDEX:
+     * this means that the dynamic table will be neither referenced nor
+     * modified.
+     */
+    LQEF_NO_DYN      = 1 << 3,
 };
 
 /**

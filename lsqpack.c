@@ -1517,9 +1517,11 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         id = 0;
 #endif
 
-    use_dyn_table = enc_use_dynamic_table(enc);
+    use_dyn_table = !(flags & LQEF_NO_DYN)
+        && enc_use_dynamic_table(enc)
+        ;
 
-    index = !(flags & (LQEF_NO_INDEX|LQEF_NEVER_INDEX))
+    index = !(flags & (LQEF_NO_INDEX|LQEF_NEVER_INDEX|LQEF_NO_DYN))
         && use_dyn_table
         && enc->qpe_ins_count < LSQPACK_MAX_ABS_ID
         ;
@@ -1528,8 +1530,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         || enc->qpe_cur_header.others_at_risk
         || enc->qpe_cur_streams_at_risk < enc->qpe_max_risked_streams;
 
-    /* Add header to history if it exists */
-    if (enc->qpe_hist)
+    if (enc->qpe_hist && !(flags & LQEF_NO_HIST_UPD))
     {
         ++enc->qpe_cur_header.n_hdr_added_to_hist;
         if (enc->qpe_cur_header.n_hdr_added_to_hist > enc->qpe_hist->ehi_nels)
