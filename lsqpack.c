@@ -1180,15 +1180,15 @@ lsqpack_enc_header_data_prefix_size (const struct lsqpack_enc *enc)
 }
 
 
-int 
+int
 lsqpack_enc_cancel_header (struct lsqpack_enc *enc)
 {
     /* No header has been started. */
     if (!(enc->qpe_flags & LSQPACK_ENC_HEADER))
         return -1;
 
-    /* Cancellation is not (yet) allowed if the dynamic table is used since 
-     * ls-qpack's state is changed when the dynamic table is used. 
+    /* Cancellation is not (yet) allowed if the dynamic table is used since
+     * ls-qpack's state is changed when the dynamic table is used.
      */
     if (enc->qpe_cur_header.hinfo && HINFO_IDS_SET(enc->qpe_cur_header.hinfo))
         return -1;
@@ -2040,7 +2040,7 @@ enc_proc_table_synch (struct lsqpack_enc *enc, uint64_t ins_count)
 
     if (ins_count > LSQPACK_MAX_ABS_ID)
     {
-	    /* We never insert this many */
+        /* We never insert this many */
         E_INFO("insertion count too high: %"PRIu64, ins_count);
         return -1;
     }
@@ -2868,8 +2868,8 @@ hset_add_static_nameref_entry (struct header_block_read_ctx *read_ctx,
 {
     struct header_internal *hint;
 
-	hint = allocate_hint(read_ctx);
-	if (hint)
+    hint = allocate_hint(read_ctx);
+    if (hint)
     {
         hint->hi_uhead.qh_name      = static_table[ idx ].name;
         hint->hi_uhead.qh_name_len  = static_table[ idx ].name_len;
@@ -2895,8 +2895,8 @@ hset_add_dynamic_nameref_entry (struct header_block_read_ctx *read_ctx,
 {
     struct header_internal *hint;
 
-	hint = allocate_hint(read_ctx);
-	if (hint)
+    hint = allocate_hint(read_ctx);
+    if (hint)
     {
         hint->hi_uhead.qh_name      = DTE_NAME(entry);
         hint->hi_uhead.qh_name_len  = entry->dte_name_len;
@@ -2922,8 +2922,8 @@ hset_add_literal_entry (struct header_block_read_ctx *read_ctx,
 {
     struct header_internal *hint;
 
-	hint = allocate_hint(read_ctx);
-	if (hint)
+    hint = allocate_hint(read_ctx);
+    if (hint)
     {
         hint->hi_uhead.qh_name      = nameandval;
         hint->hi_uhead.qh_name_len  = name_len;
@@ -4138,7 +4138,7 @@ qdec_process_blocked_headers (struct lsqpack_dec *dec)
             TAILQ_REMOVE(&dec->qpd_blocked_headers[id], read_ctx,
                                                             hbrc_next_blocked);
             --dec->qpd_n_blocked;
-            D_DEBUG("header block for stream %"PRIu64" has become unblocked",   
+            D_DEBUG("header block for stream %"PRIu64" has become unblocked",
                 read_ctx->hbrc_stream_id);
             dec->qpd_hblock_unblocked(read_ctx->hbrc_hblock);
         }
