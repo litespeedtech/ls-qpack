@@ -2640,6 +2640,9 @@ struct header_block_read_ctx
         HBRC_BLOCKED            = 1 << 2,
         HBRC_DINST              = 1 << 3,
         HBRC_ON_LIST            = 1 << 4,
+#define LARGEST_USED_SHIFT 5
+        HBRC_LARGEST_REF_USED   = 1 << LARGEST_USED_SHIFT,
+        HBRC_DYN_USED_IN_ERR    = 1 << 6,
     }                                   hbrc_flags;
 
     struct hbrc_buf {
@@ -3042,6 +3045,18 @@ lsqpack_huff_decode (const unsigned char *src, int src_len,
 }
 
 
+static void
+check_dyn_table_errors (struct header_block_read_ctx *read_ctx,
+                                                        lsqpack_abs_id_t id)
+{
+    if (read_ctx->hbrc_flags & HBRC_LARGEST_REF_SET)
+        read_ctx->hbrc_flags |=
+            (id == read_ctx->hbrc_largest_ref) << LARGEST_USED_SHIFT;
+    else
+        read_ctx->hbrc_flags |= HBRC_DYN_USED_IN_ERR;
+}
+
+
 static enum lsqpack_read_header_status
 parse_header_data (struct lsqpack_dec *dec,
         struct header_block_read_ctx *read_ctx, const unsigned char *buf,
@@ -3132,8 +3147,11 @@ parse_header_data (struct lsqpack_dec *dec,
                 if (IHF.is_static)
                     r = hset_add_static_entry(dec, read_ctx, IHF.value);
                 else
-                    r = hset_add_dynamic_entry(dec, read_ctx,
-                            (lsqpack_abs_id_t) ID_MINUS(read_ctx->hbrc_base_index, IHF.value));
+                {
+                    value = ID_MINUS(read_ctx->hbrc_base_index, IHF.value);
+                    r = hset_add_dynamic_entry(dec, read_ctx, value);
+                    check_dyn_table_errors(read_ctx, value);
+                }
                 if (r == 0)
                 {
                     read_ctx->hbrc_parse_ctx_u.data.state
@@ -3163,13 +3181,14 @@ parse_header_data (struct lsqpack_dec *dec,
                 }
                 else
                 {
+                    value = ID_MINUS(read_ctx->hbrc_base_index, value);
                     LFINR.name_ref.dyn_entry
-                        = qdec_get_table_entry_abs(dec,
-                            ID_MINUS(read_ctx->hbrc_base_index, value));
+                        = qdec_get_table_entry_abs(dec, value);
                     if (LFINR.name_ref.dyn_entry)
                         ++LFINR.name_ref.dyn_entry->dte_refcnt;
                     else
                         RETURN_ERROR();
+                    check_dyn_table_errors(read_ctx, value);
                 }
                 read_ctx->hbrc_parse_ctx_u.data.state
                                     = DATA_STATE_BEGIN_READ_LFINR_VAL_LEN;
@@ -3507,6 +3526,7 @@ parse_header_data (struct lsqpack_dec *dec,
                 if (LFPBNR.reffed_entry)
                 {
                     ++LFPBNR.reffed_entry->dte_refcnt;
+                    check_dyn_table_errors(read_ctx, value);
                     read_ctx->hbrc_parse_ctx_u.data.state
                                         = DATA_STATE_BEGIN_READ_LFPBNR_VAL_LEN;
                     break;
@@ -3640,8 +3660,9 @@ parse_header_data (struct lsqpack_dec *dec,
                                                         &IPBI.dec_int_state);
             if (r == 0)
             {
-                r = hset_add_dynamic_entry(dec, read_ctx,
-                        (lsqpack_abs_id_t) ID_PLUS(read_ctx->hbrc_base_index, IPBI.value + 1));
+                value = ID_PLUS(read_ctx->hbrc_base_index, IPBI.value + 1);
+                r = hset_add_dynamic_entry(dec, read_ctx, value);
+                check_dyn_table_errors(read_ctx, value);
                 if (r == 0)
                 {
                     read_ctx->hbrc_parse_ctx_u.data.state
@@ -3666,7 +3687,15 @@ parse_header_data (struct lsqpack_dec *dec,
         return LQRHS_NEED;
     else if (read_ctx->hbrc_parse_ctx_u.data.state
                                             == DATA_STATE_NEXT_INSTRUCTION)
+    {
+        if ((read_ctx->hbrc_flags
+                & (HBRC_LARGEST_REF_SET|HBRC_LARGEST_REF_USED))
+                                                    == HBRC_LARGEST_REF_SET)
+            RETURN_ERROR();
+        if (read_ctx->hbrc_flags & HBRC_DYN_USED_IN_ERR)
+            RETURN_ERROR();
         return LQRHS_DONE;
+    }
     else
         RETURN_ERROR();
 
