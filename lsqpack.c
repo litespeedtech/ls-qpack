@@ -2911,6 +2911,7 @@ hset_add_dynamic_nameref_entry (struct header_block_read_ctx *read_ctx,
         else
             hint->hi_uhead.qh_flags = 0;
         hint->hi_flags = HI_OWN_VALUE;
+        hint->hi_entry = entry;
         ++entry->dte_refcnt;
         return 0;
     }
