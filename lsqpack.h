@@ -124,14 +124,13 @@ lsqpack_enc_init (struct lsqpack_enc *,
     unsigned dyn_table_size,
     unsigned max_risked_streams, enum lsqpack_enc_opts,
     /**
-     * If `dyn_table_size' is smaller than `max_table_size', TSU instruction
-     * is generated and placed into `tsu_buf'.  `tsu_buf_sz' parameter is
+     * If `dyn_table_size' is not zero, Set Dynamic Table Capacity instruction
+     * is generated and placed into `sdtc_buf'.  `sdtc_buf_sz' parameter is
      * used both for input and output.
      *
-     * If the two table sizes are the same size, `tsu_buf' and `tsu_buf_sz'
-     * are optional.
+     * If `dyn_table_size' is zero, `sdtc_buf' and `sdtc_buf_sz' are optional.
      */
-    unsigned char *tsu_buf, size_t *tsu_buf_sz);
+    unsigned char *sdtc_buf, size_t *sdtc_buf_sz);
 
 /**
  * Set table size to `capacity'.  If necessary, TSU instruction is generated
