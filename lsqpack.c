@@ -554,7 +554,7 @@ lsqpack_enc_init (struct lsqpack_enc *enc, void *logger_ctx,
 
     if (dyn_table_size != LSQPACK_DEF_DYN_TABLE_SIZE)
     {
-        if (!(tsu_buf && tsu_buf_sz))
+        if (!(tsu_buf && tsu_buf_sz && *tsu_buf_sz))
         {
             errno = EINVAL;
             return -1;
