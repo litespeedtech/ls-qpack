@@ -2559,38 +2559,6 @@ enum {
 };
 
 
-void
-lsqpack_dec_cleanup (struct lsqpack_dec *dec)
-{
-    struct lsqpack_dec_table_entry *entry;
-
-    /* TODO: free blocked streams */
-
-    /* TODO: mark unreturned header sets */
-
-    if (dec->qpd_enc_state.resume >= DEI_WINR_READ_NAME_IDX
-            && dec->qpd_enc_state.resume <= DEI_WINR_READ_VALUE_HUFFMAN)
-    {
-        if (dec->qpd_enc_state.ctx_u.with_namref.entry)
-            free(dec->qpd_enc_state.ctx_u.with_namref.entry);
-    }
-    else if (dec->qpd_enc_state.resume >= DEI_WONR_READ_NAME_LEN
-            && dec->qpd_enc_state.resume <= DEI_WONR_READ_VALUE_PLAIN)
-    {
-        if (dec->qpd_enc_state.ctx_u.wo_namref.entry)
-            free(dec->qpd_enc_state.ctx_u.wo_namref.entry);
-    }
-
-    while (!ringbuf_empty(&dec->qpd_dyn_table))
-    {
-        entry = ringbuf_advance_tail(&dec->qpd_dyn_table);
-        qdec_decref_entry(entry);
-    }
-    ringbuf_cleanup(&dec->qpd_dyn_table);
-    D_DEBUG("cleaned up");
-}
-
-
 enum dec_inst_type
 {
     DIT_READ_CTX_ACK,
@@ -2766,6 +2734,100 @@ struct header_block_read_ctx
         }                                       data;
     }                                   hbrc_parse_ctx_u;
 };
+
+
+#define IHF read_ctx->hbrc_parse_ctx_u.data.u.ihf
+#define IPBI read_ctx->hbrc_parse_ctx_u.data.u.ipbi
+#define LFINR read_ctx->hbrc_parse_ctx_u.data.u.lfinr
+#define LFONR read_ctx->hbrc_parse_ctx_u.data.u.lfonr
+#define LFPBNR read_ctx->hbrc_parse_ctx_u.data.u.lfpbnr
+
+
+static void
+cleanup_read_ctx (struct header_block_read_ctx *read_ctx)
+{
+    switch (read_ctx->hbrc_parse_ctx_u.data.state)
+    {
+    case DATA_STATE_NEXT_INSTRUCTION:
+    case DATA_STATE_READ_IHF_IDX:
+    case DATA_STATE_READ_IPBI_IDX:
+        break;
+    case DATA_STATE_READ_LFINR_IDX:
+    case DATA_STATE_BEGIN_READ_LFINR_VAL_LEN:
+    case DATA_STATE_READ_LFINR_VAL_LEN:
+    case DATA_STATE_LFINR_READ_VAL_HUFFMAN:
+    case DATA_STATE_LFINR_READ_VAL_PLAIN:
+        if (!LFINR.is_static && LFINR.name_ref.dyn_entry)
+            qdec_decref_entry(LFINR.name_ref.dyn_entry);
+        if (LFINR.value)
+            free(LFINR.value);
+        break;
+    case DATA_STATE_READ_LFONR_NAME_LEN:
+        break;
+    case DATA_STATE_READ_LFONR_NAME_HUFFMAN:
+    case DATA_STATE_READ_LFONR_NAME_PLAIN:
+    case DATA_STATE_BEGIN_READ_LFONR_VAL_LEN:
+    case DATA_STATE_READ_LFONR_VAL_LEN:
+    case DATA_STATE_READ_LFONR_VAL_HUFFMAN:
+    case DATA_STATE_READ_LFONR_VAL_PLAIN:
+        if (LFONR.name)
+            free(LFONR.name);
+        break;
+    case DATA_STATE_READ_LFPBNR_IDX:
+        break;
+    case DATA_STATE_BEGIN_READ_LFPBNR_VAL_LEN:
+    case DATA_STATE_READ_LFPBNR_VAL_LEN:
+        if (LFPBNR.reffed_entry)
+            qdec_decref_entry(LFPBNR.reffed_entry);
+        break;
+    case DATA_STATE_LFPBNR_READ_VAL_HUFFMAN:
+    case DATA_STATE_LFPBNR_READ_VAL_PLAIN:
+        if (LFPBNR.reffed_entry)
+            qdec_decref_entry(LFPBNR.reffed_entry);
+        if (LFPBNR.value)
+            free(LFPBNR.value);
+        break;
+    }
+}
+
+
+void
+lsqpack_dec_cleanup (struct lsqpack_dec *dec)
+{
+    struct lsqpack_dec_table_entry *entry;
+    struct header_block_read_ctx *read_ctx, *next_read_ctx;
+
+    for (read_ctx = TAILQ_FIRST(&dec->qpd_hbrcs); read_ctx;
+                                                    read_ctx = next_read_ctx)
+    {
+        next_read_ctx = TAILQ_NEXT(read_ctx, hbrc_next_all);
+        cleanup_read_ctx(read_ctx);
+        free(read_ctx);
+    }
+
+    /* TODO: mark unreturned header sets */
+
+    if (dec->qpd_enc_state.resume >= DEI_WINR_READ_NAME_IDX
+            && dec->qpd_enc_state.resume <= DEI_WINR_READ_VALUE_HUFFMAN)
+    {
+        if (dec->qpd_enc_state.ctx_u.with_namref.entry)
+            free(dec->qpd_enc_state.ctx_u.with_namref.entry);
+    }
+    else if (dec->qpd_enc_state.resume >= DEI_WONR_READ_NAME_LEN
+            && dec->qpd_enc_state.resume <= DEI_WONR_READ_VALUE_PLAIN)
+    {
+        if (dec->qpd_enc_state.ctx_u.wo_namref.entry)
+            free(dec->qpd_enc_state.ctx_u.wo_namref.entry);
+    }
+
+    while (!ringbuf_empty(&dec->qpd_dyn_table))
+    {
+        entry = ringbuf_advance_tail(&dec->qpd_dyn_table);
+        qdec_decref_entry(entry);
+    }
+    ringbuf_cleanup(&dec->qpd_dyn_table);
+    D_DEBUG("cleaned up");
+}
 
 
 struct header_internal
@@ -3072,12 +3134,6 @@ parse_header_data (struct lsqpack_dec *dec,
     int r;
 
 #define RETURN_ERROR() do { dec->qpd_err.line = __LINE__; goto err; } while (0)
-
-#define IHF read_ctx->hbrc_parse_ctx_u.data.u.ihf
-#define IPBI read_ctx->hbrc_parse_ctx_u.data.u.ipbi
-#define LFINR read_ctx->hbrc_parse_ctx_u.data.u.lfinr
-#define LFONR read_ctx->hbrc_parse_ctx_u.data.u.lfonr
-#define LFPBNR read_ctx->hbrc_parse_ctx_u.data.u.lfpbnr
 
     while (buf < end)
     {
@@ -3928,13 +3984,12 @@ destroy_header_block_read_ctx (struct lsqpack_dec *dec,
 }
 
 
-static int
+static void
 qdec_insert_header_block (struct lsqpack_dec *dec,
                         struct header_block_read_ctx *read_ctx)
 {
     TAILQ_INSERT_TAIL(&dec->qpd_hbrcs, read_ctx, hbrc_next_all);
     read_ctx->hbrc_flags |= HBRC_ON_LIST;
-    return 0;
 }
 
 
@@ -4027,9 +4082,6 @@ qdec_header_process (struct lsqpack_dec *dec,
     switch (st)
     {
     case LQRHS_DONE:
-        if (read_ctx->hbrc_flags & HBRC_ON_LIST)
-            qdec_remove_header_block(dec, read_ctx);
-        *hset = read_ctx->hbrc_header_set;
         if ((read_ctx->hbrc_flags & HBRC_LARGEST_REF_SET)
                                                     && dec_buf && dec_buf_sz)
         {
@@ -4038,31 +4090,37 @@ qdec_header_process (struct lsqpack_dec *dec,
                 qdec_maybe_update_largest_known(dec,
                                                 read_ctx->hbrc_largest_ref);
             else
-                return LQRHS_ERROR;
+            {
+                st = LQRHS_ERROR;
+                break;
+            }
         }
         else if (dec_buf_sz)
             *dec_buf_sz = 0;
         *buf = *buf + read_ctx->hbrc_buf.off;
+        *hset = read_ctx->hbrc_header_set;
         D_DEBUG("header block for stream %"PRIu64" is done",
                                                     read_ctx->hbrc_stream_id);
-        return LQRHS_DONE;
+        break;
     case LQRHS_NEED:
     case LQRHS_BLOCKED:
         if (!(read_ctx->hbrc_flags & HBRC_ON_LIST))
         {
             read_ctx_copy = malloc(sizeof(*read_ctx_copy));
             if (!read_ctx_copy)
-                return LQRHS_ERROR;
+            {
+                st = LQRHS_ERROR;
+                break;
+            }
             memcpy(read_ctx_copy, read_ctx, sizeof(*read_ctx));
             read_ctx = read_ctx_copy;
-            if (0 != qdec_insert_header_block(dec, read_ctx))
-            {
-                free(read_ctx_copy);
-                return LQRHS_ERROR;
-            }
+            qdec_insert_header_block(dec, read_ctx);
         }
         if (st == LQRHS_BLOCKED && 0 != stash_blocked_header(dec, read_ctx))
-            return LQRHS_ERROR;
+        {
+            st = LQRHS_ERROR;
+            break;
+        }
         *buf = *buf + read_ctx->hbrc_buf.off;
         if (st == LQRHS_NEED)
             D_DEBUG("header block for stream %"PRIu64" needs more bytes",
@@ -4075,8 +4133,19 @@ qdec_header_process (struct lsqpack_dec *dec,
         assert(st == LQRHS_ERROR);
         D_DEBUG("header block for stream %"PRIu64" has had an error",
                                                     read_ctx->hbrc_stream_id);
-        return LQRHS_ERROR;
+        break;
     }
+
+    if (read_ctx->hbrc_flags & HBRC_ON_LIST)
+    {
+        qdec_remove_header_block(dec, read_ctx);
+        cleanup_read_ctx(read_ctx);
+        free(read_ctx);
+    }
+    else
+        cleanup_read_ctx(read_ctx);
+
+    return st;
 }
 
 
