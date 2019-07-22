@@ -379,6 +379,7 @@ test_push_promise (void)
         prefix_buf[PREFIX_BUF_SZ];
     size_t header_sz, enc_sz, dec_sz;
 
+    dec_sz = sizeof(dec_buf);
     s = lsqpack_enc_init(&enc, stderr, 0x1000, 0x1000, 100, 0, dec_buf, &dec_sz);
     assert(0 == s);
 
