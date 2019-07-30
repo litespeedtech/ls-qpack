@@ -3953,9 +3953,7 @@ destroy_header_block_read_ctx (struct lsqpack_dec *dec,
         TAILQ_REMOVE(&dec->qpd_blocked_headers[id], read_ctx, hbrc_next_blocked);
         --dec->qpd_n_blocked;
     }
-    /* TODO: there may be partial entries -- depending on state -- that also
-     * need to be freed.
-     */
+    cleanup_read_ctx(read_ctx);
     free(read_ctx);
 }
 
