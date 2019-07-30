@@ -541,9 +541,7 @@ lsqpack_enc_init (struct lsqpack_enc *enc, void *logger_ctx,
     unsigned nbits = 2;
     unsigned i;
 
-    if (dyn_table_size > LSQPACK_MAX_DYN_TABLE_SIZE ||
-        max_risked_streams > LSQPACK_MAX_MAX_RISKED_STREAMS ||
-        dyn_table_size > max_table_size)
+    if (dyn_table_size > max_table_size)
     {
         errno = EINVAL;
         return -1;
