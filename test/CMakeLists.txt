@@ -10,7 +10,7 @@ function(lsqpack_add_test TARGET)
             ../wincompat/getopt1.c
         )
     else()
-        target_link_libraries(${TARGET} PRIVATE m)
+        target_link_libraries(test_${TARGET} PRIVATE m)
     endif()
 
     add_test(${TARGET} test_${TARGET})
