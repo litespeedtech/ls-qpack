@@ -27,6 +27,7 @@ SOFTWARE.
 
 #include <assert.h>
 #include <errno.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,6 +43,7 @@ SOFTWARE.
 #endif
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
 
 static unsigned char *
 qenc_huffman_enc (const unsigned char *, const unsigned char *const, unsigned char *);
@@ -376,6 +378,44 @@ qenc_hist_new (unsigned nelem)
 
 
 static void
+qenc_hist_update_size (struct lsqpack_enc_hist *hist, unsigned new_size)
+{
+    struct hist_el *els;
+    unsigned first, count, i, j;
+
+    if (new_size == 0)
+    {
+        hist->ehi_nels = 0;
+        hist->ehi_idx = 0;
+        hist->ehi_wrapped = 0;
+        return;
+    }
+
+    els = malloc(sizeof(els[0]) * (new_size + 1));
+    if (!els)
+        return;
+
+    if (hist->ehi_wrapped)
+    {
+        first = (hist->ehi_idx + 1) % hist->ehi_nels;
+        count = hist->ehi_nels;
+    }
+    else
+    {
+        first = 0;
+        count = hist->ehi_idx;
+    }
+    for (i = 0, j = 0; count > 0 && j < new_size; ++i, ++j, --count)
+        els[j] = hist->ehi_els[ (first + i) % hist->ehi_nels ];
+    hist->ehi_nels = new_size;
+    hist->ehi_idx = j % new_size;
+    hist->ehi_wrapped = hist->ehi_idx == 0;
+    free(hist->ehi_els);
+    hist->ehi_els = els;
+}
+
+
+static void
 qenc_hist_add (struct lsqpack_enc_hist *hist, unsigned name_hash,
                                                     unsigned nameval_hash)
 {
@@ -389,39 +429,6 @@ qenc_hist_add (struct lsqpack_enc_hist *hist, unsigned name_hash,
 }
 
 
-static void
-qenc_grow_history (struct lsqpack_enc_hist *hist)
-{
-    struct hist_el *els;
-    unsigned nelem;
-
-    if (0 == hist->ehi_nels)
-        return;
-
-    nelem = hist->ehi_nels + 4;
-    els = malloc(sizeof(els[0]) * (nelem + 1));
-    if (!els)
-        return; /* Doing nothing is the correct graceful fallback */
-
-    assert(hist->ehi_wrapped);
-    memcpy(els, hist->ehi_els + hist->ehi_idx,
-            sizeof(els[0]) * (hist->ehi_nels - hist->ehi_idx));
-    memcpy(els + (hist->ehi_nels - hist->ehi_idx), hist->ehi_els,
-            sizeof(els[0]) * hist->ehi_idx);
-    hist->ehi_wrapped = 0;
-    hist->ehi_idx = hist->ehi_nels;
-    hist->ehi_nels = nelem;
-    free(hist->ehi_els);
-    hist->ehi_els = els;
-}
-
-
-/* TODO: the number of history entries to search should be approximately
- * equal to the average number of entries in the dynamic table instead of
- * the maximum possible size.  We do not want to index entries that appear
- * with a period longer than the number of entries: this means we will not
- * be able to use those entries.
- */
 static int
 qenc_hist_seen_nameval (struct lsqpack_enc_hist *hist, unsigned nameval_hash)
 {
@@ -542,7 +549,12 @@ lsqpack_enc_init (struct lsqpack_enc *enc, void *logger_ctx,
 
     if (!(enc_opts & LSQPACK_ENC_OPT_IX_AGGR))
     {
-        hist = qenc_hist_new(dyn_table_size / DYNAMIC_ENTRY_OVERHEAD);
+        hist = qenc_hist_new(MAX(
+            /* Initial guess at number of entries in dynamic table: */
+            dyn_table_size / DYNAMIC_ENTRY_OVERHEAD / 3,
+            /* Initial guess at number of header fields per set: */
+            12
+        ));
         if (!hist)
             return -1;
         enc->qpe_hist_add          = qenc_hist_add;
@@ -929,6 +941,35 @@ qenc_effective_fill (const struct lsqpack_enc *enc)
 
 
 static void
+update_ema (float *val, unsigned new)
+{
+    if (*val)
+        *val = (new - *val) * 0.4 + *val;
+    else
+        *val = new;
+}
+
+
+static void
+qenc_sample_table_size (struct lsqpack_enc *enc)
+{
+    update_ema(&enc->qpe_table_nelem_ema, enc->qpe_nelem);
+    E_DEBUG("table size actual: %u; exponential moving average: %.3f",
+                                    enc->qpe_nelem, enc->qpe_table_nelem_ema);
+}
+
+
+static void
+qenc_sample_header_count (struct lsqpack_enc *enc)
+{
+    update_ema(&enc->qpe_header_count_ema,
+                                    enc->qpe_cur_header.n_hdr_added_to_hist);
+    E_DEBUG("header count actual: %u; exponential moving average: %.3f",
+        enc->qpe_cur_header.n_hdr_added_to_hist, enc->qpe_header_count_ema);
+}
+
+
+static void
 qenc_remove_overflow_entries (struct lsqpack_enc *enc)
 {
     const struct lsqpack_enc_table_entry *entry;
@@ -979,6 +1020,12 @@ qenc_remove_overflow_entries (struct lsqpack_enc *enc)
             E_DEBUG("fill: %.2f",
                 (float) enc->qpe_cur_bytes_used / (float) enc->qpe_cur_max_capacity);
     }
+
+    /* It's important to sample only when entries have been dropped: that
+     * indicates that the table is being cycled through.
+     */
+    if (dropped && enc->qpe_hist)
+        qenc_sample_table_size(enc);
 }
 
 
@@ -1171,13 +1218,37 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
     const struct lsqpack_header_info *hinfo;
     unsigned char *dst, *end;
     lsqpack_abs_id_t diff, encoded_largest_ref;
-    unsigned sign;
+    unsigned sign, nelem;
+    float count_diff;
 
     if (sz == 0)
         return -1;
 
     if (!(enc->qpe_flags & LSQPACK_ENC_HEADER))
         return -1;
+
+    if (enc->qpe_hist)
+    {
+        qenc_sample_header_count(enc);
+        if (enc->qpe_table_nelem_ema
+            /* History size should not be smaller than the average number of
+             * header fields in a header set.
+             */
+            && enc->qpe_table_nelem_ema > enc->qpe_header_count_ema)
+        {
+            count_diff = fabsf(enc->qpe_hist->ehi_nels
+                                                - enc->qpe_table_nelem_ema);
+            /* If difference is 2 or 10%: */
+            if (count_diff >= 1.5
+                            || count_diff / enc->qpe_table_nelem_ema >= 0.1)
+            {
+                nelem = (unsigned) round(enc->qpe_table_nelem_ema);
+                E_DEBUG("history size change from %u to %u",
+                        enc->qpe_hist->ehi_nels, nelem);
+                qenc_hist_update_size(enc->qpe_hist, nelem);
+            }
+        }
+    }
 
     if (enc->qpe_cur_header.hinfo && HINFO_IDS_SET(enc->qpe_cur_header.hinfo))
     {
@@ -1904,10 +1975,10 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     if (update_hist)
     {
         assert(enc->qpe_hist);
-        ++enc->qpe_cur_header.n_hdr_added_to_hist;
-        if (enc->qpe_cur_header.n_hdr_added_to_hist > enc->qpe_hist->ehi_nels)
-            qenc_grow_history(enc->qpe_hist);
+        if (enc->qpe_cur_header.n_hdr_added_to_hist >= enc->qpe_hist->ehi_nels)
+            qenc_hist_update_size(enc->qpe_hist, enc->qpe_hist->ehi_nels + 4);
         enc->qpe_hist_add(enc->qpe_hist, name_hash, nameval_hash);
+        ++enc->qpe_cur_header.n_hdr_added_to_hist;
     }
 
     enc->qpe_bytes_in += name_len + value_len;

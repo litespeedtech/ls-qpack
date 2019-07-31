@@ -524,6 +524,13 @@ struct lsqpack_enc
                                                         unsigned);
     int                       (*qpe_hist_seen_name)(struct lsqpack_enc_hist *,
                                                         unsigned);
+
+    /* Exponential moving averages (EMAs) of the number of elements in the
+     * dynamic table and the number of header fields in a single header set.
+     * These values are used to adjust history size.
+     */
+    float                       qpe_table_nelem_ema;
+    float                       qpe_header_count_ema;
 };
 
 struct lsqpack_ringbuf
