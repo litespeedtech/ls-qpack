@@ -426,29 +426,17 @@ static int
 qenc_hist_seen_nameval (struct lsqpack_enc_hist *hist, unsigned nameval_hash)
 {
     const struct hist_el *el;
-    unsigned prev_idx;
+    unsigned last_idx;
 
     if (hist->ehi_wrapped)
-    {
-        prev_idx = hist->ehi_idx > 0 ? hist->ehi_idx - 1 : hist->ehi_nels - 1;
-        assert(hist->ehi_els[ prev_idx ].he_nameval_hash == nameval_hash);
-        for (el = hist->ehi_els; el->he_nameval_hash != nameval_hash; ++el)
-            ;
-        if (el < &hist->ehi_els[ prev_idx ])
-            return 1;
-        hist->ehi_els[ hist->ehi_nels ].he_nameval_hash = nameval_hash;
-        for (++el; el->he_nameval_hash != nameval_hash; ++el)
-            ;
-        return el < &hist->ehi_els[ hist->ehi_nels ];
-    }
+        last_idx = hist->ehi_nels;
     else
-    {
-        prev_idx = hist->ehi_idx - 1;
-        assert(hist->ehi_els[ prev_idx ].he_nameval_hash == nameval_hash);
-        for (el = hist->ehi_els; el->he_nameval_hash != nameval_hash; ++el)
-            ;
-        return el < &hist->ehi_els[ prev_idx ];
-    }
+        last_idx = hist->ehi_idx;
+    hist->ehi_els[ last_idx ].he_nameval_hash = nameval_hash;
+
+    for (el = hist->ehi_els; el->he_nameval_hash != nameval_hash; ++el)
+        ;
+    return el < &hist->ehi_els[ last_idx ];
 }
 
 
@@ -456,29 +444,17 @@ static int
 qenc_hist_seen_name (struct lsqpack_enc_hist *hist, unsigned name_hash)
 {
     const struct hist_el *el;
-    unsigned prev_idx;
+    unsigned last_idx;
 
     if (hist->ehi_wrapped)
-    {
-        prev_idx = hist->ehi_idx > 0 ? hist->ehi_idx - 1 : hist->ehi_nels - 1;
-        assert(hist->ehi_els[ prev_idx ].he_name_hash == name_hash);
-        for (el = hist->ehi_els; el->he_name_hash != name_hash; ++el)
-            ;
-        if (el < &hist->ehi_els[ prev_idx ])
-            return 1;
-        hist->ehi_els[ hist->ehi_nels ].he_name_hash = name_hash;
-        for (++el; el->he_name_hash != name_hash; ++el)
-            ;
-        return el < &hist->ehi_els[ hist->ehi_nels ];
-    }
+        last_idx = hist->ehi_nels;
     else
-    {
-        prev_idx = hist->ehi_idx - 1;
-        assert(hist->ehi_els[ prev_idx ].he_name_hash == name_hash);
-        for (el = hist->ehi_els; el->he_name_hash != name_hash; ++el)
-            ;
-        return el < &hist->ehi_els[ prev_idx ];
-    }
+        last_idx = hist->ehi_idx;
+    hist->ehi_els[ last_idx ].he_name_hash = name_hash;
+
+    for (el = hist->ehi_els; el->he_name_hash != name_hash; ++el)
+        ;
+    return el < &hist->ehi_els[ last_idx ];
 }
 
 
@@ -1450,6 +1426,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     struct lsqpack_enc_table_entry *candidates[2];
     struct encode_program prog;
     int index, risk, use_dyn_table, static_id, enough_room, seen_nameval;
+    int update_hist;
     unsigned name_hash, nameval_hash, buckno;
     XXH32_state_t hash_state;
 
@@ -1487,6 +1464,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                     .ep_tab_action = ETA_NOOP,
                     .ep_flags      = 0,
         };
+        update_hist = 0;
 #if USE_USELESS_INITIALIZATION
         nameval_hash = 0;
         name_hash = 0;
@@ -1515,13 +1493,10 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         || enc->qpe_cur_header.others_at_risk
         || enc->qpe_cur_streams_at_risk < enc->qpe_max_risked_streams;
 
-    if (enc->qpe_hist && !(flags & LQEF_NO_HIST_UPD))
-    {
-        ++enc->qpe_cur_header.n_hdr_added_to_hist;
-        if (enc->qpe_cur_header.n_hdr_added_to_hist > enc->qpe_hist->ehi_nels)
-            qenc_grow_history(enc->qpe_hist);
-        enc->qpe_hist_add(enc->qpe_hist, name_hash, nameval_hash);
-    }
+    /* Add header to history if it exists.  Defer updating history until we
+     * know the function will return success.
+     */
+    update_hist = enc->qpe_hist != NULL && !(flags & LQEF_NO_HIST_UPD);
 
   restart:
     /* Look for a full match in the dynamic table */
@@ -1925,6 +1900,15 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     }
 
     qenc_remove_overflow_entries(enc);
+
+    if (update_hist)
+    {
+        assert(enc->qpe_hist);
+        ++enc->qpe_cur_header.n_hdr_added_to_hist;
+        if (enc->qpe_cur_header.n_hdr_added_to_hist > enc->qpe_hist->ehi_nels)
+            qenc_grow_history(enc->qpe_hist);
+        enc->qpe_hist_add(enc->qpe_hist, name_hash, nameval_hash);
+    }
 
     enc->qpe_bytes_in += name_len + value_len;
     enc->qpe_bytes_out += enc_sz + hea_sz;
