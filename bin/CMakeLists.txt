@@ -1,6 +1,6 @@
 function(lsqpack_add_executable TARGET)
     add_executable(${TARGET} "")
-    target_link_libraries(${TARGET} PRIVATE ls-qpack)
+    target_link_libraries(${TARGET} PRIVATE ls-qpack m)
 
     target_sources(${TARGET} PRIVATE ${TARGET}.c)
 

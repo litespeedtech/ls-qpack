@@ -1,7 +1,7 @@
 function(lsqpack_add_test TARGET)
     add_executable(test_${TARGET} "")
     target_sources(test_${TARGET} PRIVATE test_${TARGET}.c)
-    target_link_libraries(test_${TARGET} ls-qpack)
+    target_link_libraries(test_${TARGET} ls-qpack m)
 
     if(MSVC)
         target_include_directories(test_${TARGET} PRIVATE ../wincompat)
