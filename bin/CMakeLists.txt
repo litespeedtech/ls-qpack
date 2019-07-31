@@ -1,6 +1,6 @@
 function(lsqpack_add_executable TARGET)
     add_executable(${TARGET} "")
-    target_link_libraries(${TARGET} PRIVATE ls-qpack m)
+    target_link_libraries(${TARGET} PRIVATE ls-qpack)
 
     target_sources(${TARGET} PRIVATE ${TARGET}.c)
 
@@ -10,6 +10,8 @@ function(lsqpack_add_executable TARGET)
             ../wincompat/getopt.c 
             ../wincompat/getopt1.c
         )
+    else()
+        target_link_libraries(${TARGET} PRIVATE m)
     endif()
 endfunction()
 
