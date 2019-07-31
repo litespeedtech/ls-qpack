@@ -66,6 +66,7 @@ usage (const char *name)
 "   -S          Server mode.\n"
 "   -D          Do not emit \"Duplicate\" instructions.\n"
 "   -A          Aggressive indexing.\n"
+"   -M          Turn off memory guard.\n"
 "   -v          Verbose: print various messages to stderr.\n"
 "\n"
 "   -h          Print this help screen and exit\n"
@@ -259,7 +260,7 @@ main (int argc, char **argv)
     size_t tsu_buf_sz;
     unsigned char enc_buf[0x1000], hea_buf[0x1000], pref_buf[0x20];
 
-    while (-1 != (opt = getopt(argc, argv, "ADSa:i:no:s:t:hv")))
+    while (-1 != (opt = getopt(argc, argv, "ADMSa:i:no:s:t:hv")))
     {
         switch (opt)
         {
@@ -271,6 +272,9 @@ main (int argc, char **argv)
             break;
         case 'A':
             enc_opts |= LSQPACK_ENC_OPT_IX_AGGR;
+            break;
+        case 'M':
+            enc_opts |= LSQPACK_ENC_OPT_NO_MEM_GUARD;
             break;
         case 'n':
             ++process_annotations;

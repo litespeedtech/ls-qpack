@@ -86,6 +86,14 @@ enum lsqpack_enc_opts
      * so some initialization steps can be skipped.
      */
     LSQPACK_ENC_OPT_STAGE_2 = 1 << 3,
+
+    /**
+     * Turn off memory guard: keep on allocating state tracking oustanding
+     * headers even if they never get acknowledged.
+     *
+     * This is useful for some forms of testing.
+     */
+    LSQPACK_ENC_OPT_NO_MEM_GUARD = 1 << 4,
 };
 
 
@@ -447,6 +455,7 @@ struct lsqpack_enc
     enum {
         LSQPACK_ENC_HEADER  = 1 << 0,
         LSQPACK_ENC_USE_DUP = 1 << 1,
+        LSQPACK_ENC_NO_MEM_GUARD    = 1 << 2,
     }                           qpe_flags;
 
     unsigned                    qpe_cur_bytes_used;

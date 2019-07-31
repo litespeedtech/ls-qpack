@@ -291,8 +291,8 @@ enc_alloc_hinfo (struct lsqpack_enc *enc)
 
     if (!hiarr)
     {
-        /* Guards against tracking too much state */
-        if (enc->qpe_hinfo_arrs_count * sizeof(*hiarr)
+        if (0 == (enc->qpe_flags & LSQPACK_ENC_NO_MEM_GUARD)
+                && enc->qpe_hinfo_arrs_count * sizeof(*hiarr)
                                             >= enc->qpe_cur_max_capacity)
             return NULL;
         hiarr = malloc(sizeof(*hiarr));
@@ -611,6 +611,8 @@ lsqpack_enc_init (struct lsqpack_enc *enc, void *logger_ctx,
     enc->qpe_logger_ctx   = logger_ctx;
     if (enc_opts & LSQPACK_ENC_OPT_DUP)
         enc->qpe_flags   |= LSQPACK_ENC_USE_DUP;
+    if (enc_opts & LSQPACK_ENC_OPT_NO_MEM_GUARD)
+        enc->qpe_flags   |= LSQPACK_ENC_NO_MEM_GUARD;
     enc->qpe_hist         = hist;
     E_DEBUG("initialized.  opts: 0x%X; max capacity: %u; max risked "
         "streams: %u.", enc_opts, enc->qpe_cur_max_capacity,
