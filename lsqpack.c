@@ -5090,28 +5090,63 @@ qenc_huffman_enc (const unsigned char *src, const unsigned char *const src_end,
     unsigned char *dst)
 {
     uint64_t bits = 0;
-    int bits_left = 40;
+    unsigned bits_used = 0, adj;
     struct encode_el cur_enc_code;
 
     while (src != src_end)
     {
-        cur_enc_code = encode_table[(int)*src++];
-        assert(bits_left >= cur_enc_code.bits); //  (possible negative shift, undefined behavior)
-        bits |= (uint64_t)cur_enc_code.code << (bits_left - cur_enc_code.bits);
-        bits_left -= cur_enc_code.bits;
-        while (bits_left <= 32)
+        cur_enc_code = encode_table[*src++];
+        if (bits_used + cur_enc_code.bits <= 64)
         {
-            *dst++ = (unsigned char)(bits >> 32);
-            bits <<= 8;
-            bits_left += 8;
+  fill:     bits <<= cur_enc_code.bits;
+            bits |= cur_enc_code.code;
+            bits_used += cur_enc_code.bits;
+        }
+        else
+        {
+            adj = (bits_used + 7) & -8;     /* Round up to 8 */
+            bits <<= adj - bits_used;       /* Align to byte boundary */
+            switch (adj >> 3)
+            {                               /* Write out */
+            /* Longest code is 30 bits long, so we must have at least
+             * 65 - 30 = 35 bits.  Round up: 40 bits, or 5 bytes.
+             */
+            case 8: *dst++ = bits >> 56;
+            case 7: *dst++ = bits >> 48;
+            case 6: *dst++ = bits >> 40;
+            case 5: *dst++ = bits >> 32;
+                    *dst++ = bits >> 24;
+                    *dst++ = bits >> 16;
+                    *dst++ = bits >> 8;
+                    break;
+            default:
+                    assert(0);
+                    break;
+            }
+            *dst = bits;
+            dst += adj == bits_used;
+            bits >>= adj - bits_used;       /* Restore alignment */
+            bits_used &= 7;
+            goto fill;
         }
     }
 
-    if (bits_left != 40)
+    if (bits_used)
     {
-        assert(bits_left < 40 && bits_left > 0);
-        bits |= ((uint64_t)1 << bits_left) - 1;
-        *dst++ = (unsigned char)(bits >> 32);
+        adj = (bits_used + 7) & -8;     /* Round up to 8 */
+        bits <<= adj - bits_used;       /* Align to byte boundary */
+        bits |= ((1 << (adj - bits_used)) - 1);  /* EOF */
+        switch (adj >> 3)
+        {                               /* Write out */
+        case 8: *dst++ = bits >> 56;
+        case 7: *dst++ = bits >> 48;
+        case 6: *dst++ = bits >> 40;
+        case 5: *dst++ = bits >> 32;
+        case 4: *dst++ = bits >> 24;
+        case 3: *dst++ = bits >> 16;
+        case 2: *dst++ = bits >> 8;
+        default: *dst++ = bits;
+        }
     }
 
     return dst;
