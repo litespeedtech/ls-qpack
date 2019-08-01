@@ -256,7 +256,7 @@ main (int argc, char **argv)
     enum { ACK_NEVER, ACK_IMMEDIATE, } ack_mode = ACK_NEVER;
     int process_annotations = 0;
     char line_buf[0x1000];
-    unsigned char tsu_buf[LSQPACK_LONGEST_TSU];
+    unsigned char tsu_buf[LSQPACK_LONGEST_SDTC];
     size_t tsu_buf_sz;
     unsigned char enc_buf[0x1000], hea_buf[0x1000], pref_buf[0x20];
 
@@ -360,7 +360,7 @@ main (int argc, char **argv)
                     if (pref_sz > 0)
                         break;
                 }
-                assert(pref_sz <= lsqpack_enc_header_data_prefix_size(&encoder));
+                assert(pref_sz <= lsqpack_enc_header_block_prefix_size(&encoder));
                 if (pref_sz < 0)
                 {
                     fprintf(stderr, "end_header failed: %s", strerror(errno));

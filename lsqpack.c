@@ -1097,26 +1097,28 @@ lsqpack_enc_start_header (struct lsqpack_enc *enc, uint64_t stream_id,
 
 
 /*
- * Header data is prefixed with two integers, "Largest Reference" and
- * "Base Index".
+ * Each header block is prefixed with two integers.  The Required Insert
+ * Count is encoded as an integer with an 8-bit prefix.  The Base is encoded
+ * as sign- and-modulus integer, using a single sign bit and a value with a
+ * 7-bit prefix.
  *
  *   0   1   2   3   4   5   6   7
  * +---+---+---+---+---+---+---+---+
- * |     Largest Reference (8+)    |
+ * |   Required Insert Count (8+)  |
  * +---+---------------------------+
- * | S |   Delta Base Index (7+)   |
+ * | S |      Delta Base (7+)      |
  * +---+---------------------------+
  * |      Compressed Headers     ...
  * +-------------------------------+
  */
 size_t
-lsqpack_enc_header_data_prefix_size (const struct lsqpack_enc *enc)
+lsqpack_enc_header_block_prefix_size (const struct lsqpack_enc *enc)
 {
-    unsigned largest_ref_len, delta_base_idx_len;
+    unsigned req_ins_count_len, delta_base_len;
 
-    largest_ref_len = lsqpack_val2len(2 * enc->qpe_max_entries, 8);
-    delta_base_idx_len = lsqpack_val2len(2 * enc->qpe_max_entries, 7);
-    return largest_ref_len + delta_base_idx_len;
+    req_ins_count_len = lsqpack_val2len(2 * enc->qpe_max_entries, 8);
+    delta_base_len = lsqpack_val2len(2 * enc->qpe_max_entries, 7);
+    return req_ins_count_len + delta_base_len;
 }
 
 
@@ -1993,14 +1995,14 @@ enc_proc_header_ack (struct lsqpack_enc *enc, uint64_t stream_id)
 
 
 static int
-enc_proc_table_synch (struct lsqpack_enc *enc, uint64_t ins_count)
+enc_proc_ici (struct lsqpack_enc *enc, uint64_t ins_count)
 {
     lsqpack_abs_id_t max_acked;
 
-    E_DEBUG("got TSS instruction, count=%"PRIu64, ins_count);
+    E_DEBUG("got ICI instruction, count=%"PRIu64, ins_count);
     if (ins_count == 0)
     {
-        E_INFO("TSS=0 is an error");
+        E_INFO("ICI=0 is an error");
         return -1;
     }
 
@@ -2011,23 +2013,23 @@ enc_proc_table_synch (struct lsqpack_enc *enc, uint64_t ins_count)
         return -1;
     }
 
-    max_acked = (lsqpack_abs_id_t) ins_count + enc->qpe_last_tss;
+    max_acked = (lsqpack_abs_id_t) ins_count + enc->qpe_last_ici;
     if (max_acked > enc->qpe_ins_count)
     {
-        E_DEBUG("TSS: max_acked %u is larger than number of inserts %u",
+        E_DEBUG("ICI: max_acked %u is larger than number of inserts %u",
             max_acked, enc->qpe_ins_count);
         return -1;
     }
 
     if (max_acked > enc->qpe_max_acked_id)
     {
-        enc->qpe_last_tss = max_acked;
+        enc->qpe_last_ici = max_acked;
         enc->qpe_max_acked_id = max_acked;
         E_DEBUG("max acked ID is now %u", enc->qpe_max_acked_id);
     }
     else
     {
-        E_DEBUG("duplicate TSS: %u", max_acked);
+        E_DEBUG("duplicate ICI: %u", max_acked);
     }
     return 0;
 }
@@ -2188,10 +2190,10 @@ lsqpack_enc_decoder_in (struct lsqpack_enc *enc,
                 prefix_bits = 7;
                 enc->qpe_dec_stream_state.handler = enc_proc_header_ack;
             }
-            else if ((buf[0] & 0xC0) == 0)   /* Table State Synchronize */
+            else if ((buf[0] & 0xC0) == 0)  /* Insert Count Increment */
             {
                 prefix_bits = 6;
-                enc->qpe_dec_stream_state.handler = enc_proc_table_synch;
+                enc->qpe_dec_stream_state.handler = enc_proc_ici;
             }
             else                            /* Stream Cancellation */
             {
@@ -2588,17 +2590,17 @@ struct header_block_read_ctx
                 PREFIX_STATE_READ_DELTA_BASE_IDX,
             }                                               state;
             union {
-                /* Largest reference */
+                /* Required Insert Count */
                 struct {
                     struct lsqpack_dec_int_state    dec_int_state;
                     uint64_t                        value;
-                }                                               lar_ref;
-                /* Delta base index */
+                }                                               ric;
+                /* Delta Base */
                 struct {
                     struct lsqpack_dec_int_state    dec_int_state;
                     uint64_t                        value;
                     int                             sign;
-                }                                               base_idx;
+                }                                               delb;
             }                                               u;
         }                                       prefix;
         struct {
@@ -3738,16 +3740,18 @@ qdec_in_future (const struct lsqpack_dec *dec, lsqpack_abs_id_t id)
 
 
 /*
- * [draft-ietf-quic-qpack-03], Section 5.4.1:
+ * [draft-ietf-quic-qpack-09], Section 4.5.1.1:
  *
- *                                                                 If
- * Largest Reference is greater than zero, the encoder transforms it as
- * follows before encoding:
+ * The encoder transforms the Required Insert Count as follows before
+ * encoding:
  *
- *    LargestReference = LargestReference mod 2*MaxEntries + 1
+ *    if ReqInsertCount == 0:
+ *       EncInsertCount = 0
+ *    else:
+ *       EncInsertCount = (ReqInsertCount mod (2 * MaxEntries)) + 1
  */
 static lsqpack_abs_id_t
-dec_max_encoded_LR (const struct lsqpack_dec *dec)
+dec_max_encoded_RIC (const struct lsqpack_dec *dec)
 {
     return dec->qpd_max_entries * 2;
 }
@@ -3762,8 +3766,8 @@ parse_header_prefix (struct lsqpack_dec *dec,
     unsigned prefix_bits = ~0u;
     int r;
 
-#define LR read_ctx->hbrc_parse_ctx_u.prefix.u.lar_ref
-#define BI read_ctx->hbrc_parse_ctx_u.prefix.u.base_idx
+#define RIC read_ctx->hbrc_parse_ctx_u.prefix.u.ric
+#define DELB read_ctx->hbrc_parse_ctx_u.prefix.u.delb
 
     while (buf < end)
     {
@@ -3771,20 +3775,20 @@ parse_header_prefix (struct lsqpack_dec *dec,
         {
         case PREFIX_STATE_BEGIN_READING_LARGEST_REF:
             prefix_bits = 8;
-            BI.dec_int_state.resume = 0;
+            DELB.dec_int_state.resume = 0;
             read_ctx->hbrc_parse_ctx_u.prefix.state =
                                             PREFIX_STATE_READ_LARGEST_REF;
             /* Fall-through */
         case PREFIX_STATE_READ_LARGEST_REF:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &LR.value,
-                                                        &LR.dec_int_state);
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &RIC.value,
+                                                        &RIC.dec_int_state);
             if (r == 0)
             {
-                if (LR.value)
+                if (RIC.value)
                 {
-                    if (LR.value > dec_max_encoded_LR(dec))
+                    if (RIC.value > dec_max_encoded_RIC(dec))
                         return LQRHS_ERROR;
-                    read_ctx->hbrc_largest_ref = ID_MINUS(LR.value, 2);
+                    read_ctx->hbrc_largest_ref = ID_MINUS(RIC.value, 2);
                     read_ctx->hbrc_flags |=
                                     HBRC_LARGEST_REF_READ|HBRC_LARGEST_REF_SET;
                     read_ctx->hbrc_parse_ctx_u.prefix.state
@@ -3805,7 +3809,7 @@ parse_header_prefix (struct lsqpack_dec *dec,
             else if (r == -1)
             {
                 if (read_ctx->hbrc_orig_size - read_ctx->hbrc_size
-                                <= lsqpack_val2len(dec_max_encoded_LR(dec), 8))
+                                <= lsqpack_val2len(dec_max_encoded_RIC(dec), 8))
                     return LQRHS_NEED;
                 else
                     return LQRHS_ERROR;
@@ -3813,25 +3817,25 @@ parse_header_prefix (struct lsqpack_dec *dec,
             else
                 return LQRHS_ERROR;
         case PREFIX_STATE_BEGIN_READING_BASE_IDX:
-            BI.sign = (buf[0] & 0x80) > 0;
-            BI.dec_int_state.resume = 0;
+            DELB.sign = (buf[0] & 0x80) > 0;
+            DELB.dec_int_state.resume = 0;
             prefix_bits = 7;
             read_ctx->hbrc_parse_ctx_u.prefix.state =
                                             PREFIX_STATE_READ_DELTA_BASE_IDX;
             /* Fall-through */
         case PREFIX_STATE_READ_DELTA_BASE_IDX:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &BI.value,
-                                                        &BI.dec_int_state);
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &DELB.value,
+                                                        &DELB.dec_int_state);
             if (r == 0)
             {
                 if (read_ctx->hbrc_flags & HBRC_LARGEST_REF_SET)
                 {
-                    if (BI.sign)
+                    if (DELB.sign)
                         read_ctx->hbrc_base_index =
-                            ID_MINUS(read_ctx->hbrc_largest_ref, BI.value + 1);
+                            ID_MINUS(read_ctx->hbrc_largest_ref, DELB.value + 1);
                     else
                         read_ctx->hbrc_base_index =
-                                ID_PLUS(read_ctx->hbrc_largest_ref, BI.value);
+                                ID_PLUS(read_ctx->hbrc_largest_ref, DELB.value);
                 }
                 else    /* From qpack-03: "A header block that does not
                          * reference the dynamic table can use any value
@@ -3858,8 +3862,8 @@ parse_header_prefix (struct lsqpack_dec *dec,
         }
     }
 
-#undef LR
-#undef BI
+#undef RIC
+#undef DELB
 
     if (read_ctx->hbrc_size > 0)
         return LQRHS_NEED;
@@ -3950,13 +3954,12 @@ qdec_insert_header_block (struct lsqpack_dec *dec,
 }
 
 
-static int
+static void
 qdec_remove_header_block (struct lsqpack_dec *dec,
                         struct header_block_read_ctx *read_ctx)
 {
     TAILQ_REMOVE(&dec->qpd_hbrcs, read_ctx, hbrc_next_all);
     read_ctx->hbrc_flags &= ~HBRC_ON_LIST;
-    return 0;
 }
 
 
@@ -3993,7 +3996,7 @@ find_header_block_read_ctx (struct lsqpack_dec *dec, void *hblock)
 
 
 static int
-qdec_try_writing_hack (struct lsqpack_dec *dec, uint64_t stream_id,
+qdec_try_writing_header_ack (struct lsqpack_dec *dec, uint64_t stream_id,
                        unsigned char *dec_buf, size_t *dec_buf_sz)
 {
     unsigned char *p = dec_buf;
@@ -4042,7 +4045,7 @@ qdec_header_process (struct lsqpack_dec *dec,
         if ((read_ctx->hbrc_flags & HBRC_LARGEST_REF_SET)
                                                     && dec_buf && dec_buf_sz)
         {
-            if (0 == qdec_try_writing_hack(dec, read_ctx->hbrc_stream_id,
+            if (0 == qdec_try_writing_header_ack(dec, read_ctx->hbrc_stream_id,
                                                         dec_buf, dec_buf_sz))
                 qdec_maybe_update_largest_known(dec,
                                                 read_ctx->hbrc_largest_ref);
@@ -4203,14 +4206,14 @@ qdec_process_blocked_headers (struct lsqpack_dec *dec)
 
 
 int
-lsqpack_dec_tss_pending (const struct lsqpack_dec *dec)
+lsqpack_dec_ici_pending (const struct lsqpack_dec *dec)
 {
     return dec->qpd_last_id != dec->qpd_largest_known_id;
 }
 
 
 ssize_t
-lsqpack_dec_write_tss (struct lsqpack_dec *dec, unsigned char *buf, size_t sz)
+lsqpack_dec_write_ici (struct lsqpack_dec *dec, unsigned char *buf, size_t sz)
 {
     unsigned char *p;
     unsigned count;
@@ -4222,7 +4225,7 @@ lsqpack_dec_write_tss (struct lsqpack_dec *dec, unsigned char *buf, size_t sz)
         p = lsqpack_enc_int(buf, buf + sz, count, 6);
         if (p > buf)
         {
-            D_DEBUG("wrote TSS: count=%u", count);
+            D_DEBUG("wrote ICI: count=%u", count);
             dec->qpd_largest_known_id = dec->qpd_last_id;
             return p - buf;
         }
@@ -4231,7 +4234,7 @@ lsqpack_dec_write_tss (struct lsqpack_dec *dec, unsigned char *buf, size_t sz)
     }
     else
     {
-        D_DEBUG("no TSS instruction necessary: emitting zero bytes");
+        D_DEBUG("no ICI instruction necessary: emitting zero bytes");
         return 0;
     }
 }
@@ -4330,7 +4333,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
 #define WINR dec->qpd_enc_state.ctx_u.with_namref
 #define WONR dec->qpd_enc_state.ctx_u.wo_namref
 #define DUPL dec->qpd_enc_state.ctx_u.duplicate
-#define TBSZ dec->qpd_enc_state.ctx_u.size_update
+#define SDTC dec->qpd_enc_state.ctx_u.sdtc
 
     while (buf < end)
     {
@@ -4358,7 +4361,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             }
             else if (buf[0] & 0x20)
             {
-                TBSZ.dec_int_state.resume = 0;
+                SDTC.dec_int_state.resume = 0;
                 dec->qpd_enc_state.resume = DEI_SIZE_UPD_READ_IDX;
                 prefix_bits = 5;
                 goto dei_size_upd_read_idx;
@@ -4736,15 +4739,15 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 return -1;
         case DEI_SIZE_UPD_READ_IDX:
   dei_size_upd_read_idx:
-            r = lsqpack_dec_int(&buf, end, prefix_bits, &TBSZ.new_size,
-                                                        &TBSZ.dec_int_state);
+            r = lsqpack_dec_int(&buf, end, prefix_bits, &SDTC.new_size,
+                                                        &SDTC.dec_int_state);
             if (r == 0)
             {
-                if (TBSZ.new_size <= dec->qpd_max_capacity)
+                if (SDTC.new_size <= dec->qpd_max_capacity)
                 {
                     dec->qpd_enc_state.resume = 0;
-                    D_DEBUG("got TSU=%"PRIu64, TBSZ.new_size);
-                    qdec_update_max_capacity(dec, (unsigned int) TBSZ.new_size);
+                    D_DEBUG("got TSU=%"PRIu64, SDTC.new_size);
+                    qdec_update_max_capacity(dec, (unsigned int) SDTC.new_size);
                     break;
                 }
                 else
@@ -4762,7 +4765,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
 #undef WINR
 #undef WONR
 #undef DUPL
-#undef TBSZ
+#undef SDTC
 
     return 0;
 }

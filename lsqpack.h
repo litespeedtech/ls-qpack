@@ -33,6 +33,7 @@ SOFTWARE.
 extern "C" {
 #endif
 
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 
@@ -47,7 +48,7 @@ typedef SSIZE_T ssize_t;
  */
 #define LSQPACK_MAJOR_VERSION 0
 #define LSQPACK_MINOR_VERSION 9
-#define LSQPACK_PATCH_VERSION 0
+#define LSQPACK_PATCH_VERSION 5
 
 /** Let's start with four billion for now */
 typedef unsigned lsqpack_abs_id_t;
@@ -108,10 +109,24 @@ void
 lsqpack_enc_preinit (struct lsqpack_enc *, void *logger_ctx);
 
 /**
- * Number of bytes required to encode the longest possible Table Size Update
- * instruction: 5-bit prefix encoded 2^30 - 1.
+ * Number of bytes required to encode the longest possible Set Dynamic Table
+ * Capacity instruction.  This is a theoretical limit based on the integral
+ * type (unsigned int) used by this library to store the capacity value.  If
+ * the encoder is initialized with a smaller maximum table capacity, it is
+ * safe to use fewer bytes.
+ *
+ * SDTC instructtion can be produced by @ref lsqpack_enc_init and
+ * @ref lsqpack_enc_set_max_capacity.
  */
-#define LSQPACK_LONGEST_TSU 6
+#if UINT_MAX == 65535
+#define LSQPACK_LONGEST_SDTC 4
+#elif UINT_MAX == 4294967295
+#define LSQPACK_LONGEST_SDTC 6
+#elif UINT_WIDTH == 18446744073709551615
+#define LSQPACK_LONGEST_SDTC 11
+#else
+#error unexpected sizeof(unsigned)
+#endif
 
 int
 lsqpack_enc_init (struct lsqpack_enc *,
@@ -128,32 +143,38 @@ lsqpack_enc_init (struct lsqpack_enc *,
     unsigned dyn_table_size,
     unsigned max_risked_streams, enum lsqpack_enc_opts,
     /**
-     * If `dyn_table_size' is not zero, Set Dynamic Table Capacity instruction
-     * is generated and placed into `sdtc_buf'.  `sdtc_buf_sz' parameter is
-     * used both for input and output.
+     * If `dyn_table_size' is not zero, Set Dynamic Table Capacity (SDTC)
+     * instruction is generated and placed into `sdtc_buf'.  `sdtc_buf_sz'
+     * parameter is used both for input and output.
      *
-     * If `dyn_table_size' is zero, `sdtc_buf' and `sdtc_buf_sz' are optional.
+     * If `dyn_table_size' is zero, `sdtc_buf' and `sdtc_buf_sz' are optional
+     * and can be set to NULL.
      */
     unsigned char *sdtc_buf, size_t *sdtc_buf_sz);
 
 /**
- * Set table size to `capacity'.  If necessary, TSU instruction is generated
- * and placed into `tsu_buf'.  If `capacity' is larger than the maximum
- * table size specified during initialization, an error is returned.
+ * Set table size to `capacity'.  If necessary, Set Dynamic Table Capacity
+ * (SDTC) instruction is generated and placed into `tsu_buf'.  If `capacity'
+ * is larger than the maximum table size specified during initialization, an
+ * error is returned.
  */
 int
 lsqpack_enc_set_max_capacity (struct lsqpack_enc *enc, unsigned capacity,
-                                    unsigned char *tsu_buf, size_t *tsu_buf_sz);
+                                    unsigned char *sdtc_buf, size_t *sdtc_buf_sz);
 
 /** Start a new header block.  Return 0 on success or -1 on error. */
 int
 lsqpack_enc_start_header (struct lsqpack_enc *, uint64_t stream_id,
                             unsigned seqno);
 
+/** Status returned by @ref lsqpack_enc_encode */
 enum lsqpack_enc_status
 {
+    /** Header field encoded successfully */
     LQES_OK,
+    /** There was not enough room in the encoder stream buffer */
     LQES_NOBUF_ENC,
+    /** There was not enough room in the header block buffer */
     LQES_NOBUF_HEAD,
 };
 
@@ -184,11 +205,17 @@ enum lsqpack_enc_flags
 };
 
 /**
- * Encode name/value pair in current header block.
+ * Encode header field into current header block.
+ *
+ * See @ref lsqpack_enc_status for explanation of the return values.
  *
  * enc_sz and header_sz parameters are used for both input and output.  If
  * the return value is LQES_OK, they contain number of bytes written to
  * enc_buf and header_buf, respectively.
+ *
+ * Note that even though this function may allocate memory, it falls back to
+ * not using the dynamic table should memory allocation fail.  Thus, failures
+ * to encode due to not enough memory do not exist.
  */
 enum lsqpack_enc_status
 lsqpack_enc_encode (struct lsqpack_enc *,
@@ -206,10 +233,17 @@ int
 lsqpack_enc_cancel_header (struct lsqpack_enc *);
 
 /**
- * End current header block.  The Header Data Prefix is written to `buf'.
+ * End current header block.  The Header Block Prefix is written to `buf'.
+ *
+ * `buf' must be at least two bytes.  11 bytes are necessary to encode
+ * UINT64_MAX using 7- or 8-bit prefix.  Therefore, 22 bytes is the
+ * theoretical maximum for this library.
+ *
+ * Use @ref lsqpack_enc_header_block_prefix_size if you require better
+ * precision.
  *
  * Returns:
- *  -   A non-negative values indicates success and is the number of bytes
+ *  -   A positive value indicates success and is the number of bytes
  *      written to `buf'.
  *  -   Zero means that there is not enough room in `buf' to write out the
  *      full prefix.
@@ -235,10 +269,10 @@ float
 lsqpack_enc_ratio (const struct lsqpack_enc *);
 
 /**
- * Return maximum size needed to encode Header Data Prefix
+ * Return maximum size needed to encode Header Block Prefix
  */
 size_t
-lsqpack_enc_header_data_prefix_size (const struct lsqpack_enc *);
+lsqpack_enc_header_block_prefix_size (const struct lsqpack_enc *);
 
 void
 lsqpack_enc_cleanup (struct lsqpack_enc *);
@@ -283,8 +317,11 @@ enum lsqpack_read_header_status
     LQRHS_ERROR,
 };
 
-/** Number of bytes needed to encode 7-bit prefix 62-bit value */
-#define LSQPACK_LONGEST_HACK 10
+/**
+ * Number of bytes needed to encode the longest Header Acknowledgement
+ * instruction.
+ */
+#define LSQPACK_LONGEST_HEADER_ACK 10
 
 
 /**
@@ -352,16 +389,19 @@ void
 lsqpack_dec_destroy_header_set (struct lsqpack_header_set *);
 
 /**
- * Returns true if Table State Synchronization instruction is pending.
+ * Returns true if Insert Count Increment (ICI) instruction is pending.
  */
 int
-lsqpack_dec_tss_pending (const struct lsqpack_dec *dec);
+lsqpack_dec_ici_pending (const struct lsqpack_dec *dec);
 
-/** Number of bytes required to encode the longest TSS instruction */
-#define LSQPACK_LONGEST_TSS 6
+/**
+ * Number of bytes required to encode the longest Insert Count Increment (ICI)
+ * instruction.
+ */
+#define LSQPACK_LONGEST_ICI 6
 
 ssize_t
-lsqpack_dec_write_tss (struct lsqpack_dec *, unsigned char *, size_t);
+lsqpack_dec_write_ici (struct lsqpack_dec *, unsigned char *, size_t);
 
 /** Number of bytes required to encode the longest cancel instruction */
 #define LSQPACK_LONGEST_CANCEL 6
@@ -446,7 +486,7 @@ struct lsqpack_enc
      */
     lsqpack_abs_id_t            qpe_ins_count;
     lsqpack_abs_id_t            qpe_max_acked_id;
-    lsqpack_abs_id_t            qpe_last_tss;
+    lsqpack_abs_id_t            qpe_last_ici;
     /* The smallest absolute index in the dynamic table that the encoder
      * will emit a reference for.
      */
@@ -648,7 +688,7 @@ struct lsqpack_dec
             struct {
                 struct lsqpack_dec_int_state        dec_int_state;
                 uint64_t                            new_size;
-            }                                               size_update;
+            }                                               sdtc;
         }               ctx_u;
     }                       qpd_enc_state;
     struct lsqpack_dec_err  qpd_err;

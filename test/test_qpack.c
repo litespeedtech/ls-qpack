@@ -212,7 +212,7 @@ run_header_test (const struct qpack_header_block_test *test)
     int s;
     enum lsqpack_enc_status enc_st;
     float ratio;
-    unsigned char dec_buf[LSQPACK_LONGEST_TSU];
+    unsigned char dec_buf[LSQPACK_LONGEST_SDTC];
 
     dec_sz = sizeof(dec_buf);
     s = lsqpack_enc_init(&enc, stderr, test->qhbt_table_size,
@@ -324,7 +324,7 @@ test_enc_init (void)
     const unsigned char *p;
     uint64_t val;
     struct lsqpack_dec_int_state state;
-    unsigned char dec_buf[LSQPACK_LONGEST_TSU];
+    unsigned char dec_buf[LSQPACK_LONGEST_SDTC];
 
     const struct {
         unsigned    peer_max_size;  /* Value provided by peer */
@@ -374,7 +374,7 @@ test_push_promise (void)
     const unsigned char *p;
     uint64_t val;
     struct lsqpack_dec_int_state state;
-    unsigned char dec_buf[LSQPACK_LONGEST_TSU];
+    unsigned char dec_buf[LSQPACK_LONGEST_SDTC];
     unsigned char header_buf[HEADER_BUF_SZ], enc_buf[ENC_BUF_SZ],
         prefix_buf[PREFIX_BUF_SZ];
     size_t header_sz, enc_sz, dec_sz;
