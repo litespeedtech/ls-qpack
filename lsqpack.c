@@ -2707,6 +2707,9 @@ cleanup_read_ctx (struct header_block_read_ctx *read_ctx)
             free(LFPBNR.value);
         break;
     }
+
+    if (read_ctx->hbrc_header_set)
+        lsqpack_dec_destroy_header_set(read_ctx->hbrc_header_set);
 }
 
 
@@ -2723,8 +2726,6 @@ lsqpack_dec_cleanup (struct lsqpack_dec *dec)
         cleanup_read_ctx(read_ctx);
         free(read_ctx);
     }
-
-    /* TODO: mark unreturned header sets */
 
     if (dec->qpd_enc_state.resume >= DEI_WINR_READ_NAME_IDX
             && dec->qpd_enc_state.resume <= DEI_WINR_READ_VALUE_HUFFMAN)
@@ -4016,6 +4017,7 @@ qdec_header_process (struct lsqpack_dec *dec,
             *dec_buf_sz = 0;
         *buf = *buf + read_ctx->hbrc_buf.off;
         *hset = read_ctx->hbrc_header_set;
+        read_ctx->hbrc_header_set = NULL;
         D_DEBUG("header block for stream %"PRIu64" is done",
                                                     read_ctx->hbrc_stream_id);
         break;

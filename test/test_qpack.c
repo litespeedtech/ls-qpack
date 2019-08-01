@@ -438,6 +438,35 @@ test_push_promise (void)
 }
 
 
+static void
+test_discard_header (int err)
+{
+    struct lsqpack_dec dec;
+    enum lsqpack_read_header_status rhs;
+    const unsigned char *buf;
+    struct lsqpack_header_set *hset = NULL;
+    unsigned char header_block[] = "\x00\x00\xC0\x80";
+
+    lsqpack_dec_init(&dec, NULL, 0, 0, NULL);
+
+    buf = header_block;
+    rhs = lsqpack_dec_header_in(&dec, (void *) 1, 0, 10,
+                                    &buf, 3 + !!err, &hset, NULL, NULL);
+    if (err)
+    {
+        assert(hset == NULL);
+        assert(LQRHS_ERROR == rhs);
+    }
+    else
+    {
+        assert(hset == NULL);
+        assert(3 == buf - header_block);
+        assert(LQRHS_NEED == rhs);
+        lsqpack_dec_cleanup(&dec);
+    }
+}
+
+
 int
 main (void)
 {
@@ -450,6 +479,8 @@ main (void)
     run_header_cancellation_test(&header_block_tests[0]);
     test_enc_init();
     test_push_promise();
+    test_discard_header(0);
+    test_discard_header(1);
 
     return 0;
 }
