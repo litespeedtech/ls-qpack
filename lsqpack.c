@@ -340,15 +340,18 @@ enc_use_dynamic_table (const struct lsqpack_enc *enc)
 }
 
 
-struct hist_el {
-    unsigned    he_name_hash, he_nameval_hash;
+enum he { HE_NAME, HE_NAMEVAL, N_HES };
+
+
+struct lsqpack_hist_el {
+    unsigned    he_hashes[N_HES];
 };
 
 
 static void
 qenc_hist_update_size (struct lsqpack_enc *enc, unsigned new_size)
 {
-    struct hist_el *els;
+    struct lsqpack_hist_el *els;
     unsigned first, count, i, j;
 
     if (new_size == enc->qpe_hist_nels)
@@ -394,8 +397,9 @@ qenc_hist_add (struct lsqpack_enc *enc, unsigned name_hash,
 {
     if (enc->qpe_hist_nels)
     {
-        enc->qpe_hist_els[ enc->qpe_hist_idx ].he_name_hash = name_hash;
-        enc->qpe_hist_els[ enc->qpe_hist_idx ].he_nameval_hash = nameval_hash;
+        enc->qpe_hist_els[ enc->qpe_hist_idx ].he_hashes[HE_NAME] = name_hash;
+        enc->qpe_hist_els[ enc->qpe_hist_idx ].he_hashes[HE_NAMEVAL]
+                                                                = nameval_hash;
         enc->qpe_hist_idx = (enc->qpe_hist_idx + 1) % enc->qpe_hist_nels;
         enc->qpe_hist_wrapped |= enc->qpe_hist_idx == 0;
     }
@@ -403,9 +407,9 @@ qenc_hist_add (struct lsqpack_enc *enc, unsigned name_hash,
 
 
 static int
-qenc_hist_seen_nameval (struct lsqpack_enc *enc, unsigned nameval_hash)
+qenc_hist_seen (struct lsqpack_enc *enc, enum he he, unsigned hash)
 {
-    const struct hist_el *el;
+    const struct lsqpack_hist_el *el;
     unsigned last_idx;
 
     if (enc->qpe_hist_els)
@@ -414,30 +418,8 @@ qenc_hist_seen_nameval (struct lsqpack_enc *enc, unsigned nameval_hash)
             last_idx = enc->qpe_hist_nels;
         else
             last_idx = enc->qpe_hist_idx;
-        enc->qpe_hist_els[ last_idx ].he_nameval_hash = nameval_hash;
-        for (el = enc->qpe_hist_els; el->he_nameval_hash != nameval_hash; ++el)
-            ;
-        return el < &enc->qpe_hist_els[ last_idx ];
-    }
-    else
-        return 1;
-}
-
-
-static int
-qenc_hist_seen_name (struct lsqpack_enc *enc, unsigned name_hash)
-{
-    const struct hist_el *el;
-    unsigned last_idx;
-
-    if (enc->qpe_hist_els)
-    {
-        if (enc->qpe_hist_wrapped)
-            last_idx = enc->qpe_hist_nels;
-        else
-            last_idx = enc->qpe_hist_idx;
-        enc->qpe_hist_els[ last_idx ].he_name_hash = name_hash;
-        for (el = enc->qpe_hist_els; el->he_name_hash != name_hash; ++el)
+        enc->qpe_hist_els[ last_idx ].he_hashes[he] = hash;
+        for (el = enc->qpe_hist_els; el->he_hashes[he] != hash; ++el)
             ;
         return el < &enc->qpe_hist_els[ last_idx ];
     }
@@ -1609,7 +1591,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                 [1][1][0] = { EEA_INS_NAMEREF_STATIC, EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
                 [1][1][1] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },   /* Invalid state */
             };
-            seen_nameval = qenc_hist_seen_nameval(enc, nameval_hash);
+            seen_nameval = qenc_hist_seen(enc, HE_NAMEVAL, nameval_hash);
             prog = programs[seen_nameval][risk][use_dyn_table && n_cand > 0];
         }
         else
@@ -1642,7 +1624,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
             {
                 id = entry->ete_id;
                 if (index && enough_room
-                                && qenc_hist_seen_nameval(enc, nameval_hash))
+                                && qenc_hist_seen(enc, HE_NAMEVAL, nameval_hash))
                     prog = (struct encode_program) { EEA_INS_NAMEREF_DYNAMIC,
                                 EHA_LIT_WITH_NAME_NEW, ETA_NEW,
                                 EPF_REF_NEW|EPF_REF_FOUND, };
@@ -1656,7 +1638,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     /* No matches found */
     if (index
             && (seen_nameval < 0 ? (seen_nameval
-                    = qenc_hist_seen_nameval(enc, nameval_hash)) : seen_nameval)
+                    = qenc_hist_seen(enc, HE_NAMEVAL, nameval_hash)) : seen_nameval)
             && (enough_room < 0 ?
             (enough_room = qenc_has_or_can_evict_at_least(enc,
                             ENTRY_COST(name_len, value_len))) : enough_room))
@@ -1669,7 +1651,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         };
         prog = programs[risk][use_dyn_table && n_cand > 0];
     }
-    else if (index && qenc_hist_seen_name(enc, name_hash)
+    else if (index && qenc_hist_seen(enc, HE_NAME, name_hash)
                 && qenc_has_or_can_evict_at_least(enc, ENTRY_COST(name_len, 0)))
     {
         static const struct encode_program programs[2] = {

@@ -524,7 +524,7 @@ struct lsqpack_enc
     float                       qpe_table_nelem_ema;
     float                       qpe_header_count_ema;
 
-    struct hist_el             *qpe_hist_els;
+    struct lsqpack_hist_el     *qpe_hist_els;
     unsigned                    qpe_hist_idx;
     unsigned                    qpe_hist_nels;
     int                         qpe_hist_wrapped;
