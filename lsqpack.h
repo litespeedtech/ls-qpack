@@ -115,8 +115,8 @@ lsqpack_enc_preinit (struct lsqpack_enc *, void *logger_ctx);
  * the encoder is initialized with a smaller maximum table capacity, it is
  * safe to use fewer bytes.
  *
- * SDTC instructtion can be produced by @ref lsqpack_enc_init and
- * @ref lsqpack_enc_set_max_capacity.
+ * SDTC instructtion can be produced by @ref lsqpack_enc_init() and
+ * @ref lsqpack_enc_set_max_capacity().
  */
 #if UINT_MAX == 65535
 #define LSQPACK_LONGEST_SDTC 4
@@ -167,7 +167,7 @@ int
 lsqpack_enc_start_header (struct lsqpack_enc *, uint64_t stream_id,
                             unsigned seqno);
 
-/** Status returned by @ref lsqpack_enc_encode */
+/** Status returned by @ref lsqpack_enc_encode() */
 enum lsqpack_enc_status
 {
     /** Header field encoded successfully */
@@ -239,7 +239,7 @@ lsqpack_enc_cancel_header (struct lsqpack_enc *);
  * UINT64_MAX using 7- or 8-bit prefix.  Therefore, 22 bytes is the
  * theoretical maximum for this library.
  *
- * Use @ref lsqpack_enc_header_block_prefix_size if you require better
+ * Use @ref lsqpack_enc_header_block_prefix_size() if you require better
  * precision.
  *
  * Returns:
@@ -307,13 +307,40 @@ struct lsqpack_header_set
 void
 lsqpack_dec_init (struct lsqpack_dec *, void *logger_ctx,
     unsigned dyn_table_size, unsigned max_risked_streams,
-    void (*hblock_unblocked)(void *hblock));
+    void (*hblock_unblocked)(void *hblock_ctx));
 
+/**
+ * Values returned by @ref lsqpack_dec_header_in() and
+ * @ref lsqpack_dec_header_read()
+ */
 enum lsqpack_read_header_status
 {
+    /**
+     * The header set has been placed in `hset' and `buf' has been advanced.
+     * This header should be released using
+     * @ref lsqpack_dec_destroy_header_set() after the caller is done with it.
+     */
     LQRHS_DONE,
+    /**
+     * The decoder cannot decode the header block until more dynamic table
+     * entries become available.  `buf' is advanced.  When the header block
+     * becomes unblocked, the decoder will call hblock_unblocked() callback
+     * specified in the constructor.  See @ref lsqpack_dec_init().
+     *
+     * Once a header block is unblocked, it cannot get blocked again.  In
+     * other words, this status can only be returned once per header block.
+     */
     LQRHS_BLOCKED,
+    /**
+     * The decoder needs more bytes from the header block to proceed.  When
+     * they become available, call @ref lsqpack_dec_header_read().  `buf' is
+     * advanced.
+     */
     LQRHS_NEED,
+    /**
+     * An error has occurred.  This can be any error: decoding error, memory
+     * allocation failure, or some internal error.
+     */
     LQRHS_ERROR,
 };
 
@@ -326,37 +353,25 @@ enum lsqpack_read_header_status
 
 /**
  * Call this function when the header blocks is first read.  The decoder
- * will try to decode the header block.  One of the following four statuses
- * can be returned:
+ * will try to decode the header block.  The decoder can process header
+ * blocks in a streaming fashion, which means that there is no need to
+ * buffer the header block.  As soon as header block bytes become available,
+ * they can be fed to this function or @ref lsqpack_dec_header_read().
  *
- *      LQRHS_DONE      The header set has been placed in `hset' and `buf'
- *                        has been advanced.  This header should be released
- *                        using @ref lsqpack_dec_destroy_header_set() after
- *                        the caller is done with it.
- *
- *      LQRHS_NEED      The decoder needs more bytes from the header block to
- *                        proceed.  When they become available, call
- *                        @ref lsqpack_dec_header_read().
- *                        `buf' is advanced.
- *
- *      LQRHS_BLOCKED   The decoder cannot decode the header block until
- *                        more dynamic table entries become available.
- *                        `buf' is advanced.  When the header block becomes
- *                        unblocked, the decoder will call hblock_unblocked()
- *                        callback specified in the constructor.
- *
- *      LQRHS_ERROR     An error has occurred.  This can be any error:
- *                        decoding error, memory allocation failure, or
- *                        some internal error.
+ * See @ref lsqpack_read_header_status for explanation of the return codes.
  *
  * If the decoder returns LQRHS_NEED or LQRHS_BLOCKED, it keeps a reference to
- * the header block.
+ * the user-provided header block context `hblock_ctx'.  It uses this value for
+ * two purposes:
+ *  1. to use as argument to hblock_unblocked(); and
+ *  2. to locate header block state when @ref lsqpack_dec_header_read() is
+ *     called.
  *
  * If the decoder returns LQRHS_DONE or LQRHS_ERROR, it means that it no
  * longer has a reference to the header block.
  */
 enum lsqpack_read_header_status
-lsqpack_dec_header_in (struct lsqpack_dec *, void *hblock,
+lsqpack_dec_header_in (struct lsqpack_dec *, void *hblock_ctx,
                        uint64_t stream_id, size_t header_block_size,
                        const unsigned char **buf, size_t bufsz,
                        struct lsqpack_header_set **hset,
@@ -365,11 +380,12 @@ lsqpack_dec_header_in (struct lsqpack_dec *, void *hblock,
 /**
  * Call this function when more header block bytes are become available
  * after this function or @ref lsqpack_dec_header_in() returned LQRHS_NEED
- * or hblock_unblocked() callback has been called.  See comments to
- * @ref lsqpack_dec_header_in() for explanation of the return values.
+ * or hblock_unblocked() callback has been called.  This function behaves
+ * similarly to @ref lsqpack_dec_header_in(): see its comments for more
+ * information.
  */
 enum lsqpack_read_header_status
-lsqpack_dec_header_read (struct lsqpack_dec *dec, void *hblock,
+lsqpack_dec_header_read (struct lsqpack_dec *dec, void *hblock_ctx,
                          const unsigned char **buf, size_t bufsz,
                          struct lsqpack_header_set **hset,
                          unsigned char *dec_buf, size_t *dec_buf_sz);
@@ -407,8 +423,8 @@ lsqpack_dec_write_ici (struct lsqpack_dec *, unsigned char *, size_t);
 #define LSQPACK_LONGEST_CANCEL 6
 
 /**
- * Cancel stream associated with header block `hblock' and write
- * cancellation instruction to `buf'.  `buf' must be at least
+ * Cancel stream associated with the header block context `hblock_ctx' and
+ * write cancellation instruction to `buf'.  `buf' must be at least
  * @ref LSQPACK_LONGEST_CANCEL bytes long.
  *
  * Number of bytes written to `buf' is returned.  If stream `stream_id'
@@ -416,16 +432,16 @@ lsqpack_dec_write_ici (struct lsqpack_dec *, unsigned char *, size_t);
  * returned.
  */
 ssize_t
-lsqpack_dec_cancel_stream (struct lsqpack_dec *, void *hblock,
+lsqpack_dec_cancel_stream (struct lsqpack_dec *, void *hblock_ctx,
                                 unsigned char *buf, size_t buf_sz);
 
 /**
- * Delete reference to header block `hblock'.  Use this instead of
- * @ref lsqpack_dec_cancel_stream() when producing a Cancel Stream
+ * Delete reference to the header block context `hblock_ctx'.  Use this
+ * instead of @ref lsqpack_dec_cancel_stream() when producing a Cancel Stream
  * instruction is not necessary.
  */
 int
-lsqpack_dec_unref_stream (struct lsqpack_dec *, void *hblock);
+lsqpack_dec_unref_stream (struct lsqpack_dec *, void *hblock_ctx);
 
 /**
  * Clean up the decoder.  If any there are any blocked header blocks,
@@ -615,7 +631,7 @@ struct lsqpack_dec
     lsqpack_abs_id_t        qpd_last_id;
     /** TODO: describe the mechanism */
     lsqpack_abs_id_t        qpd_largest_known_id;
-    void                  (*qpd_hblock_unblocked)(void *hblock);
+    void                  (*qpd_hblock_unblocked)(void *hblock_ctx);
 
     void                   *qpd_logger_ctx;
 
