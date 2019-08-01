@@ -614,12 +614,6 @@ struct lsqpack_huff_decode_state
     struct lsqpack_decode_status    status;
 };
 
-struct lsqpack_enc_int_state
-{
-    int         resume;
-    uint64_t    value;
-};
-
 struct lsqpack_dec_inst;
 
 struct lsqpack_dec
@@ -657,13 +651,6 @@ struct lsqpack_dec
                             qpd_blocked_headers[1 << LSQPACK_DEC_BLOCKED_BITS];
     /** Number of blocked streams (in qpd_blocked_headers) */
     unsigned                qpd_n_blocked;
-
-    /** Decoder instructions to be sent out */
-    STAILQ_HEAD(, lsqpack_dec_inst)
-                            qpd_dinsts;
-    /** Intra-instruction state for the decoder stream */
-    struct lsqpack_enc_int_state
-                            qpd_dinst_state;
 
     /** Reading the encoder stream */
     struct {
