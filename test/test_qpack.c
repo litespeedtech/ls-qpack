@@ -467,6 +467,41 @@ test_discard_header (int err)
 }
 
 
+static void
+test_static_bounds_header_block (void)
+{
+    struct lsqpack_dec dec;
+    enum lsqpack_read_header_status rhs;
+    const unsigned char *buf;
+    struct lsqpack_header_set *hset = NULL;
+    /* Static table index 1000 */
+    unsigned char header_block[] = "\x00\x00\xFF\xA9\x07";
+
+    lsqpack_dec_init(&dec, stderr, 0, 0, NULL);
+    buf = header_block;
+    rhs = lsqpack_dec_header_in(&dec, (void *) 1, 0, 10,
+                                    &buf, 5, &hset, NULL, NULL);
+    assert(hset == NULL);
+    assert(LQRHS_ERROR == rhs);
+    lsqpack_dec_cleanup(&dec);
+}
+
+
+static void
+test_static_bounds_enc_stream (void)
+{
+    struct lsqpack_dec dec;
+    int r;
+    /* Static table index 1000 */
+    unsigned char enc_stream[] = "\xFF\xA9\x07\x04" "dude";
+
+    lsqpack_dec_init(&dec, stderr, 0, 0, NULL);
+    r = lsqpack_dec_enc_in(&dec, enc_stream, 8);
+    assert(r == -1);
+    lsqpack_dec_cleanup(&dec);
+}
+
+
 int
 main (void)
 {
@@ -481,6 +516,8 @@ main (void)
     test_push_promise();
     test_discard_header(0);
     test_discard_header(1);
+    test_static_bounds_header_block();
+    test_static_bounds_enc_stream();
 
     return 0;
 }

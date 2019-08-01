@@ -3681,6 +3681,8 @@ parse_header_data (struct lsqpack_dec *dec,
     dec->qpd_err.off = read_ctx->hbrc_orig_size - read_ctx->hbrc_size
                             + (buf - (end - bufsz));
     dec->qpd_err.stream_id = read_ctx->hbrc_stream_id;
+    D_DEBUG("header block error on line %d, offset %zu, stream id %"PRIu64,
+        dec->qpd_err.line, dec->qpd_err.off, dec->qpd_err.stream_id);
     return LQRHS_ERROR;
 }
 
@@ -4373,7 +4375,6 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             {
                 if (WINR.is_static)
                 {
-                    /* TODO: check bounds */
                     WINR.name_len = static_table[WINR.name_idx].name_len;
                     WINR.name = static_table[WINR.name_idx].name;
                 }
