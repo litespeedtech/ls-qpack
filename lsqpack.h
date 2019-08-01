@@ -211,7 +211,9 @@ enum lsqpack_enc_flags
  *
  * enc_sz and header_sz parameters are used for both input and output.  If
  * the return value is LQES_OK, they contain number of bytes written to
- * enc_buf and header_buf, respectively.
+ * enc_buf and header_buf, respectively.  enc_buf contains the bytes that
+ * must be written to the encoder stream; header_buf contains bytes that
+ * must be written to the header block.
  *
  * Note that even though this function may allocate memory, it falls back to
  * not using the dynamic table should memory allocation fail.  Thus, failures
@@ -319,6 +321,10 @@ enum lsqpack_read_header_status
      * The header set has been placed in `hset' and `buf' has been advanced.
      * This header should be released using
      * @ref lsqpack_dec_destroy_header_set() after the caller is done with it.
+     *
+     * Note that the header set in `hset' has an unlimited lifetime.  Even
+     * destroying it after @ref lsqpack_dec_cleanup() is called is OK and
+     * will not leak memory.
      */
     LQRHS_DONE,
     /**
