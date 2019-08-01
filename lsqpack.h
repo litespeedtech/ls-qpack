@@ -516,14 +516,6 @@ struct lsqpack_enc
     unsigned long               qpe_bytes_in;
     unsigned long               qpe_bytes_out;
     void                       *qpe_logger_ctx;
-    struct lsqpack_enc_hist    *qpe_hist;
-    void                      (*qpe_hist_add)(struct lsqpack_enc_hist *,
-                                                        unsigned, unsigned);
-    int                       (*qpe_hist_seen_nameval)(
-                                    struct lsqpack_enc_hist *,
-                                                        unsigned);
-    int                       (*qpe_hist_seen_name)(struct lsqpack_enc_hist *,
-                                                        unsigned);
 
     /* Exponential moving averages (EMAs) of the number of elements in the
      * dynamic table and the number of header fields in a single header set.
@@ -531,6 +523,11 @@ struct lsqpack_enc
      */
     float                       qpe_table_nelem_ema;
     float                       qpe_header_count_ema;
+
+    struct hist_el             *qpe_hist_els;
+    unsigned                    qpe_hist_idx;
+    unsigned                    qpe_hist_nels;
+    int                         qpe_hist_wrapped;
 };
 
 struct lsqpack_ringbuf

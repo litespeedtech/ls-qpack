@@ -345,49 +345,20 @@ struct hist_el {
 };
 
 
-struct lsqpack_enc_hist
-{
-    unsigned        ehi_idx;
-    unsigned        ehi_nels;
-    int             ehi_wrapped;
-    struct hist_el *ehi_els;
-};
-
-
-static struct lsqpack_enc_hist *
-qenc_hist_new (unsigned nelem)
-{
-    struct lsqpack_enc_hist *hist;
-
-    hist = malloc(sizeof(*hist));
-    if (!hist)
-        return NULL;
-
-    hist->ehi_els = malloc(sizeof(hist->ehi_els[0]) * (nelem + 1));
-    if (!hist->ehi_els)
-    {
-        free(hist);
-        return NULL;
-    };
-
-    hist->ehi_nels    = nelem;
-    hist->ehi_idx     = 0;
-    hist->ehi_wrapped = 0;
-    return hist;
-}
-
-
 static void
-qenc_hist_update_size (struct lsqpack_enc_hist *hist, unsigned new_size)
+qenc_hist_update_size (struct lsqpack_enc *enc, unsigned new_size)
 {
     struct hist_el *els;
     unsigned first, count, i, j;
 
+    if (new_size == enc->qpe_hist_nels)
+        return;
+
     if (new_size == 0)
     {
-        hist->ehi_nels = 0;
-        hist->ehi_idx = 0;
-        hist->ehi_wrapped = 0;
+        enc->qpe_hist_nels = 0;
+        enc->qpe_hist_idx = 0;
+        enc->qpe_hist_wrapped = 0;
         return;
     }
 
@@ -395,93 +366,83 @@ qenc_hist_update_size (struct lsqpack_enc_hist *hist, unsigned new_size)
     if (!els)
         return;
 
-    if (hist->ehi_wrapped)
+    E_DEBUG("history size change from %u to %u", enc->qpe_hist_nels, new_size);
+
+    if (enc->qpe_hist_wrapped)
     {
-        first = (hist->ehi_idx + 1) % hist->ehi_nels;
-        count = hist->ehi_nels;
+        first = (enc->qpe_hist_idx + 1) % enc->qpe_hist_nels;
+        count = enc->qpe_hist_nels;
     }
     else
     {
         first = 0;
-        count = hist->ehi_idx;
+        count = enc->qpe_hist_idx;
     }
     for (i = 0, j = 0; count > 0 && j < new_size; ++i, ++j, --count)
-        els[j] = hist->ehi_els[ (first + i) % hist->ehi_nels ];
-    hist->ehi_nels = new_size;
-    hist->ehi_idx = j % new_size;
-    hist->ehi_wrapped = hist->ehi_idx == 0;
-    free(hist->ehi_els);
-    hist->ehi_els = els;
+        els[j] = enc->qpe_hist_els[ (first + i) % enc->qpe_hist_nels ];
+    enc->qpe_hist_nels = new_size;
+    enc->qpe_hist_idx = j % new_size;
+    enc->qpe_hist_wrapped = enc->qpe_hist_idx == 0;
+    free(enc->qpe_hist_els);
+    enc->qpe_hist_els = els;
 }
 
 
 static void
-qenc_hist_add (struct lsqpack_enc_hist *hist, unsigned name_hash,
+qenc_hist_add (struct lsqpack_enc *enc, unsigned name_hash,
                                                     unsigned nameval_hash)
 {
-    if (hist->ehi_nels)
+    if (enc->qpe_hist_nels)
     {
-        hist->ehi_els[ hist->ehi_idx ].he_name_hash = name_hash;
-        hist->ehi_els[ hist->ehi_idx ].he_nameval_hash = nameval_hash;
-        hist->ehi_idx = (hist->ehi_idx + 1) % hist->ehi_nels;
-        hist->ehi_wrapped |= hist->ehi_idx == 0;
+        enc->qpe_hist_els[ enc->qpe_hist_idx ].he_name_hash = name_hash;
+        enc->qpe_hist_els[ enc->qpe_hist_idx ].he_nameval_hash = nameval_hash;
+        enc->qpe_hist_idx = (enc->qpe_hist_idx + 1) % enc->qpe_hist_nels;
+        enc->qpe_hist_wrapped |= enc->qpe_hist_idx == 0;
     }
 }
 
 
 static int
-qenc_hist_seen_nameval (struct lsqpack_enc_hist *hist, unsigned nameval_hash)
+qenc_hist_seen_nameval (struct lsqpack_enc *enc, unsigned nameval_hash)
 {
     const struct hist_el *el;
     unsigned last_idx;
 
-    if (hist->ehi_wrapped)
-        last_idx = hist->ehi_nels;
+    if (enc->qpe_hist_els)
+    {
+        if (enc->qpe_hist_wrapped)
+            last_idx = enc->qpe_hist_nels;
+        else
+            last_idx = enc->qpe_hist_idx;
+        enc->qpe_hist_els[ last_idx ].he_nameval_hash = nameval_hash;
+        for (el = enc->qpe_hist_els; el->he_nameval_hash != nameval_hash; ++el)
+            ;
+        return el < &enc->qpe_hist_els[ last_idx ];
+    }
     else
-        last_idx = hist->ehi_idx;
-    hist->ehi_els[ last_idx ].he_nameval_hash = nameval_hash;
-
-    for (el = hist->ehi_els; el->he_nameval_hash != nameval_hash; ++el)
-        ;
-    return el < &hist->ehi_els[ last_idx ];
+        return 1;
 }
 
 
 static int
-qenc_hist_seen_name (struct lsqpack_enc_hist *hist, unsigned name_hash)
+qenc_hist_seen_name (struct lsqpack_enc *enc, unsigned name_hash)
 {
     const struct hist_el *el;
     unsigned last_idx;
 
-    if (hist->ehi_wrapped)
-        last_idx = hist->ehi_nels;
+    if (enc->qpe_hist_els)
+    {
+        if (enc->qpe_hist_wrapped)
+            last_idx = enc->qpe_hist_nels;
+        else
+            last_idx = enc->qpe_hist_idx;
+        enc->qpe_hist_els[ last_idx ].he_name_hash = name_hash;
+        for (el = enc->qpe_hist_els; el->he_name_hash != name_hash; ++el)
+            ;
+        return el < &enc->qpe_hist_els[ last_idx ];
+    }
     else
-        last_idx = hist->ehi_idx;
-    hist->ehi_els[ last_idx ].he_name_hash = name_hash;
-
-    for (el = hist->ehi_els; el->he_name_hash != name_hash; ++el)
-        ;
-    return el < &hist->ehi_els[ last_idx ];
-}
-
-
-static void
-qenc_hist_add_noop (struct lsqpack_enc_hist *hist, unsigned a, unsigned b)
-{
-}
-
-
-static int
-qenc_hist_seen_nameval_yes (struct lsqpack_enc_hist *hist, unsigned a)
-{
-    return 1;
-}
-
-
-static int
-qenc_hist_seen_name_yes (struct lsqpack_enc_hist *hist, unsigned a)
-{
-    return 1;
+        return 1;
 }
 
 
@@ -496,9 +457,6 @@ lsqpack_enc_preinit (struct lsqpack_enc *enc, void *logger_ctx)
     STAILQ_INIT(&enc->qpe_all_entries);
     STAILQ_INIT(&enc->qpe_hinfo_arrs);
     TAILQ_INIT(&enc->qpe_hinfos);
-    enc->qpe_hist_add          = qenc_hist_add_noop;
-    enc->qpe_hist_seen_nameval = qenc_hist_seen_nameval_yes;
-    enc->qpe_hist_seen_name    = qenc_hist_seen_name_yes;
     enc->qpe_logger_ctx        = logger_ctx;
     E_DEBUG("preinitialized");
 };
@@ -511,7 +469,6 @@ lsqpack_enc_init (struct lsqpack_enc *enc, void *logger_ctx,
                   unsigned char *tsu_buf, size_t *tsu_buf_sz)
 {
     struct lsqpack_double_enc_head *buckets;
-    struct lsqpack_enc_hist *hist;
     unsigned char *p;
     unsigned nbits = 2;
     unsigned i;
@@ -549,20 +506,21 @@ lsqpack_enc_init (struct lsqpack_enc *enc, void *logger_ctx,
 
     if (!(enc_opts & LSQPACK_ENC_OPT_IX_AGGR))
     {
-        hist = qenc_hist_new(MAX(
+        enc->qpe_hist_nels = MAX(
             /* Initial guess at number of entries in dynamic table: */
             dyn_table_size / DYNAMIC_ENTRY_OVERHEAD / 3,
             /* Initial guess at number of header fields per set: */
             12
-        ));
-        if (!hist)
+        );
+        enc->qpe_hist_els = malloc(sizeof(enc->qpe_hist_els[0]) * (enc->qpe_hist_nels + 1));
+        if (!enc->qpe_hist_els)
             return -1;
-        enc->qpe_hist_add          = qenc_hist_add;
-        enc->qpe_hist_seen_nameval = qenc_hist_seen_nameval;
-        enc->qpe_hist_seen_name    = qenc_hist_seen_name;
     }
     else
-        hist = NULL;
+    {
+        enc->qpe_hist_nels = 0;
+        enc->qpe_hist_els = NULL;
+    }
 
     if (max_table_size / DYNAMIC_ENTRY_OVERHEAD)
     {
@@ -570,11 +528,7 @@ lsqpack_enc_init (struct lsqpack_enc *enc, void *logger_ctx,
         buckets = malloc(sizeof(buckets[0]) * N_BUCKETS(nbits));
         if (!buckets)
         {
-            if (hist)
-            {
-                free(hist->ehi_els);
-                free(hist);
-            }
+            free(enc->qpe_hist_els);
             return -1;
         }
 
@@ -601,7 +555,6 @@ lsqpack_enc_init (struct lsqpack_enc *enc, void *logger_ctx,
         enc->qpe_flags   |= LSQPACK_ENC_USE_DUP;
     if (enc_opts & LSQPACK_ENC_OPT_NO_MEM_GUARD)
         enc->qpe_flags   |= LSQPACK_ENC_NO_MEM_GUARD;
-    enc->qpe_hist         = hist;
     E_DEBUG("initialized.  opts: 0x%X; max capacity: %u; max risked "
         "streams: %u.", enc_opts, enc->qpe_cur_max_capacity,
         enc->qpe_max_risked_streams);
@@ -629,11 +582,7 @@ lsqpack_enc_cleanup (struct lsqpack_enc *enc)
     }
 
     free(enc->qpe_buckets);
-    if (enc->qpe_hist)
-    {
-        free(enc->qpe_hist->ehi_els);
-        free(enc->qpe_hist);
-    }
+    free(enc->qpe_hist_els);
     E_DEBUG("cleaned up");
 }
 
@@ -1024,7 +973,7 @@ qenc_remove_overflow_entries (struct lsqpack_enc *enc)
     /* It's important to sample only when entries have been dropped: that
      * indicates that the table is being cycled through.
      */
-    if (dropped && enc->qpe_hist)
+    if (dropped && enc->qpe_hist_els)
         qenc_sample_table_size(enc);
 }
 
@@ -1227,7 +1176,7 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
     if (!(enc->qpe_flags & LSQPACK_ENC_HEADER))
         return -1;
 
-    if (enc->qpe_hist)
+    if (enc->qpe_hist_els)
     {
         qenc_sample_header_count(enc);
         if (enc->qpe_table_nelem_ema
@@ -1236,16 +1185,13 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
              */
             && enc->qpe_table_nelem_ema > enc->qpe_header_count_ema)
         {
-            count_diff = fabsf(enc->qpe_hist->ehi_nels
-                                                - enc->qpe_table_nelem_ema);
+            count_diff = fabsf(enc->qpe_hist_nels - enc->qpe_table_nelem_ema);
             /* If difference is 2 or 10%: */
             if (count_diff >= 1.5
                             || count_diff / enc->qpe_table_nelem_ema >= 0.1)
             {
                 nelem = (unsigned) round(enc->qpe_table_nelem_ema);
-                E_DEBUG("history size change from %u to %u",
-                        enc->qpe_hist->ehi_nels, nelem);
-                qenc_hist_update_size(enc->qpe_hist, nelem);
+                qenc_hist_update_size(enc, nelem);
             }
         }
     }
@@ -1567,7 +1513,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     /* Add header to history if it exists.  Defer updating history until we
      * know the function will return success.
      */
-    update_hist = enc->qpe_hist != NULL && !(flags & LQEF_NO_HIST_UPD);
+    update_hist = enc->qpe_hist_els != NULL && !(flags & LQEF_NO_HIST_UPD);
 
   restart:
     /* Look for a full match in the dynamic table */
@@ -1663,7 +1609,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                 [1][1][0] = { EEA_INS_NAMEREF_STATIC, EHA_INDEXED_NEW,        ETA_NEW,  EPF_REF_NEW, },
                 [1][1][1] = { EEA_NONE,               EHA_LIT_WITH_NAME_STAT, ETA_NOOP, 0, },   /* Invalid state */
             };
-            seen_nameval = enc->qpe_hist_seen_nameval(enc->qpe_hist, nameval_hash);
+            seen_nameval = qenc_hist_seen_nameval(enc, nameval_hash);
             prog = programs[seen_nameval][risk][use_dyn_table && n_cand > 0];
         }
         else
@@ -1696,8 +1642,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
             {
                 id = entry->ete_id;
                 if (index && enough_room
-                        && enc->qpe_hist_seen_nameval(enc->qpe_hist,
-                                                      nameval_hash))
+                                && qenc_hist_seen_nameval(enc, nameval_hash))
                     prog = (struct encode_program) { EEA_INS_NAMEREF_DYNAMIC,
                                 EHA_LIT_WITH_NAME_NEW, ETA_NEW,
                                 EPF_REF_NEW|EPF_REF_FOUND, };
@@ -1711,8 +1656,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     /* No matches found */
     if (index
             && (seen_nameval < 0 ? (seen_nameval
-                    = enc->qpe_hist_seen_nameval(enc->qpe_hist,
-                                                nameval_hash)) : seen_nameval)
+                    = qenc_hist_seen_nameval(enc, nameval_hash)) : seen_nameval)
             && (enough_room < 0 ?
             (enough_room = qenc_has_or_can_evict_at_least(enc,
                             ENTRY_COST(name_len, value_len))) : enough_room))
@@ -1725,7 +1669,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         };
         prog = programs[risk][use_dyn_table && n_cand > 0];
     }
-    else if (index && enc->qpe_hist_seen_name(enc->qpe_hist, name_hash)
+    else if (index && qenc_hist_seen_name(enc, name_hash)
                 && qenc_has_or_can_evict_at_least(enc, ENTRY_COST(name_len, 0)))
     {
         static const struct encode_program programs[2] = {
@@ -1974,10 +1918,10 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
 
     if (update_hist)
     {
-        assert(enc->qpe_hist);
-        if (enc->qpe_cur_header.n_hdr_added_to_hist >= enc->qpe_hist->ehi_nels)
-            qenc_hist_update_size(enc->qpe_hist, enc->qpe_hist->ehi_nels + 4);
-        enc->qpe_hist_add(enc->qpe_hist, name_hash, nameval_hash);
+        assert(enc->qpe_hist_els);
+        if (enc->qpe_cur_header.n_hdr_added_to_hist >= enc->qpe_hist_nels)
+            qenc_hist_update_size(enc, enc->qpe_hist_nels + 4);
+        qenc_hist_add(enc, name_hash, nameval_hash);
         ++enc->qpe_cur_header.n_hdr_added_to_hist;
     }
 
