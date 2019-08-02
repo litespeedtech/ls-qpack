@@ -177,7 +177,7 @@ static const struct static_table_entry static_table[] =
  */
 #define DYNAMIC_ENTRY_OVERHEAD 32u
 
-/* Initial guess at number of header fields per set: */
+/* Initial guess at number of header fields per list: */
 #define GUESS_N_HEADER_FIELDS 12
 
 #define MAX_QUIC_STREAM_ID ((1ull << 62) - 1)
@@ -2788,7 +2788,7 @@ allocate_hint (struct header_block_read_ctx *read_ctx)
 
 
 static int
-hset_add_static_entry (struct lsqpack_dec *dec,
+hlist_add_static_entry (struct lsqpack_dec *dec,
                     struct header_block_read_ctx *read_ctx, uint64_t idx)
 {
     struct header_internal *hint;
@@ -2809,7 +2809,7 @@ hset_add_static_entry (struct lsqpack_dec *dec,
 
 
 static int
-hset_add_dynamic_entry (struct lsqpack_dec *dec,
+hlist_add_dynamic_entry (struct lsqpack_dec *dec,
                     struct header_block_read_ctx *read_ctx, lsqpack_abs_id_t idx)
 {
     struct lsqpack_dec_table_entry *entry;
@@ -2833,7 +2833,7 @@ hset_add_dynamic_entry (struct lsqpack_dec *dec,
 
 
 static int
-hset_add_static_nameref_entry (struct header_block_read_ctx *read_ctx,
+hlist_add_static_nameref_entry (struct header_block_read_ctx *read_ctx,
                 unsigned idx, char *value, unsigned val_len, int is_never)
 {
     struct header_internal *hint;
@@ -2859,7 +2859,7 @@ hset_add_static_nameref_entry (struct header_block_read_ctx *read_ctx,
 
 
 static int
-hset_add_dynamic_nameref_entry (struct header_block_read_ctx *read_ctx,
+hlist_add_dynamic_nameref_entry (struct header_block_read_ctx *read_ctx,
                 struct lsqpack_dec_table_entry *entry, char *value,
                 unsigned val_len, int is_never)
 {
@@ -2888,7 +2888,7 @@ hset_add_dynamic_nameref_entry (struct header_block_read_ctx *read_ctx,
 
 
 static int
-hset_add_literal_entry (struct header_block_read_ctx *read_ctx,
+hlist_add_literal_entry (struct header_block_read_ctx *read_ctx,
         char *nameandval, unsigned name_len, unsigned val_len, int is_never)
 {
     struct header_internal *hint;
@@ -3107,11 +3107,11 @@ parse_header_data (struct lsqpack_dec *dec,
             if (r == 0)
             {
                 if (IHF.is_static)
-                    r = hset_add_static_entry(dec, read_ctx, IHF.value);
+                    r = hlist_add_static_entry(dec, read_ctx, IHF.value);
                 else
                 {
                     value = ID_MINUS(read_ctx->hbrc_base_index, IHF.value);
-                    r = hset_add_dynamic_entry(dec, read_ctx, value);
+                    r = hlist_add_dynamic_entry(dec, read_ctx, value);
                     check_dyn_table_errors(read_ctx, value);
                 }
                 if (r == 0)
@@ -3223,12 +3223,12 @@ parse_header_data (struct lsqpack_dec *dec,
                 read_ctx->hbrc_parse_ctx_u.data.state
                                     = DATA_STATE_NEXT_INSTRUCTION;
                 if (LFINR.is_static)
-                    r = hset_add_static_nameref_entry(read_ctx,
+                    r = hlist_add_static_nameref_entry(read_ctx,
                             LFINR.name_ref.static_idx, LFINR.value,
                             LFINR.val_off, LFINR.is_never);
                 else
                 {
-                    r = hset_add_dynamic_nameref_entry(read_ctx,
+                    r = hlist_add_dynamic_nameref_entry(read_ctx,
                             LFINR.name_ref.dyn_entry, LFINR.value,
                             LFINR.val_off, LFINR.is_never);
                     qdec_decref_entry(LFINR.name_ref.dyn_entry);
@@ -3271,12 +3271,12 @@ parse_header_data (struct lsqpack_dec *dec,
                 read_ctx->hbrc_parse_ctx_u.data.state
                                     = DATA_STATE_NEXT_INSTRUCTION;
                 if (LFINR.is_static)
-                    r = hset_add_static_nameref_entry(read_ctx,
+                    r = hlist_add_static_nameref_entry(read_ctx,
                             LFINR.name_ref.static_idx, LFINR.value,
                             LFINR.val_off, LFINR.is_never);
                 else
                 {
-                    r = hset_add_dynamic_nameref_entry(read_ctx,
+                    r = hlist_add_dynamic_nameref_entry(read_ctx,
                             LFINR.name_ref.dyn_entry, LFINR.value,
                             LFINR.val_off, LFINR.is_never);
                     qdec_decref_entry(LFINR.name_ref.dyn_entry);
@@ -3416,7 +3416,7 @@ parse_header_data (struct lsqpack_dec *dec,
                 buf += hdr.n_src;
                 read_ctx->hbrc_parse_ctx_u.data.state
                                     = DATA_STATE_NEXT_INSTRUCTION;
-                r = hset_add_literal_entry(read_ctx,
+                r = hlist_add_literal_entry(read_ctx,
                         LFONR.name, LFONR.name_len, LFONR.str_off + hdr.n_dst,
                         LFONR.is_never);
                 if (r == 0)
@@ -3464,7 +3464,7 @@ parse_header_data (struct lsqpack_dec *dec,
   lfonr_insert_entry:
                 read_ctx->hbrc_parse_ctx_u.data.state
                                     = DATA_STATE_NEXT_INSTRUCTION;
-                r = hset_add_literal_entry(read_ctx,
+                r = hlist_add_literal_entry(read_ctx,
                         LFONR.name, LFONR.name_len, LFONR.str_off,
                         LFONR.is_never);
                 if (0 == r)
@@ -3560,7 +3560,7 @@ parse_header_data (struct lsqpack_dec *dec,
                 LFPBNR.val_off += hdr.n_dst;
                 read_ctx->hbrc_parse_ctx_u.data.state
                                     = DATA_STATE_NEXT_INSTRUCTION;
-                r = hset_add_dynamic_nameref_entry(read_ctx,
+                r = hlist_add_dynamic_nameref_entry(read_ctx,
                                 LFPBNR.reffed_entry, LFPBNR.value,
                                 LFPBNR.val_off, LFPBNR.is_never);
                 qdec_decref_entry(LFPBNR.reffed_entry);
@@ -3601,7 +3601,7 @@ parse_header_data (struct lsqpack_dec *dec,
   lfpbnr_insert_entry:
                 read_ctx->hbrc_parse_ctx_u.data.state
                                     = DATA_STATE_NEXT_INSTRUCTION;
-                r = hset_add_dynamic_nameref_entry(read_ctx,
+                r = hlist_add_dynamic_nameref_entry(read_ctx,
                             LFPBNR.reffed_entry, LFPBNR.value,
                             LFPBNR.val_off, LFPBNR.is_never);
                 qdec_decref_entry(LFPBNR.reffed_entry);
@@ -3623,7 +3623,7 @@ parse_header_data (struct lsqpack_dec *dec,
             if (r == 0)
             {
                 value = ID_PLUS(read_ctx->hbrc_base_index, IPBI.value + 1);
-                r = hset_add_dynamic_entry(dec, read_ctx, value);
+                r = hlist_add_dynamic_entry(dec, read_ctx, value);
                 check_dyn_table_errors(read_ctx, value);
                 if (r == 0)
                 {
@@ -4743,14 +4743,14 @@ lsqpack_dec_print_table (const struct lsqpack_dec *dec, FILE *out)
 
 
 void
-lsqpack_dec_destroy_header_list (struct lsqpack_header_list *set)
+lsqpack_dec_destroy_header_list (struct lsqpack_header_list *hlist)
 {
     struct header_internal *hint;
     unsigned n;
 
-    for (n = 0; n < set->qhl_count; ++n)
+    for (n = 0; n < hlist->qhl_count; ++n)
     {
-        hint = (struct header_internal *) set->qhl_headers[n];
+        hint = (struct header_internal *) hlist->qhl_headers[n];
         if (hint->hi_entry)
             qdec_decref_entry(hint->hi_entry);
         if (hint->hi_flags & HI_OWN_NAME)
@@ -4759,8 +4759,8 @@ lsqpack_dec_destroy_header_list (struct lsqpack_header_list *set)
             free((char *) hint->hi_uhead.qh_value);
         free(hint);
     }
-    free(set->qhl_headers);
-    free(set);
+    free(hlist->qhl_headers);
+    free(hlist);
 }
 
 
