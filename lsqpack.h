@@ -652,6 +652,9 @@ struct lsqpack_dec
     /** Number of blocked streams (in qpd_blocked_headers) */
     unsigned                qpd_n_blocked;
 
+    /** Average number of header fields in header list */
+    float                   qpd_hlist_size_ema;
+
     /** Reading the encoder stream */
     struct {
         int                                                 resume;

@@ -177,6 +177,9 @@ static const struct static_table_entry static_table[] =
  */
 #define DYNAMIC_ENTRY_OVERHEAD 32u
 
+/* Initial guess at number of header fields per set: */
+#define GUESS_N_HEADER_FIELDS 12
+
 #define MAX_QUIC_STREAM_ID ((1ull << 62) - 1)
 
 #ifdef LSQPACK_ENC_LOGGER_HEADER
@@ -491,8 +494,7 @@ lsqpack_enc_init (struct lsqpack_enc *enc, void *logger_ctx,
         enc->qpe_hist_nels = MAX(
             /* Initial guess at number of entries in dynamic table: */
             dyn_table_size / DYNAMIC_ENTRY_OVERHEAD / 3,
-            /* Initial guess at number of header fields per set: */
-            12
+            GUESS_N_HEADER_FIELDS
         );
         enc->qpe_hist_els = malloc(sizeof(enc->qpe_hist_els[0]) * (enc->qpe_hist_nels + 1));
         if (!enc->qpe_hist_els)
@@ -2515,6 +2517,8 @@ struct header_block_read_ctx
     struct lsqpack_header_list         *hbrc_header_list;
     unsigned                            hbrc_nalloced_headers;
 
+    unsigned                            hbrc_hlist_size;
+
     /* There are two parsing phases: reading the prefix and reading the
      * instruction stream.
      */
@@ -2778,7 +2782,10 @@ allocate_hint (struct header_block_read_ctx *read_ctx)
 
     if (read_ctx->hbrc_header_list->qhl_count >= read_ctx->hbrc_nalloced_headers)
     {
-        if (read_ctx->hbrc_nalloced_headers)
+        if (0 == read_ctx->hbrc_nalloced_headers && read_ctx->hbrc_hlist_size)
+            read_ctx->hbrc_nalloced_headers =
+                read_ctx->hbrc_hlist_size + read_ctx->hbrc_hlist_size / 4;
+        else if (read_ctx->hbrc_nalloced_headers)
             read_ctx->hbrc_nalloced_headers *= 2;
         else
             read_ctx->hbrc_nalloced_headers = 4;
@@ -4002,6 +4009,8 @@ qdec_header_process (struct lsqpack_dec *dec,
     switch (st)
     {
     case LQRHS_DONE:
+        update_ema(&dec->qpd_hlist_size_ema,
+                                        read_ctx->hbrc_header_list->qhl_count);
         if ((read_ctx->hbrc_flags & HBRC_LARGEST_REF_SET)
                                                     && dec_buf && dec_buf_sz)
         {
@@ -4105,6 +4114,7 @@ lsqpack_dec_header_in (struct lsqpack_dec *dec, void *hblock,
         .hbrc_size      = header_size,
         .hbrc_orig_size = header_size,
         .hbrc_parse     = parse_header_prefix,
+        .hbrc_hlist_size= dec->qpd_hlist_size_ema,
     };
 
     D_DEBUG("begin reading header block for stream %"PRIu64, stream_id);
