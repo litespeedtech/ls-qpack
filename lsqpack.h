@@ -635,10 +635,6 @@ struct lsqpack_dec
 
     void                   *qpd_logger_ctx;
 
-    /** Outstanding header sets */
-    struct lsqpack_header_sets
-                            qpd_header_sets;
-
     /** This is the dynamic table */
     struct lsqpack_ringbuf  qpd_dyn_table;
 

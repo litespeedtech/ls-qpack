@@ -2443,7 +2443,6 @@ lsqpack_dec_init (struct lsqpack_dec *dec, void *logger_ctx,
     dec->qpd_largest_known_id = dec->qpd_max_entries * 2 - 1;
     dec->qpd_max_risked_streams = max_risked_streams;
     dec->qpd_hblock_unblocked = hblock_unblocked;
-    TAILQ_INIT(&dec->qpd_header_sets);
     TAILQ_INIT(&dec->qpd_hbrcs);
     for (i = 0; i < (1 << LSQPACK_DEC_BLOCKED_BITS); ++i)
         TAILQ_INIT(&dec->qpd_blocked_headers[i]);
@@ -2479,29 +2478,8 @@ enum {
     DEI_WONR_READ_VALUE_PLAIN,
 };
 
-
-enum dec_inst_type
-{
-    DIT_READ_CTX_ACK,
-    DIT_READ_CTX_CANCEL,
-    DIT_HEAD_ACK,
-};
-
-struct lsqpack_dec_inst
-{
-    STAILQ_ENTRY(lsqpack_dec_inst)  di_next;
-    enum dec_inst_type              di_type;
-};
-
-struct header_ack
-{
-    struct lsqpack_dec_inst     dinst;
-    uint64_t                    stream_id;
-};
-
 struct header_block_read_ctx
 {
-    struct lsqpack_dec_inst             hbrc_dinst;
     TAILQ_ENTRY(header_block_read_ctx)  hbrc_next_all,
                                         hbrc_next_blocked;
     void                               *hbrc_hblock;
