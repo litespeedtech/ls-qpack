@@ -298,12 +298,12 @@ struct lsqpack_header
 };
 
 /**
- * The header set represents the decoded header block.
+ * The header list represents the decoded header block.
  */
-struct lsqpack_header_set
+struct lsqpack_header_list
 {
-    struct lsqpack_header  **qhs_headers;
-    unsigned                 qhs_count;
+    struct lsqpack_header  **qhl_headers;
+    unsigned                 qhl_count;
 };
 
 void
@@ -318,11 +318,11 @@ lsqpack_dec_init (struct lsqpack_dec *, void *logger_ctx,
 enum lsqpack_read_header_status
 {
     /**
-     * The header set has been placed in `hset' and `buf' has been advanced.
+     * The header list has been placed in `hlist' and `buf' has been advanced.
      * This header should be released using
-     * @ref lsqpack_dec_destroy_header_set() after the caller is done with it.
+     * @ref lsqpack_dec_destroy_header_list() after the caller is done with it.
      *
-     * Note that the header set in `hset' has an unlimited lifetime.  Even
+     * Note that the header list in `hlist' has an unlimited lifetime.  Even
      * destroying it after @ref lsqpack_dec_cleanup() is called is OK and
      * will not leak memory.
      */
@@ -380,7 +380,7 @@ enum lsqpack_read_header_status
 lsqpack_dec_header_in (struct lsqpack_dec *, void *hblock_ctx,
                        uint64_t stream_id, size_t header_block_size,
                        const unsigned char **buf, size_t bufsz,
-                       struct lsqpack_header_set **hset,
+                       struct lsqpack_header_list **hlist,
                        unsigned char *dec_buf, size_t *dec_buf_sz);
 
 /**
@@ -393,7 +393,7 @@ lsqpack_dec_header_in (struct lsqpack_dec *, void *hblock_ctx,
 enum lsqpack_read_header_status
 lsqpack_dec_header_read (struct lsqpack_dec *dec, void *hblock_ctx,
                          const unsigned char **buf, size_t bufsz,
-                         struct lsqpack_header_set **hset,
+                         struct lsqpack_header_list **hlist,
                          unsigned char *dec_buf, size_t *dec_buf_sz);
 
 /**
@@ -404,11 +404,11 @@ int
 lsqpack_dec_enc_in (struct lsqpack_dec *, const unsigned char *, size_t);
 
 /**
- * Destroy the header set returned by either
+ * Destroy the header list returned by either
  * @ref lsqpack_dec_header_in() or @ref lsqpack_dec_header_read().
  */
 void
-lsqpack_dec_destroy_header_set (struct lsqpack_header_set *);
+lsqpack_dec_destroy_header_list (struct lsqpack_header_list *);
 
 /**
  * Returns true if Insert Count Increment (ICI) instruction is pending.
@@ -580,7 +580,7 @@ struct lsqpack_enc
     void                       *qpe_logger_ctx;
 
     /* Exponential moving averages (EMAs) of the number of elements in the
-     * dynamic table and the number of header fields in a single header set.
+     * dynamic table and the number of header fields in a single header list.
      * These values are used to adjust history size.
      */
     float                       qpe_table_nelem_ema;

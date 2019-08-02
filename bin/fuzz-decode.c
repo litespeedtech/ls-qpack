@@ -171,13 +171,13 @@ main (int argc, char **argv)
         else
         {
             const unsigned char *cur = p;
-            struct lsqpack_header_set *hset;
+            struct lsqpack_header_list *hlist;
             enum lsqpack_read_header_status rhs;
             rhs = lsqpack_dec_header_in(&decoder, NULL, stream_id,
-                        size, &cur, size, &hset, NULL, NULL);
+                        size, &cur, size, &hlist, NULL, NULL);
             if (rhs != LQRHS_DONE || (uint32_t) (cur - p) != size)
                 abort();
-            lsqpack_dec_destroy_header_set(hset);
+            lsqpack_dec_destroy_header_list(hlist);
         }
         p += size;
     }
@@ -220,11 +220,11 @@ main (int argc, char **argv)
         else
         {
             const unsigned char *cur = p;
-            struct lsqpack_header_set *hset;
+            struct lsqpack_header_list *hlist;
             enum lsqpack_read_header_status rhs;
             size = MIN(size, (uint32_t) (end - p));
             rhs = lsqpack_dec_header_in(&decoder, NULL, stream_id,
-                        size, &cur, size, &hset, NULL, NULL);
+                        size, &cur, size, &hlist, NULL, NULL);
             (void) rhs;
         }
         break;

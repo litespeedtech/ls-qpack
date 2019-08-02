@@ -444,22 +444,22 @@ test_discard_header (int err)
     struct lsqpack_dec dec;
     enum lsqpack_read_header_status rhs;
     const unsigned char *buf;
-    struct lsqpack_header_set *hset = NULL;
+    struct lsqpack_header_list *hlist = NULL;
     unsigned char header_block[] = "\x00\x00\xC0\x80";
 
     lsqpack_dec_init(&dec, NULL, 0, 0, NULL);
 
     buf = header_block;
     rhs = lsqpack_dec_header_in(&dec, (void *) 1, 0, 10,
-                                    &buf, 3 + !!err, &hset, NULL, NULL);
+                                    &buf, 3 + !!err, &hlist, NULL, NULL);
     if (err)
     {
-        assert(hset == NULL);
+        assert(hlist == NULL);
         assert(LQRHS_ERROR == rhs);
     }
     else
     {
-        assert(hset == NULL);
+        assert(hlist == NULL);
         assert(3 == buf - header_block);
         assert(LQRHS_NEED == rhs);
         lsqpack_dec_cleanup(&dec);
@@ -473,15 +473,15 @@ test_static_bounds_header_block (void)
     struct lsqpack_dec dec;
     enum lsqpack_read_header_status rhs;
     const unsigned char *buf;
-    struct lsqpack_header_set *hset = NULL;
+    struct lsqpack_header_list *hlist = NULL;
     /* Static table index 1000 */
     unsigned char header_block[] = "\x00\x00\xFF\xA9\x07";
 
     lsqpack_dec_init(&dec, stderr, 0, 0, NULL);
     buf = header_block;
     rhs = lsqpack_dec_header_in(&dec, (void *) 1, 0, 10,
-                                    &buf, 5, &hset, NULL, NULL);
-    assert(hset == NULL);
+                                    &buf, 5, &hlist, NULL, NULL);
+    assert(hlist == NULL);
     assert(LQRHS_ERROR == rhs);
     lsqpack_dec_cleanup(&dec);
 }

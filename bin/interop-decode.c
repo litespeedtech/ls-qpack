@@ -96,35 +96,35 @@ hblock_unblocked (void *buf_p)
 
 
 static void
-header_block_done (const struct buf *buf, struct lsqpack_header_set *set)
+header_block_done (const struct buf *buf, struct lsqpack_header_list *set)
 {
     unsigned n;
 
     if (!set)
     {
-        fprintf(stderr, "Stream %"PRIu64" has empty header set\n", buf->stream_id);
+        fprintf(stderr, "Stream %"PRIu64" has empty header list\n", buf->stream_id);
         return;
     }
 
     if (s_verbose)
     {
         fprintf(stderr, "Have headers for stream %"PRIu64":\n", buf->stream_id);
-        for (n = 0; n < set->qhs_count; ++n)
+        for (n = 0; n < set->qhl_count; ++n)
             fprintf(stderr, "  %.*s: %.*s\n",
-                set->qhs_headers[n]->qh_name_len, set->qhs_headers[n]->qh_name,
-                set->qhs_headers[n]->qh_value_len, set->qhs_headers[n]->qh_value);
+                set->qhl_headers[n]->qh_name_len, set->qhl_headers[n]->qh_name,
+                set->qhl_headers[n]->qh_value_len, set->qhl_headers[n]->qh_value);
         fprintf(stderr, "\n");
     }
 
     fprintf(s_out, "# stream %"PRIu64"\n", buf->stream_id);
     fprintf(s_out, "# (stream ID above is used for sorting)\n");
-    for (n = 0; n < set->qhs_count; ++n)
+    for (n = 0; n < set->qhl_count; ++n)
         fprintf(s_out, "%.*s\t%.*s\n",
-            set->qhs_headers[n]->qh_name_len, set->qhs_headers[n]->qh_name,
-            set->qhs_headers[n]->qh_value_len, set->qhs_headers[n]->qh_value);
+            set->qhl_headers[n]->qh_name_len, set->qhl_headers[n]->qh_name,
+            set->qhl_headers[n]->qh_value_len, set->qhl_headers[n]->qh_value);
     fprintf(s_out, "\n");
 
-    lsqpack_dec_destroy_header_set(set);
+    lsqpack_dec_destroy_header_list(set);
 }
 
 
@@ -149,7 +149,7 @@ main (int argc, char **argv)
     unsigned lineno;
     char *line, *end;
     enum lsqpack_read_header_status rhs;
-    struct lsqpack_header_set *hset;
+    struct lsqpack_header_list *hlist;
     char command[0x100];
     char line_buf[0x100];
 
@@ -305,12 +305,12 @@ main (int argc, char **argv)
                 rhs = lsqpack_dec_header_in(&decoder, buf, stream_id,
                             buf->size, &p,
                             buf->size /* FIXME: this should be `size' */,
-                            &hset, NULL, NULL);
+                            &hlist, NULL, NULL);
                 switch (rhs)
                 {
                 case LQRHS_DONE:
                     assert(p == buf->buf + buf->size);
-                    header_block_done(buf, hset);
+                    header_block_done(buf, hlist);
                     TAILQ_REMOVE(&bufs, buf, next_buf);
                     free(buf);
                     break;
@@ -365,16 +365,16 @@ main (int argc, char **argv)
             if (buf->off == 0)
                 rhs = lsqpack_dec_header_in(&decoder, buf, buf->stream_id,
                                 buf->size, &p, MIN(s_max_read_size, buf->size),
-                                &hset, NULL, NULL);
+                                &hlist, NULL, NULL);
             else
                 rhs = lsqpack_dec_header_read(buf->dec, buf, &p,
                                 MIN(s_max_read_size, (buf->size - buf->off)),
-                                &hset, NULL, NULL);
+                                &hlist, NULL, NULL);
             switch (rhs)
             {
             case LQRHS_DONE:
                 assert(p == buf->buf + buf->size);
-                header_block_done(buf, hset);
+                header_block_done(buf, hlist);
                 free(buf);
                 break;
             case LQRHS_BLOCKED:

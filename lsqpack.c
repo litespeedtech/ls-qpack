@@ -1123,7 +1123,7 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz)
         qenc_sample_header_count(enc);
         if (enc->qpe_table_nelem_ema
             /* History size should not be smaller than the average number of
-             * header fields in a header set.
+             * header fields in a header list.
              */
             && enc->qpe_table_nelem_ema > enc->qpe_header_count_ema)
         {
@@ -2509,10 +2509,10 @@ struct header_block_read_ctx
     lsqpack_abs_id_t                    hbrc_largest_ref;   /* Parsed from prefix */
     lsqpack_abs_id_t                    hbrc_base_index;    /* Parsed from prefix */
 
-    /* The header set that is returned to the user is built up one entry
+    /* The header list that is returned to the user is built up one entry
      * at a time.
      */
-    struct lsqpack_header_set          *hbrc_header_set;
+    struct lsqpack_header_list         *hbrc_header_list;
     unsigned                            hbrc_nalloced_headers;
 
     /* There are two parsing phases: reading the prefix and reading the
@@ -2708,8 +2708,8 @@ cleanup_read_ctx (struct header_block_read_ctx *read_ctx)
         break;
     }
 
-    if (read_ctx->hbrc_header_set)
-        lsqpack_dec_destroy_header_set(read_ctx->hbrc_header_set);
+    if (read_ctx->hbrc_header_list)
+        lsqpack_dec_destroy_header_list(read_ctx->hbrc_header_list);
 }
 
 
@@ -2768,26 +2768,26 @@ allocate_hint (struct header_block_read_ctx *read_ctx)
     struct header_internal *hint;
     unsigned idx;
 
-    if (!read_ctx->hbrc_header_set)
+    if (!read_ctx->hbrc_header_list)
     {
-        read_ctx->hbrc_header_set
-                            = calloc(1, sizeof(*read_ctx->hbrc_header_set));
-        if (!read_ctx->hbrc_header_set)
+        read_ctx->hbrc_header_list
+                            = calloc(1, sizeof(*read_ctx->hbrc_header_list));
+        if (!read_ctx->hbrc_header_list)
             return NULL;
     }
 
-    if (read_ctx->hbrc_header_set->qhs_count >= read_ctx->hbrc_nalloced_headers)
+    if (read_ctx->hbrc_header_list->qhl_count >= read_ctx->hbrc_nalloced_headers)
     {
         if (read_ctx->hbrc_nalloced_headers)
             read_ctx->hbrc_nalloced_headers *= 2;
         else
             read_ctx->hbrc_nalloced_headers = 4;
         headers =
-            realloc(read_ctx->hbrc_header_set->qhs_headers,
+            realloc(read_ctx->hbrc_header_list->qhl_headers,
                 read_ctx->hbrc_nalloced_headers
-                    * sizeof(read_ctx->hbrc_header_set->qhs_headers[0]));
+                    * sizeof(read_ctx->hbrc_header_list->qhl_headers[0]));
         if (headers)
-            read_ctx->hbrc_header_set->qhs_headers = headers;
+            read_ctx->hbrc_header_list->qhl_headers = headers;
         else
             return NULL;
     }
@@ -2796,8 +2796,8 @@ allocate_hint (struct header_block_read_ctx *read_ctx)
     if (!hint)
         return NULL;
 
-    idx = read_ctx->hbrc_header_set->qhs_count++;
-    read_ctx->hbrc_header_set->qhs_headers[idx] = &hint->hi_uhead;
+    idx = read_ctx->hbrc_header_list->qhl_count++;
+    read_ctx->hbrc_header_list->qhl_headers[idx] = &hint->hi_uhead;
     return hint;
 }
 
@@ -3991,7 +3991,7 @@ static enum lsqpack_read_header_status
 qdec_header_process (struct lsqpack_dec *dec,
             struct header_block_read_ctx *read_ctx,
             const unsigned char **buf, size_t bufsz,
-            struct lsqpack_header_set **hset,
+            struct lsqpack_header_list **hlist,
             unsigned char *dec_buf, size_t *dec_buf_sz)
 {
     struct header_block_read_ctx *read_ctx_copy;
@@ -4018,8 +4018,8 @@ qdec_header_process (struct lsqpack_dec *dec,
         else if (dec_buf_sz)
             *dec_buf_sz = 0;
         *buf = *buf + read_ctx->hbrc_buf.off;
-        *hset = read_ctx->hbrc_header_set;
-        read_ctx->hbrc_header_set = NULL;
+        *hlist = read_ctx->hbrc_header_list;
+        read_ctx->hbrc_header_list = NULL;
         D_DEBUG("header block for stream %"PRIu64" is done",
                                                     read_ctx->hbrc_stream_id);
         break;
@@ -4072,7 +4072,7 @@ qdec_header_process (struct lsqpack_dec *dec,
 
 enum lsqpack_read_header_status
 lsqpack_dec_header_read (struct lsqpack_dec *dec, void *hblock,
-    const unsigned char **buf, size_t bufsz, struct lsqpack_header_set **hset,
+    const unsigned char **buf, size_t bufsz, struct lsqpack_header_list **hlist,
     unsigned char *dec_buf, size_t *dec_buf_sz)
 {
     struct header_block_read_ctx *read_ctx;
@@ -4082,7 +4082,7 @@ lsqpack_dec_header_read (struct lsqpack_dec *dec, void *hblock,
     {
         D_DEBUG("continue reading header block for stream %"PRIu64,
                                                     read_ctx->hbrc_stream_id);
-        return qdec_header_process(dec, read_ctx, buf, bufsz, hset,
+        return qdec_header_process(dec, read_ctx, buf, bufsz, hlist,
                                    dec_buf, dec_buf_sz);
     }
     else
@@ -4096,7 +4096,7 @@ lsqpack_dec_header_read (struct lsqpack_dec *dec, void *hblock,
 enum lsqpack_read_header_status
 lsqpack_dec_header_in (struct lsqpack_dec *dec, void *hblock,
             uint64_t stream_id, size_t header_size, const unsigned char **buf,
-            size_t bufsz, struct lsqpack_header_set **hset,
+            size_t bufsz, struct lsqpack_header_list **hlist,
             unsigned char *dec_buf, size_t *dec_buf_sz)
 {
     struct header_block_read_ctx read_ctx = {
@@ -4108,7 +4108,7 @@ lsqpack_dec_header_in (struct lsqpack_dec *dec, void *hblock,
     };
 
     D_DEBUG("begin reading header block for stream %"PRIu64, stream_id);
-    return qdec_header_process(dec, &read_ctx, buf, bufsz, hset,
+    return qdec_header_process(dec, &read_ctx, buf, bufsz, hlist,
                                dec_buf, dec_buf_sz);
 }
 
@@ -4755,14 +4755,14 @@ lsqpack_dec_print_table (const struct lsqpack_dec *dec, FILE *out)
 
 
 void
-lsqpack_dec_destroy_header_set (struct lsqpack_header_set *set)
+lsqpack_dec_destroy_header_list (struct lsqpack_header_list *set)
 {
     struct header_internal *hint;
     unsigned n;
 
-    for (n = 0; n < set->qhs_count; ++n)
+    for (n = 0; n < set->qhl_count; ++n)
     {
-        hint = (struct header_internal *) set->qhs_headers[n];
+        hint = (struct header_internal *) set->qhl_headers[n];
         if (hint->hi_entry)
             qdec_decref_entry(hint->hi_entry);
         if (hint->hi_flags & HI_OWN_NAME)
@@ -4771,7 +4771,7 @@ lsqpack_dec_destroy_header_set (struct lsqpack_header_set *set)
             free((char *) hint->hi_uhead.qh_value);
         free(hint);
     }
-    free(set->qhs_headers);
+    free(set->qhl_headers);
     free(set);
 }
 
