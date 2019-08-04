@@ -535,7 +535,7 @@ lsqpack_enc_init (struct lsqpack_enc *enc, void *logger_ctx,
     enc->qpe_buckets      = buckets;
     enc->qpe_nbits        = nbits;
     enc->qpe_logger_ctx   = logger_ctx;
-    if (enc_opts & LSQPACK_ENC_OPT_DUP)
+    if (!(enc_opts & LSQPACK_ENC_OPT_NO_DUP))
         enc->qpe_flags   |= LSQPACK_ENC_USE_DUP;
     if (enc_opts & LSQPACK_ENC_OPT_NO_MEM_GUARD)
         enc->qpe_flags   |= LSQPACK_ENC_NO_MEM_GUARD;

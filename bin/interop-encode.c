@@ -249,7 +249,7 @@ main (int argc, char **argv)
     char *line, *end, *tab;
     ssize_t pref_sz;
     enum lsqpack_enc_status st;
-    enum lsqpack_enc_opts enc_opts = LSQPACK_ENC_OPT_DUP;
+    enum lsqpack_enc_opts enc_opts = 0;
     size_t enc_sz, hea_sz, enc_off, hea_off;
     int header_opened, r;
     unsigned arg;
@@ -268,7 +268,7 @@ main (int argc, char **argv)
             enc_opts |= LSQPACK_ENC_OPT_SERVER;
             break;
         case 'D':
-            enc_opts &= ~LSQPACK_ENC_OPT_DUP;
+            enc_opts |= LSQPACK_ENC_OPT_NO_DUP;
             break;
         case 'A':
             enc_opts |= LSQPACK_ENC_OPT_IX_AGGR;

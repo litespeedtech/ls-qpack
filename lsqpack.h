@@ -48,7 +48,7 @@ typedef SSIZE_T ssize_t;
  */
 #define LSQPACK_MAJOR_VERSION 0
 #define LSQPACK_MINOR_VERSION 9
-#define LSQPACK_PATCH_VERSION 8
+#define LSQPACK_PATCH_VERSION 9
 
 /** Let's start with four billion for now */
 typedef unsigned lsqpack_abs_id_t;
@@ -73,20 +73,30 @@ enum lsqpack_enc_opts
     LSQPACK_ENC_OPT_SERVER  = 1 << 0,
 
     /**
-     * Enable emitting dup instructions.
-     */
-    LSQPACK_ENC_OPT_DUP     = 1 << 1,
-
-    /**
-     * Index aggressively: ignore history
-     */
-    LSQPACK_ENC_OPT_IX_AGGR = 1 << 2,
-
-    /**
      * The encoder was pre-initialized using @ref lsqpack_enc_preinit() and
      * so some initialization steps can be skipped.
      */
-    LSQPACK_ENC_OPT_STAGE_2 = 1 << 3,
+    LSQPACK_ENC_OPT_STAGE_2 = 1 << 1,
+
+    /* The options below are advanced.  The author only uses them for debugging
+     * or testing.
+     */
+
+    /**
+     * Disable emitting dup instructions.
+     *
+     * Disabling dup instructions usually makes compression performance
+     * significanly worse.  Do not use unless you know what you are doing.
+     */
+    LSQPACK_ENC_OPT_NO_DUP  = 1 << 2,
+
+    /**
+     * Index aggressively: ignore history
+     *
+     * Ignoring history usually makes compression performance significanly
+     * worse.  Do not use unless you know what you are doing.
+     */
+    LSQPACK_ENC_OPT_IX_AGGR = 1 << 3,
 
     /**
      * Turn off memory guard: keep on allocating state tracking oustanding
