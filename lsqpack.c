@@ -3666,8 +3666,8 @@ parse_header_data (struct lsqpack_dec *dec,
     dec->qpd_err.off = read_ctx->hbrc_orig_size - read_ctx->hbrc_size
                             + (buf - (end - bufsz));
     dec->qpd_err.stream_id = read_ctx->hbrc_stream_id;
-    D_DEBUG("header block error on line %d, offset %zu, stream id %"PRIu64,
-        dec->qpd_err.line, dec->qpd_err.off, dec->qpd_err.stream_id);
+    D_DEBUG("header block error on line %d, offset %"PRIu64", stream id "
+        "%"PRIu64, dec->qpd_err.line, dec->qpd_err.off, dec->qpd_err.stream_id);
     return LQRHS_ERROR;
 }
 
