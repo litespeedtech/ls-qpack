@@ -502,6 +502,110 @@ test_static_bounds_enc_stream (void)
 }
 
 
+static void
+test_wonr_name_too_large_huffman (void)
+{
+    struct lsqpack_dec dec;
+    int r;
+    /* Partial Insert Without Name Reference with Huffman-encoded name
+     * string that is larger than 4 x capacity (0x4001)
+     */
+    unsigned char enc_stream[] = "\x7F\xE2\x7F";
+
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    r = lsqpack_dec_enc_in(&dec, enc_stream, 3);
+    assert(r == -1);
+    lsqpack_dec_cleanup(&dec);
+}
+
+
+static void
+test_wonr_name_too_large_plain (void)
+{
+    struct lsqpack_dec dec;
+    int r;
+    /* Partial Insert Without Name Reference with plain-encoded name
+     * string that is larger than capacity (0x1001)
+     */
+    unsigned char enc_stream[] = "\x5F\xE2\x1F";
+
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    r = lsqpack_dec_enc_in(&dec, enc_stream, 3);
+    assert(r == -1);
+    lsqpack_dec_cleanup(&dec);
+}
+
+
+static void
+test_wonr_value_too_large_huffman (void)
+{
+    struct lsqpack_dec dec;
+    int r;
+    /* Partial Insert Without Name Reference with Huffman-encoded value
+     * string that, together with name, is larger than 4 x capacity (0x3FFF)
+     */
+    unsigned char enc_stream[] = "\x42OK\xFF\x80\x7F";
+
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    r = lsqpack_dec_enc_in(&dec, enc_stream, 6);
+    assert(r == -1);
+    lsqpack_dec_cleanup(&dec);
+}
+
+
+static void
+test_wonr_value_too_large_plain (void)
+{
+    struct lsqpack_dec dec;
+    int r;
+    /* Partial Insert Without Name Reference with plain-encoded value
+     * string that, together with name, is larger than capacity (0xFFF)
+     */
+    unsigned char enc_stream[] = "\x42OK\x7F\x80\x1F";
+
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    r = lsqpack_dec_enc_in(&dec, enc_stream, 6);
+    assert(r == -1);
+    lsqpack_dec_cleanup(&dec);
+}
+
+
+static void
+test_winr_value_too_large_huffman (void)
+{
+    struct lsqpack_dec dec;
+    int r;
+    /* Partial Insert With Name Reference with Huffman-encoded value
+     * string that, together with name, is larger than 4 x capacity (0x3FE4)
+     */
+    /* Refer to static entry 79: access-control-refer-headers (length 28) */
+    unsigned char enc_stream[] = "\xFF\x10\xFF\xE5\x7E";
+
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    r = lsqpack_dec_enc_in(&dec, enc_stream, 5);
+    assert(r == -1);
+    lsqpack_dec_cleanup(&dec);
+}
+
+
+static void
+test_winr_value_too_large_plain (void)
+{
+    struct lsqpack_dec dec;
+    int r;
+    /* Partial Insert With Name Reference with plain-encoded value
+     * string that, together with name, is larger than capacity (0xFE4)
+     */
+    /* Refer to static entry 79: access-control-refer-headers (length 28) */
+    unsigned char enc_stream[] = "\xFF\x10\x7F\xE5\x1E";
+
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    r = lsqpack_dec_enc_in(&dec, enc_stream, 5);
+    assert(r == -1);
+    lsqpack_dec_cleanup(&dec);
+}
+
+
 int
 main (void)
 {
@@ -518,6 +622,12 @@ main (void)
     test_discard_header(1);
     test_static_bounds_header_block();
     test_static_bounds_enc_stream();
+    test_wonr_name_too_large_huffman();
+    test_wonr_name_too_large_plain();
+    test_wonr_value_too_large_huffman();
+    test_wonr_value_too_large_plain();
+    test_winr_value_too_large_huffman();
+    test_winr_value_too_large_plain();
 
     return 0;
 }

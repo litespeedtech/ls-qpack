@@ -4371,6 +4371,12 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                     WINR.name_len = WINR.reffed_entry->dte_name_len;
                     WINR.name = DTE_NAME(WINR.reffed_entry);
                 }
+                /* This check accounts for the fact that Huffman-encoded string
+                 * can shrink.
+                 */
+                if (WINR.val_len > ((dec->qpd_cur_max_capacity
+                                    - WINR.name_len) << (WINR.is_huffman << 1)))
+                    return -1;
                 if (WINR.is_huffman)
                     WINR.alloced_val_len = WINR.val_len + WINR.val_len / 2;
                 else
@@ -4483,9 +4489,12 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                                                         &DUPL.dec_int_state);
             if (r == 0)
             {
-                /* TODO: Check that the name is not larger than the max dynamic
-                 * table capacity, for example.
+                /* This check accounts for the fact that Huffman-encoded string
+                 * can shrink.
                  */
+                if (WONR.str_len > (dec->qpd_cur_max_capacity
+                                                    << (WONR.is_huffman << 1)))
+                    return -1;
                 WONR.alloced_len = WONR.str_len ? WONR.str_len + WONR.str_len / 2 : 16;
                 size = sizeof(*new_entry) + WONR.alloced_len;
                 WONR.entry = malloc(size);
@@ -4562,6 +4571,12 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                                                         &WONR.dec_int_state);
             if (r == 0)
             {
+                /* This check accounts for the fact that Huffman-encoded string
+                 * can shrink.
+                 */
+                if (WONR.str_len > ((dec->qpd_cur_max_capacity
+                        - WONR.entry->dte_name_len) << (WONR.is_huffman << 1)))
+                    return -1;
                 WONR.nread = 0;
                 WONR.str_off = 0;
                 if (WONR.str_len)
