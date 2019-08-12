@@ -28,8 +28,8 @@ struct huff_decode_retval
 };
 
 struct huff_decode_retval
-lsqpack_huff_decode (const unsigned char *src, int src_len,
-    unsigned char *dst, int dst_len, struct lsqpack_huff_decode_state *state,
-    int final);
+lsqpack_huff_decode_full (const unsigned char *src, int src_len,
+            unsigned char *dst, int dst_len,
+            struct lsqpack_huff_decode_state *state, int final);
 
 #endif

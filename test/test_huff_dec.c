@@ -340,7 +340,7 @@ run_test (const struct test_huff_dec *test)
             do
             {
                 assert(in_off + n_to_read <= test->src_sz); /* self-test */
-                retval = lsqpack_huff_decode(test->src + in_off, n_to_read,
+                retval = lsqpack_huff_decode_full(test->src + in_off, n_to_read,
                         (unsigned char *) output + out_off, n_to_write, &state,
                         test->src_sz == in_off + n_to_read);
                 switch (retval.status)

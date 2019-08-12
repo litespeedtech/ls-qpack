@@ -2944,8 +2944,8 @@ huff_decode_fast (const unsigned char *src, int src_len,
             unsigned char *dst, int dst_len,
             struct lsqpack_huff_decode_state *state, int final);
 
-static struct huff_decode_retval
-huff_decode_full (const unsigned char *src, int src_len,
+struct huff_decode_retval
+lsqpack_huff_decode_full (const unsigned char *src, int src_len,
             unsigned char *dst, int dst_len,
             struct lsqpack_huff_decode_state *state, int final)
 {
@@ -3018,7 +3018,7 @@ huff_decode_full (const unsigned char *src, int src_len,
 }
 
 
-struct huff_decode_retval
+static struct huff_decode_retval
 lsqpack_huff_decode (const unsigned char *src, int src_len,
             unsigned char *dst, int dst_len,
             struct lsqpack_huff_decode_state *state, int final)
@@ -3026,7 +3026,8 @@ lsqpack_huff_decode (const unsigned char *src, int src_len,
     if (state->resume == 0 && final)
         return huff_decode_fast(src, src_len, dst, dst_len, state, final);
     else
-        return huff_decode_full(src, src_len, dst, dst_len, state, final);
+        return lsqpack_huff_decode_full(src, src_len, dst, dst_len, state,
+                                                                    final);
 }
 
 
@@ -75699,13 +75700,10 @@ huff_decode_fast (const unsigned char *src, int src_len,
                 }
                 avail_bits -= hdec.lens >> 2;
             }
+            else if (dst + len > dst_end)
+                goto dst_ended;
             else
                 goto slow_pass;
-                /* We need to go to slow pass whether we hit a long code or
-                 * whether we are out of destination buffer.  The latter is
-                 * necessary so that we consume all input (not just at the
-                 * byte boundary.
-                 */
         }
 
     if (src + 8 <= src_end)
@@ -75745,8 +75743,7 @@ huff_decode_fast (const unsigned char *src, int src_len,
             avail_bits -= hdec.lens >> 2;
         }
         else if (dst + len > dst_end)
-            /* Must slow pass when out of dest buffer: see explanation above */
-            goto slow_pass;
+            goto dst_ended;
         else
             /* This must be an invalid code, otherwise it would have fit */
             return (struct huff_decode_retval) {
@@ -75773,13 +75770,28 @@ huff_decode_fast (const unsigned char *src, int src_len,
         .n_src  = src_len - (src_end - src),
     };
 
+  dst_ended:
+    /* Find previous byte boundary.  It is OK not to consume all input, as we
+     * always grow the destination buffer and try again.
+     */
+    while ((avail_bits & 7) && dst > orig_dst)
+        avail_bits += encode_table[ *--dst ].bits;
+    assert((avail_bits & 7) == 0);
+    src -= avail_bits >> 3;
+    return (struct huff_decode_retval) {
+        .status = HUFF_DEC_END_DST,
+        .n_dst  = dst_len - (dst_end - dst),
+        .n_src  = src_len - (src_end - src),
+    };
+
   slow_pass:
     /* Find previous byte boundary and finish decoding thence. */
     while ((avail_bits & 7) && dst > orig_dst)
         avail_bits += encode_table[ *--dst ].bits;
     assert((avail_bits & 7) == 0);
     src -= avail_bits >> 3;
-    rv = huff_decode_full(src, src_end - src, dst, dst_end - dst, state, final);
+    rv = lsqpack_huff_decode_full(src, src_end - src, dst, dst_end - dst,
+                                                                state, final);
     if (rv.status == HUFF_DEC_OK || rv.status == HUFF_DEC_END_DST)
     {
         rv.n_dst += dst_len - (dst_end - dst);
