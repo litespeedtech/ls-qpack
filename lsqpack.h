@@ -132,7 +132,7 @@ lsqpack_enc_preinit (struct lsqpack_enc *, void *logger_ctx);
 #define LSQPACK_LONGEST_SDTC 4
 #elif UINT_MAX == 4294967295
 #define LSQPACK_LONGEST_SDTC 6
-#elif UINT_WIDTH == 18446744073709551615ULL
+#elif UINT_MAX == 18446744073709551615ULL
 #define LSQPACK_LONGEST_SDTC 11
 #else
 #error unexpected sizeof(unsigned)
