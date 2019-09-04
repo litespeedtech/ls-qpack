@@ -606,6 +606,33 @@ test_winr_value_too_large_plain (void)
 }
 
 
+/* This is an odd case, but if the first call should provide no input at all,
+ * the decoder should return LQRHS_NEED
+ */
+static void
+test_dec_header_zero_in (void)
+{
+    struct lsqpack_dec dec;
+    struct lsqpack_header_list *hlist;
+    enum lsqpack_read_header_status rhs;
+    const unsigned char *buf = "";
+
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+
+    rhs = lsqpack_dec_header_in(&dec,
+                (void *) 123 /* hblock */,
+                2 /* Stream ID */,
+                100 /* How long the thing is */,
+                &buf,
+                0 /* How many bytes are available */,
+                &hlist,
+                NULL, 0);
+    assert(LQRHS_NEED == rhs);
+
+    lsqpack_dec_cleanup(&dec);
+}
+
+
 int
 main (void)
 {
@@ -628,6 +655,7 @@ main (void)
     test_wonr_value_too_large_plain();
     test_winr_value_too_large_huffman();
     test_winr_value_too_large_plain();
+    test_dec_header_zero_in();
 
     return 0;
 }
