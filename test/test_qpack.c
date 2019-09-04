@@ -633,6 +633,31 @@ test_dec_header_zero_in (void)
 }
 
 
+/* Header that's too should should return LQRHS_ERROR */
+static void
+test_dec_header_too_short (size_t header_size)
+{
+    struct lsqpack_dec dec;
+    struct lsqpack_header_list *hlist;
+    enum lsqpack_read_header_status rhs;
+    const unsigned char *buf = "";
+
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+
+    rhs = lsqpack_dec_header_in(&dec,
+                (void *) 123 /* hblock */,
+                2 /* Stream ID */,
+                header_size,
+                &buf,
+                0 /* How many bytes are available */,
+                &hlist,
+                NULL, 0);
+    assert(LQRHS_ERROR == rhs);
+
+    lsqpack_dec_cleanup(&dec);
+}
+
+
 int
 main (void)
 {
@@ -656,6 +681,8 @@ main (void)
     test_winr_value_too_large_huffman();
     test_winr_value_too_large_plain();
     test_dec_header_zero_in();
+    test_dec_header_too_short(0);
+    test_dec_header_too_short(1);
 
     return 0;
 }

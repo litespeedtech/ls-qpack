@@ -4104,6 +4104,19 @@ lsqpack_dec_header_in (struct lsqpack_dec *dec, void *hblock,
             size_t bufsz, struct lsqpack_header_list **hlist,
             unsigned char *dec_buf, size_t *dec_buf_sz)
 {
+    if (header_size < 2)
+    {
+        D_DEBUG("header block for stream %"PRIu64" is too short "
+            "(%zd byte%.*s)", stream_id, header_size, header_size != 1, "s");
+        dec->qpd_err = (struct lsqpack_dec_err) {
+            .line = __LINE__,
+            .type = LSQPACK_DEC_ERR_LOC_HEADER_BLOCK,
+            .off = 0,
+            .stream_id = stream_id,
+        };
+        return LQRHS_ERROR;
+    }
+
     struct header_block_read_ctx read_ctx = {
         .hbrc_stream_id = stream_id,
         .hbrc_hblock    = hblock,
