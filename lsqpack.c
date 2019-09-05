@@ -5083,45 +5083,36 @@ static unsigned char *
 qenc_huffman_enc (const unsigned char *src, const unsigned char *const src_end,
     unsigned char *dst)
 {
-    uint64_t bits = 0;
+    uintptr_t bits;  /* OK not to initialize this variable */
     unsigned bits_used = 0, adj;
     struct encode_el cur_enc_code;
 
     while (src != src_end)
     {
         cur_enc_code = encode_table[*src++];
-        if (bits_used + cur_enc_code.bits <= 64)
+        if (bits_used + cur_enc_code.bits < sizeof(bits) * 8)
         {
-  fill:     bits <<= cur_enc_code.bits;
+            bits <<= cur_enc_code.bits;
             bits |= cur_enc_code.code;
             bits_used += cur_enc_code.bits;
+            continue;
         }
         else
         {
-            adj = (bits_used + 7) & -8;     /* Round up to 8 */
-            bits <<= adj - bits_used;       /* Align to byte boundary */
-            switch (adj >> 3)
-            {                               /* Write out */
-            /* Longest code is 30 bits long, so we must have at least
-             * 65 - 30 = 35 bits.  Round up: 40 bits, or 5 bytes.
-             */
-            case 8: *dst++ = bits >> 56;
-            case 7: *dst++ = bits >> 48;
-            case 6: *dst++ = bits >> 40;
-            case 5: *dst++ = bits >> 32;
-                    *dst++ = bits >> 24;
-                    *dst++ = bits >> 16;
-                    *dst++ = bits >> 8;
-                    break;
-            default:
-                    assert(0);
-                    break;
-            }
-            *dst = bits;
-            dst += adj == bits_used;
-            bits >>= adj - bits_used;       /* Restore alignment */
-            bits_used &= 7;
-            goto fill;
+            bits <<= sizeof(bits) * 8 - bits_used;
+            bits_used = cur_enc_code.bits - (sizeof(bits) * 8 - bits_used);
+            bits |= cur_enc_code.code >> bits_used;
+#if UINTPTR_MAX == 18446744073709551615ull
+            *dst++ = bits >> 56;
+            *dst++ = bits >> 48;
+            *dst++ = bits >> 40;
+            *dst++ = bits >> 32;
+#endif
+            *dst++ = bits >> 24;
+            *dst++ = bits >> 16;
+            *dst++ = bits >> 8;
+            *dst++ = bits;
+            bits = cur_enc_code.code;   /* OK not to clear high bits */
         }
     }
 
