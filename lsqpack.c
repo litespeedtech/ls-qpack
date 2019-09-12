@@ -75722,6 +75722,12 @@ huff_decode_fast (const unsigned char *src, int src_len,
          */
         hdec = hdecs[idx];
         len = hdec.lens & 3;
+        if ((hdec.lens >> 2) > avail_bits)
+            return (struct huff_decode_retval) {
+                .status = HUFF_DEC_ERROR,
+                .n_dst  = 0,
+                .n_src  = 0,
+            };
         if (len && dst + len <= dst_end)
         {
             switch (len)
