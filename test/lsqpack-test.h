@@ -1,6 +1,14 @@
 #ifndef LITESPEED_QPACK_TEST_H
 #define LITESPEED_QPACK_TEST_H 1
 
+#ifndef LS_QPACK_USE_LARGE_TABLES
+#define LS_QPACK_USE_LARGE_TABLES 1
+#endif
+
+#if !LS_QPACK_USE_LARGE_TABLES
+#define lsqpack_huff_decode_full lsqpack_huff_decode
+#endif
+
 int
 lsqpack_enc_enc_str (unsigned prefix_bits, unsigned char *const dst,
     size_t dst_len, const unsigned char *str, unsigned str_len);

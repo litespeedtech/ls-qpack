@@ -52,6 +52,10 @@ else()
     )
 endif()
 
+IF (CMAKE_BUILD_TYPE STREQUAL MinSizeRel)
+    SET(CMAKE_C_FLAGS "${CMAKE_C_CFLAGS} -DLS_QPACK_USE_LARGE_TABLES=0")
+ENDIF()
+
 if(LSQPACK_TESTS)
     enable_testing()
     add_subdirectory(test)
