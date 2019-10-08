@@ -258,6 +258,7 @@ main (int argc, char **argv)
     char line_buf[0x1000];
     unsigned char tsu_buf[LSQPACK_LONGEST_SDTC];
     size_t tsu_buf_sz;
+    enum lsqpack_enc_header_flags hflags;
     unsigned char enc_buf[0x1000], hea_buf[0x1000], pref_buf[0x20];
 
     while (-1 != (opt = getopt(argc, argv, "ADMSa:i:no:s:t:hv")))
@@ -356,9 +357,13 @@ main (int argc, char **argv)
                 size_t sz, pref_max = sizeof(pref_buf);
                 for (sz = 0; sz < pref_max; sz++)
                 {
-                    pref_sz = lsqpack_enc_end_header(&encoder, pref_buf, sz);
+                    pref_sz = lsqpack_enc_end_header(&encoder, pref_buf, sz, &hflags);
                     if (pref_sz > 0)
+                    {
+                        if (max_risked_streams == 0)
+                            assert(!(hflags & LSQECH_REF_AT_RISK));
                         break;
+                    }
                 }
                 assert(pref_sz <= lsqpack_enc_header_block_prefix_size(&encoder));
                 if (pref_sz < 0)
@@ -498,12 +503,15 @@ main (int argc, char **argv)
     {
         if (s_verbose)
             fprintf(stderr, "close opened header\n");
-        pref_sz = lsqpack_enc_end_header(&encoder, pref_buf, sizeof(pref_buf));
+        pref_sz = lsqpack_enc_end_header(&encoder, pref_buf, sizeof(pref_buf),
+                                                                    &hflags);
         if (pref_sz < 0)
         {
             fprintf(stderr, "end_header failed: %s", strerror(errno));
             exit(EXIT_FAILURE);
         }
+        if (max_risked_streams == 0)
+            assert(!(hflags & LSQECH_REF_AT_RISK));
         if (ack_mode == ACK_IMMEDIATE
             && !(2 == pref_sz && pref_buf[0] == 0 && pref_buf[1] == 0)
             && 0 != ack_stream(&encoder, stream_id))

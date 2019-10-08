@@ -263,7 +263,7 @@ run_header_test (const struct qpack_header_block_test *test)
         header_off += header_sz;
     }
 
-    nw = lsqpack_enc_end_header(&enc, prefix_buf, sizeof(prefix_buf));
+    nw = lsqpack_enc_end_header(&enc, prefix_buf, sizeof(prefix_buf), NULL);
     assert(nw == test->qhbt_prefix_sz);
     assert(0 == memcmp(test->qhbt_prefix_buf, prefix_buf, nw));
     assert(enc_off == test->qhbt_enc_sz);
@@ -378,6 +378,7 @@ test_push_promise (void)
     unsigned char header_buf[HEADER_BUF_SZ], enc_buf[ENC_BUF_SZ],
         prefix_buf[PREFIX_BUF_SZ];
     size_t header_sz, enc_sz, dec_sz;
+    enum lsqpack_enc_header_flags hflags;
 
     dec_sz = sizeof(dec_buf);
     s = lsqpack_enc_init(&enc, stderr, 0x1000, 0x1000, 100, 0, dec_buf, &dec_sz);
@@ -399,9 +400,11 @@ test_push_promise (void)
             enc_buf, &enc_sz, header_buf, &header_sz,
             ":method", 7, "dude!", 5, 0);
     assert(LQES_OK == enc_st);
-    nw = lsqpack_enc_end_header(&enc, prefix_buf, sizeof(prefix_buf));
+    nw = lsqpack_enc_end_header(&enc, prefix_buf, sizeof(prefix_buf), &hflags);
     assert(2 == nw);
     assert(!(prefix_buf[0] == 0 && prefix_buf[1] == 0)); /* Dynamic table used */
+    assert(hflags & LSQECH_REF_NEW_ENTRIES);
+    assert(hflags & LSQECH_REF_AT_RISK);
 
     s = lsqpack_enc_start_header(&enc, 0, 0);
     assert(0 == s);
@@ -416,9 +419,10 @@ test_push_promise (void)
     enc_st = lsqpack_enc_encode(&enc,
             enc_buf, &enc_sz, header_buf, &header_sz,
             ":method", 7, "where is my car?", 16, LQEF_NO_HIST_UPD|LQEF_NO_DYN);
-    nw = lsqpack_enc_end_header(&enc, prefix_buf, sizeof(prefix_buf));
+    nw = lsqpack_enc_end_header(&enc, prefix_buf, sizeof(prefix_buf), &hflags);
     assert(2 == nw);
     assert(prefix_buf[0] == 0 && prefix_buf[1] == 0); /* Dynamic table not used */
+    assert(!(hflags & LSQECH_REF_NEW_ENTRIES));
 
     /* Last check that history was not updated: */
     s = lsqpack_enc_start_header(&enc, 4, 0);
@@ -430,9 +434,10 @@ test_push_promise (void)
             ":method", 7, "where is my car?", 16, 0);
     assert(enc_sz == 0);
     assert(LQES_OK == enc_st);
-    nw = lsqpack_enc_end_header(&enc, prefix_buf, sizeof(prefix_buf));
+    nw = lsqpack_enc_end_header(&enc, prefix_buf, sizeof(prefix_buf), &hflags);
     assert(2 == nw);
     assert(prefix_buf[0] == 0 && prefix_buf[1] == 0); /* Dynamic table not used */
+    assert(!(hflags & LSQECH_REF_AT_RISK));
 
     lsqpack_enc_cleanup(&enc);
 }

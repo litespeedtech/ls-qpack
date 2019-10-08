@@ -244,6 +244,25 @@ lsqpack_enc_encode (struct lsqpack_enc *,
 int 
 lsqpack_enc_cancel_header (struct lsqpack_enc *);
 
+
+/**
+ * Properties of the current header block
+ */
+enum lsqpack_enc_header_flags
+{
+    /** Set if there are at-risk references in this header block */
+    LSQECH_REF_AT_RISK      = 1 << 0,
+    /**
+     * Set if there are other header blocks with the same stream ID
+     * that are at risk.  (This means we can risk this header block
+     * as well.)
+     */
+    LSQECH_OTHERS_AT_RISK   = 1 << 1,
+    /** Set if the header block references newly inserted entries */
+    LSQECH_REF_NEW_ENTRIES  = 1 << 2,
+};
+
+
 /**
  * End current header block.  The Header Block Prefix is written to `buf'.
  *
@@ -261,9 +280,13 @@ lsqpack_enc_cancel_header (struct lsqpack_enc *);
  *      full prefix.
  *  -   A negative value means an error.  This is returned if there is no
  *      started header to end.
+ *
+ * If header was ended successfully and @ref flags is not NULL, it is
+ * assigned properties of the header block.
  */
 ssize_t
-lsqpack_enc_end_header (struct lsqpack_enc *, unsigned char *buf, size_t);
+lsqpack_enc_end_header (struct lsqpack_enc *, unsigned char *buf, size_t,
+    enum lsqpack_enc_header_flags *flags /* Optional */);
 
 /**
  * Process next chunk of bytes from the decoder stream.  Returns 0 on success,
@@ -563,16 +586,10 @@ struct lsqpack_enc
     struct {
         struct lsqpack_header_info  *hinfo;
 
-        /* Number of at-risk references in this header block */
-        unsigned            n_risked;
         /* Number of headers in this header list added to the history */
         unsigned            n_hdr_added_to_hist;
-        /* True if there are other header blocks with the same stream ID
-         * that are at risk.  (This means we can risk this header block
-         * as well.)
-         */
-        int                 others_at_risk;
-        /* Base index */
+        enum lsqpack_enc_header_flags
+                            flags;
         lsqpack_abs_id_t    base_idx;
     }                           qpe_cur_header;
 
