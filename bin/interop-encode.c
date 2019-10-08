@@ -67,6 +67,7 @@ usage (const char *name)
 "   -D          Do not emit \"Duplicate\" instructions.\n"
 "   -A          Aggressive indexing.\n"
 "   -M          Turn off memory guard.\n"
+"   -f          Fast: use maximum output buffers.\n"
 "   -v          Verbose: print various messages to stderr.\n"
 "\n"
 "   -h          Print this help screen and exit\n"
@@ -259,9 +260,10 @@ main (int argc, char **argv)
     unsigned char tsu_buf[LSQPACK_LONGEST_SDTC];
     size_t tsu_buf_sz;
     enum lsqpack_enc_header_flags hflags;
+    int fast = 0;
     unsigned char enc_buf[0x1000], hea_buf[0x1000], pref_buf[0x20];
 
-    while (-1 != (opt = getopt(argc, argv, "ADMSa:i:no:s:t:hv")))
+    while (-1 != (opt = getopt(argc, argv, "ADMSa:i:no:s:t:hvf")))
     {
         switch (opt)
         {
@@ -316,6 +318,9 @@ main (int argc, char **argv)
         case 'h':
             usage(argv[0]);
             exit(EXIT_SUCCESS);
+        case 'f':
+            fast = 1;
+            break;
         case 'v':
             ++s_verbose;
             break;
@@ -355,7 +360,11 @@ main (int argc, char **argv)
             if (header_opened)
             {
                 size_t sz, pref_max = sizeof(pref_buf);
-                for (sz = 0; sz < pref_max; sz++)
+                if (fast)
+                    sz = pref_max;
+                else
+                    sz = 0;
+                for (sz = 0; sz <= pref_max; sz++)
                 {
                     pref_sz = lsqpack_enc_end_header(&encoder, pref_buf, sz, &hflags);
                     if (pref_sz > 0)
@@ -452,9 +461,17 @@ main (int argc, char **argv)
             }
             header_opened = 1;
         }
-        /* Increase buffers one by one to exercise error conditions */
-        enc_sz = 0;
-        hea_sz = 0;
+        if (fast)
+        {
+            enc_sz = sizeof(enc_buf) - enc_off;
+            hea_sz = sizeof(hea_buf) - hea_off;
+        }
+        else
+        {
+            /* Increase buffers one by one to exercise error conditions */
+            enc_sz = 0;
+            hea_sz = 0;
+        }
         while (1)
         {
             st = lsqpack_enc_encode(&encoder, enc_buf + enc_off, &enc_sz,
