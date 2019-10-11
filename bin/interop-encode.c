@@ -384,7 +384,7 @@ main (int argc, char **argv)
                 {
                     if (!(2 == pref_sz && pref_buf[0] == 0 && pref_buf[1] == 0))
                         r = ack_stream(&encoder, stream_id);
-                    else if (encoder.qpe_ins_count > s_saved_ins_count)
+                    if (r == 0 && encoder.qpe_ins_count > s_saved_ins_count)
                         r = ack_last_entry_id(&encoder);
                     else
                         r = 0;
