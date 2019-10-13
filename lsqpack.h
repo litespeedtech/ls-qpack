@@ -542,10 +542,6 @@ struct lsqpack_enc
     lsqpack_abs_id_t            qpe_ins_count;
     lsqpack_abs_id_t            qpe_max_acked_id;
     lsqpack_abs_id_t            qpe_last_ici;
-    /* The smallest absolute index in the dynamic table that the encoder
-     * will emit a reference for.
-     */
-    lsqpack_abs_id_t            qpe_drain_idx;
 
     enum {
         LSQPACK_ENC_HEADER  = 1 << 0,
@@ -557,6 +553,8 @@ struct lsqpack_enc
     unsigned                    qpe_cur_max_capacity;
     unsigned                    qpe_real_max_capacity;
     unsigned                    qpe_max_entries;
+    /* Sum of all dropped entries.  OK if it overflows. */
+    unsigned                    qpe_dropped;
 
     /* The maximum risked streams is the SETTINGS_QPACK_BLOCKED_STREAMS
      * setting.  Note that streams must be differentiated from headers.
