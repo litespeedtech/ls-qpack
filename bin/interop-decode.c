@@ -311,6 +311,9 @@ main (int argc, char **argv)
                 case LQRHS_DONE:
                     assert(p == buf->buf + buf->size);
                     header_block_done(buf, hlist);
+                    if (s_verbose)
+                        fprintf(stderr, "compression ratio: %.3f\n",
+                            lsqpack_dec_ratio(&decoder));
                     TAILQ_REMOVE(&bufs, buf, next_buf);
                     free(buf);
                     break;
@@ -375,6 +378,9 @@ main (int argc, char **argv)
             case LQRHS_DONE:
                 assert(p == buf->buf + buf->size);
                 header_block_done(buf, hlist);
+                if (s_verbose)
+                    fprintf(stderr, "compression ratio: %.3f\n",
+                        lsqpack_dec_ratio(&decoder));
                 free(buf);
                 break;
             case LQRHS_BLOCKED:

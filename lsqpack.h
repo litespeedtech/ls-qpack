@@ -297,8 +297,9 @@ lsqpack_enc_decoder_in (struct lsqpack_enc *, const unsigned char *, size_t);
 
 /**
  * Return estimated compression ratio until this point.  Compression ratio
- * is defined as size of the output stream divided by the size of the
- * input stream.
+ * is defined as size of the output divided by the size of the input, where
+ * output includes both header blocks and instructions sent on the encoder
+ * stream.
  */
 float
 lsqpack_enc_ratio (const struct lsqpack_enc *);
@@ -483,6 +484,15 @@ int
 lsqpack_dec_unref_stream (struct lsqpack_dec *, void *hblock_ctx);
 
 /**
+ * Return estimated compression ratio until this point.  Compression ratio
+ * is defined as size of the input divided by the size of the output, where
+ * input includes both header blocks and instructions received on the encoder
+ * stream.
+ */
+float
+lsqpack_dec_ratio (const struct lsqpack_dec *);
+
+/**
  * Clean up the decoder.  If any there are any blocked header blocks,
  * references to them will be discarded.
  */
@@ -650,6 +660,12 @@ struct lsqpack_dec
     unsigned                qpd_cur_capacity;
     unsigned                qpd_max_risked_streams;
     unsigned                qpd_max_entries;
+    /* Used to calculate estimated compression ratio.  Note that the `out'
+     * part contains bytes sent on the decoder stream, as it also counts
+     * toward the overhead.
+     */
+    unsigned                qpd_bytes_in;
+    unsigned                qpd_bytes_out;
     /** ID of the last dynamic table entry.  Has the range
      * [0, qpd_max_entries * 2 - 1 ]
      */
