@@ -600,8 +600,8 @@ struct lsqpack_enc
      * part contains bytes sent on the decoder stream, as it also counts
      * toward the overhead.
      */
-    unsigned long               qpe_bytes_in;
-    unsigned long               qpe_bytes_out;
+    unsigned                    qpe_bytes_in;
+    unsigned                    qpe_bytes_out;
     void                       *qpe_logger_ctx;
 
     /* Exponential moving averages (EMAs) of the number of elements in the
