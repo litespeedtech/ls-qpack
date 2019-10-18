@@ -252,14 +252,8 @@ enum lsqpack_enc_header_flags
 {
     /** Set if there are at-risk references in this header block */
     LSQECH_REF_AT_RISK      = 1 << 0,
-    /**
-     * Set if there are other header blocks with the same stream ID
-     * that are at risk.  (This means we can risk this header block
-     * as well.)
-     */
-    LSQECH_OTHERS_AT_RISK   = 1 << 1,
     /** Set if the header block references newly inserted entries */
-    LSQECH_REF_NEW_ENTRIES  = 1 << 2,
+    LSQECH_REF_NEW_ENTRIES  = 1 << 1,
 };
 
 
@@ -588,11 +582,13 @@ struct lsqpack_enc
     STAILQ_HEAD(, lsqpack_header_info_arr)
                                 qpe_hinfo_arrs;
     TAILQ_HEAD(, lsqpack_header_info)
-                                qpe_hinfos;
+                                qpe_all_hinfos;
+    TAILQ_HEAD(, lsqpack_header_info)
+                                qpe_risked_hinfos;
 
     /* Current header state */
     struct {
-        struct lsqpack_header_info  *hinfo;
+        struct lsqpack_header_info  *hinfo, *other_at_risk;
 
         /* Number of headers in this header list added to the history */
         unsigned            n_hdr_added_to_hist;

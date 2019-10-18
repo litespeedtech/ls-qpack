@@ -3,6 +3,7 @@
  */
 
 #include <assert.h>
+#include <ctype.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -663,6 +664,167 @@ test_dec_header_too_short (size_t header_size)
 }
 
 
+static void
+test_enc_risked_streams_test (const char *test)
+{
+    struct lsqpack_enc enc;
+    int s;
+    size_t sz;
+    ssize_t ssz;
+    long arg;
+    enum lsqpack_enc_status es;
+    unsigned n_seqnos = 0;
+    struct {
+        uint64_t stream_id;
+        unsigned seqno;
+    } seqnos[10], *seq_el;
+    unsigned char buf[0x100];
+    unsigned char *end_cmd;
+    int expect_failure;
+
+    const struct {
+        const char *name;
+        unsigned    name_len;
+        const char *value;
+        unsigned    value_len;
+    } headers[] = {
+        {   "some", 4, "header", 6, },
+        {   "another", 7, "header", 6, },
+        {   "and yet another", 15, "header, duh", 11, },
+    };
+
+    fprintf(stderr, "BEGIN TEST %s\n", test);
+    lsqpack_enc_preinit(&enc, stderr);
+
+    while (1)
+    {
+        expect_failure = isupper(*test);
+        switch (*test++)
+        {
+        case 'i':
+            arg = strtol(test, (char**)&test, 10);
+            sz = sizeof(buf);
+            s = lsqpack_enc_init(&enc, stderr, 0x1000, 0x1000,
+                                        (unsigned) arg, 0, buf, &sz);
+            assert(s == 0);
+            break;
+        case 'r':
+            arg = strtol(test, (char**)&test, 10);
+            assert((unsigned) arg == enc.qpe_cur_streams_at_risk);
+            break;
+        case 's':   /* Start header */
+            arg = strtol(test, (char**)&test, 10);
+            for (seq_el = seqnos; seq_el < seqnos + n_seqnos; ++seq_el)
+                if (seq_el->stream_id == arg)
+                    break;
+            assert(seq_el < seqnos + sizeof(seqnos) / sizeof(seqnos[0]));
+            if (seq_el == seqnos + n_seqnos)
+            {
+                ++n_seqnos;
+                seq_el->stream_id = arg;
+                seq_el->seqno = 0;
+            }
+            s = lsqpack_enc_start_header(&enc, arg, seq_el->seqno++);
+            assert(s == 0);
+            break;
+        case 'c':   /* En*C*ode */
+            arg = strtol(test, (char**)&test, 10);
+            sz = sizeof(buf);
+            /* We ignore the output */
+            es = lsqpack_enc_encode(&enc, buf, &sz, buf, &sz,
+                        headers[arg].name, headers[arg].name_len,
+                        headers[arg].value, headers[arg].value_len, 0);
+            assert(LQES_OK == es);
+            break;
+        case 'e':   /* End header */
+            ssz = lsqpack_enc_end_header(&enc, buf, sizeof(buf), NULL);
+            assert(ssz > 0);
+            break;
+        case 'a':   /* ACK header */
+        case 'A':
+            arg = strtol(test, (char**)&test, 10);
+            buf[0] = 0x80;
+            end_cmd = lsqpack_enc_int(buf, buf + sizeof(buf), arg, 7);
+            s = lsqpack_enc_decoder_in(&enc, buf, end_cmd - buf);
+            if (expect_failure)
+                assert(s < 0);
+            else
+                assert(s == 0);
+            break;
+        case 'L':   /* Cancel header */
+        case 'l':
+            arg = strtol(test, (char**)&test, 10);
+            buf[0] = 0x40;
+            end_cmd = lsqpack_enc_int(buf, buf + sizeof(buf), arg, 6);
+            s = lsqpack_enc_decoder_in(&enc, buf, end_cmd - buf);
+            if (expect_failure)
+                assert(s < 0);
+            else
+                assert(s == 0);
+            break;
+        case 'N':   /* Insert Count Increment */
+        case 'n':
+            arg = strtol(test, (char**)&test, 10);
+            buf[0] = 0x00;
+            end_cmd = lsqpack_enc_int(buf, buf + sizeof(buf), arg, 6);
+            s = lsqpack_enc_decoder_in(&enc, buf, end_cmd - buf);
+            if (expect_failure)
+                assert(s < 0);
+            else
+                assert(s == 0);
+            break;
+            break;
+        case '\0':
+            goto end;
+        default:
+            assert("unknown action");
+            goto end;
+        }
+    }
+
+  end:
+    lsqpack_enc_cleanup(&enc);
+}
+
+
+static void
+test_enc_risked_streams (void)
+{
+    const char **test;
+    const char *tests[] =
+    {
+        "i0r0s1c0er0",
+        "i1r0s1c0er0s2c0er1A1r1a2r0",
+        "i1r0s1c0er0s2c0er1s2c0c1er1a2r0a2r0",
+
+        "i1r0s1c0c1er0"
+        "s2c0er1"
+        "s2c0c1er1"
+        "a2r1"      /* Ack first seqno, # of risked streams still 1 */
+        "a2r0",
+
+        "i1r0s1c0c1er0"
+        "s2c0er1"
+        "s2c0c1er1"
+        "l2r0"      /* Cancel */
+        ,
+
+        "i1r0s1c0c1er0"
+        "s2c0er1"
+        "s2c0c1er1"
+        "N3"
+        "n1r1"
+        "n1r0"
+        ,
+
+        NULL,
+    };
+
+    for (test = tests; *test; ++test)
+        test_enc_risked_streams_test(*test);
+}
+
+
 int
 main (void)
 {
@@ -688,6 +850,7 @@ main (void)
     test_dec_header_zero_in();
     test_dec_header_too_short(0);
     test_dec_header_too_short(1);
+    test_enc_risked_streams();
 
     return 0;
 }
