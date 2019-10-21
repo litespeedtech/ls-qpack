@@ -360,11 +360,7 @@ main (int argc, char **argv)
             if (header_opened)
             {
                 size_t sz, pref_max = sizeof(pref_buf);
-                if (fast)
-                    sz = pref_max;
-                else
-                    sz = 0;
-                for (sz = 0; sz <= pref_max; sz++)
+                for (sz = (fast ? pref_max : 0); sz <= pref_max; sz++)
                 {
                     pref_sz = lsqpack_enc_end_header(&encoder, pref_buf, sz, &hflags);
                     if (pref_sz > 0)
