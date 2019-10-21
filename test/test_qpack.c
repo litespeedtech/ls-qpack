@@ -621,7 +621,7 @@ test_dec_header_zero_in (void)
     struct lsqpack_dec dec;
     struct lsqpack_header_list *hlist;
     enum lsqpack_read_header_status rhs;
-    const unsigned char *buf = "";
+    const unsigned char *buf = (unsigned char *) "";
 
     lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
 
@@ -646,7 +646,7 @@ test_dec_header_too_short (size_t header_size)
     struct lsqpack_dec dec;
     struct lsqpack_header_list *hlist;
     enum lsqpack_read_header_status rhs;
-    const unsigned char *buf = "";
+    const unsigned char *buf = (unsigned char *) "";
 
     lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
 
