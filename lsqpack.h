@@ -254,6 +254,8 @@ enum lsqpack_enc_header_flags
     LSQECH_REF_AT_RISK      = 1 << 0,
     /** Set if the header block references newly inserted entries */
     LSQECH_REF_NEW_ENTRIES  = 1 << 1,
+    /** Set if min-reffed value is cached */
+    LSQECH_MINREF_CACHED    = 1 << 2,
 };
 
 
@@ -592,6 +594,7 @@ struct lsqpack_enc
 
         /* Number of headers in this header list added to the history */
         unsigned            n_hdr_added_to_hist;
+        lsqpack_abs_id_t    min_reffed;
         enum lsqpack_enc_header_flags
                             flags;
         lsqpack_abs_id_t    base_idx;
