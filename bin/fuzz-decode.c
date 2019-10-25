@@ -131,6 +131,12 @@ main (int argc, char **argv)
     lsqpack_dec_init(&decoder, NULL, dyn_table_size, max_risked_streams,
                                                         hblock_unblocked);
 
+    if (in_fd < 0)
+    {
+        fprintf(stderr, "Specify input using `-i' option\n");
+        exit(1);
+    }
+
     if (0 != fstat(in_fd, &st))
     {
         perror("fstat");
