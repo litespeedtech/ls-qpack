@@ -700,7 +700,7 @@ lsqpack_enc_int (unsigned char *dst, unsigned char *const end, uint64_t value,
 
     /* This function assumes that at least one byte is available */
     assert(dst < end);
-    if (value < (1u << prefix_bits) - 1)
+    if (value < ((uint64_t)1 << prefix_bits) - 1)
         *dst++ |= value;
     else
     {
@@ -729,7 +729,7 @@ static void
 lsqpack_enc_int_nocheck (unsigned char *dst, uint64_t value,
                                                         unsigned prefix_bits)
 {
-    if (value < (1u << prefix_bits) - 1)
+    if (value < ((uint64_t)1 << prefix_bits) - 1)
         *dst++ |= value;
     else
     {
