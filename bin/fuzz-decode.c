@@ -241,8 +241,6 @@ main (int argc, char **argv)
 
     lsqpack_dec_cleanup(&decoder);
 
-    (void) close(fuzz_fd);
-
     exit(0);
 }
 
