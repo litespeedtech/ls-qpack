@@ -3685,7 +3685,10 @@ parse_header_data (struct lsqpack_dec *dec,
                 LFONR.str_off += hdr.n_dst;
                 break;
             case HUFF_DEC_END_DST:
-                LFONR.nalloc *= 2;
+                if (LFONR.nalloc)
+                    LFONR.nalloc *= 2;
+                else
+                    LFONR.nalloc = LFONR.str_len * 2;
                 str = realloc(LFONR.name, LFONR.nalloc);
                 if (!str)
                     RETURN_ERROR();
