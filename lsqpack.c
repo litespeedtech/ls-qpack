@@ -2857,9 +2857,16 @@ struct header_block_read_ctx
 #define LFPBNR read_ctx->hbrc_parse_ctx_u.data.u.lfpbnr
 
 
+static enum lsqpack_read_header_status
+parse_header_data (struct lsqpack_dec *,
+        struct header_block_read_ctx *, const unsigned char *, size_t);
+
 static void
 cleanup_read_ctx (struct header_block_read_ctx *read_ctx)
 {
+    if (read_ctx->hbrc_parse != parse_header_data)
+        return;
+
     switch (read_ctx->hbrc_parse_ctx_u.data.state)
     {
     case DATA_STATE_NEXT_INSTRUCTION:
