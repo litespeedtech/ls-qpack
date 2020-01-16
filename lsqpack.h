@@ -517,6 +517,16 @@ struct lsqpack_dec_err
 const struct lsqpack_dec_err *
 lsqpack_dec_get_err_info (const struct lsqpack_dec *);
 
+/**
+ * Look for match in static table.
+ *
+ * Return a non-negative integer on success -- that's the static table ID --
+ * or -1 on failure.
+ */
+int
+lsqpack_get_stx_tab_id (const char *name, size_t,
+                                            const char *val, size_t val_len);
+
 /*
  * Internals follow.  The internals are subject to change without notice.
  */
