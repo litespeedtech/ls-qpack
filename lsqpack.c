@@ -2707,10 +2707,12 @@ qdec_get_table_entry_abs (const struct lsqpack_dec *dec,
 void
 lsqpack_dec_init (struct lsqpack_dec *dec, void *logger_ctx,
     unsigned dyn_table_size, unsigned max_risked_streams,
-    void (*hblock_unblocked)(void *hblock))
+    void (*hblock_unblocked)(void *hblock), enum lsqpack_dec_opts opts)
 {
     unsigned i;
     memset(dec, 0, sizeof(*dec));
+    if (opts & LSQPACK_DEC_OPT_HTTP1X)
+        dec->qpd_flags |= LSQPACK_DEC_HTTP1X;
     dec->qpd_logger_ctx = logger_ctx;
     dec->qpd_max_capacity = dyn_table_size;
     dec->qpd_cur_max_capacity = dyn_table_size;
@@ -3081,6 +3083,57 @@ allocate_hint (struct header_block_read_ctx *read_ctx)
 }
 
 
+static void
+clear_hint (struct header_internal *hint)
+{
+    if (hint->hi_entry)
+    {
+        qdec_decref_entry(hint->hi_entry);
+        hint->hi_entry = NULL;
+    }
+    if (hint->hi_flags & HI_OWN_NAME)
+    {
+        free((char *) hint->hi_uhead.name_ptr);
+        hint->hi_flags &= ~HI_OWN_NAME;
+    }
+    if (hint->hi_flags & HI_OWN_VALUE)
+    {
+        free((char *) hint->hi_uhead.buf);
+        hint->hi_flags &= ~HI_OWN_VALUE;
+    }
+}
+
+
+static int
+hint_2_http1x (struct lsqpack_dec *dec, struct header_internal *hint)
+{
+    size_t need;
+    char *str;
+
+    /* Account for ": ", "\r\n", and the NUL byte: */
+    need = hint->hi_uhead.name_len + 2 + hint->hi_uhead.val_len + 2 + 1;
+    str = malloc(need);
+    if (!str)
+        return -1;
+    /* Copy header name and value and add HTTP/1.x stuff */
+    memcpy(str, lsxpack_header_get_name(&hint->hi_uhead),
+                                                hint->hi_uhead.name_len);
+    memcpy(str + hint->hi_uhead.name_len, ": ", 2);
+    memcpy(str + hint->hi_uhead.name_len + 2,
+        lsxpack_header_get_value(&hint->hi_uhead), hint->hi_uhead.val_len);
+    memcpy(str + hint->hi_uhead.name_len + 2 + hint->hi_uhead.val_len,
+                                                                "\r\n", 3);
+    hint->hi_uhead.name_offset = 0;
+    hint->hi_uhead.val_offset = hint->hi_uhead.name_len + 2;
+    /* Now swap out old values for new */
+    clear_hint(hint);
+    hint->hi_uhead.name_ptr = NULL;
+    hint->hi_uhead.buf = str;
+    hint->hi_flags |= HI_OWN_NAME;
+    return 0;
+}
+
+
 static int
 hlist_add_static_entry (struct lsqpack_dec *dec,
                     struct header_block_read_ctx *read_ctx, uint64_t idx)
@@ -3096,6 +3149,8 @@ hlist_add_static_entry (struct lsqpack_dec *dec,
         hint->hi_uhead.flags        = LSXPACK_QPACK_IDX | LSXPACK_VAL_MATCHED;
         dec->qpd_bytes_out += hint->hi_uhead.name_len
                            +  hint->hi_uhead.val_len;
+        if (dec->qpd_flags & LSQPACK_DEC_HTTP1X)
+            return hint_2_http1x(dec, hint);
         return 0;
     }
     else
@@ -3119,6 +3174,8 @@ hlist_add_dynamic_entry (struct lsqpack_dec *dec,
         ++entry->dte_refcnt;
         dec->qpd_bytes_out += hint->hi_uhead.name_len
                            +  hint->hi_uhead.val_len;
+        if (dec->qpd_flags & LSQPACK_DEC_HTTP1X)
+            return hint_2_http1x(dec, hint);
         return 0;
     }
     else
@@ -3146,6 +3203,8 @@ hlist_add_static_nameref_entry (struct lsqpack_dec *dec,
         hint->hi_flags = HI_OWN_VALUE;
         dec->qpd_bytes_out += hint->hi_uhead.name_len
                            +  hint->hi_uhead.val_len;
+        if (dec->qpd_flags & LSQPACK_DEC_HTTP1X)
+            return hint_2_http1x(dec, hint);
         return 0;
     }
     else
@@ -3173,6 +3232,8 @@ hlist_add_dynamic_nameref_entry (struct lsqpack_dec *dec,
         ++entry->dte_refcnt;
         dec->qpd_bytes_out += hint->hi_uhead.name_len
                            +  hint->hi_uhead.val_len;
+        if (dec->qpd_flags & LSQPACK_DEC_HTTP1X)
+            return hint_2_http1x(dec, hint);
         return 0;
     }
     else
@@ -3197,6 +3258,8 @@ hlist_add_literal_entry (struct lsqpack_dec *dec,
         hint->hi_flags = HI_OWN_NAME;
         dec->qpd_bytes_out += hint->hi_uhead.name_len
                            +  hint->hi_uhead.val_len;
+        if (dec->qpd_flags & LSQPACK_DEC_HTTP1X)
+            return hint_2_http1x(dec, hint);
         return 0;
     }
     else
@@ -5106,12 +5169,7 @@ lsqpack_dec_destroy_header_list (struct lsqpack_header_list *hlist)
     for (n = 0; n < hlist->qhl_count; ++n)
     {
         hint = (struct header_internal *) hlist->qhl_headers[n];
-        if (hint->hi_entry)
-            qdec_decref_entry(hint->hi_entry);
-        if (hint->hi_flags & HI_OWN_NAME)
-            free((char *) hint->hi_uhead.name_ptr);
-        if (hint->hi_flags & HI_OWN_VALUE)
-            free((char *) hint->hi_uhead.buf);
+        clear_hint(hint);
         free(hint);
     }
     free(hlist->qhl_headers);

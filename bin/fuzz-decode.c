@@ -129,7 +129,7 @@ main (int argc, char **argv)
     }
 
     lsqpack_dec_init(&decoder, NULL, dyn_table_size, max_risked_streams,
-                                                        hblock_unblocked);
+                                                        hblock_unblocked, 0);
 
     if (in_fd < 0)
     {

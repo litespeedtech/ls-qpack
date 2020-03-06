@@ -225,7 +225,7 @@ run_test (const struct test_read_encoder_stream *test)
 
     for (chunk_sz = 1; chunk_sz <= test->input_sz; ++chunk_sz)
     {
-        lsqpack_dec_init(&dec, NULL, 0x1000, 100, NULL);
+        lsqpack_dec_init(&dec, NULL, 0x1000, 100, NULL, 0);
 
         off = 0;
         do

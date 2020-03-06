@@ -219,7 +219,7 @@ main (int argc, char **argv)
         s_out = stdout;
 
     lsqpack_dec_init(&decoder, s_verbose ? stderr : NULL, dyn_table_size,
-                        max_risked_streams, hblock_unblocked);
+                        max_risked_streams, hblock_unblocked, 0);
 
     off = 0;
     while (1)

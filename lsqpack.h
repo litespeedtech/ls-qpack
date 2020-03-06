@@ -328,10 +328,32 @@ struct lsqpack_header_list
     unsigned                 qhl_count;
 };
 
+enum lsqpack_dec_opts
+{
+    /**
+     * In this mode, returned lsxpack_header header name will point
+     * to a NUL-terminated C string that can be used as a standalone
+     * HTTP/1.x header with ": " and "\r\n" characters added.  For
+     * example:
+     *
+     * buf:         "cookie: some-value\r\n\0"
+     * name_offset: 0
+     * name_len:    6
+     * val_offset:  8
+     * val_len:    10
+     *
+     * This will allocate memory.  Without this option, the decoder will
+     * point to existing static and dynamic table entries when it can,
+     * saving memory.
+     */
+    LSQPACK_DEC_OPT_HTTP1X  = 1 << 0,
+};
+
 void
 lsqpack_dec_init (struct lsqpack_dec *, void *logger_ctx,
     unsigned dyn_table_size, unsigned max_risked_streams,
-    void (*hblock_unblocked)(void *hblock_ctx));
+    void (*hblock_unblocked)(void *hblock_ctx),
+    enum lsqpack_dec_opts);
 
 /**
  * Values returned by @ref lsqpack_dec_header_in() and
@@ -654,6 +676,9 @@ struct lsqpack_dec_inst;
 
 struct lsqpack_dec
 {
+    enum {
+        LSQPACK_DEC_HTTP1X  = 1 << 0,
+    }                       qpd_flags;
     /** This is the hard limit set at initialization */
     unsigned                qpd_max_capacity;
     /** The current maximum capacity can be adjusted at run-time */

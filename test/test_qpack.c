@@ -460,7 +460,7 @@ test_discard_header (int err)
     struct lsqpack_header_list *hlist = NULL;
     unsigned char header_block[] = "\x00\x00\xC0\x80";
 
-    lsqpack_dec_init(&dec, NULL, 0, 0, NULL);
+    lsqpack_dec_init(&dec, NULL, 0, 0, NULL, 0);
 
     buf = header_block;
     rhs = lsqpack_dec_header_in(&dec, (void *) 1, 0, 10,
@@ -490,7 +490,7 @@ test_static_bounds_header_block (void)
     /* Static table index 1000 */
     unsigned char header_block[] = "\x00\x00\xFF\xA9\x07";
 
-    lsqpack_dec_init(&dec, stderr, 0, 0, NULL);
+    lsqpack_dec_init(&dec, stderr, 0, 0, NULL, 0);
     buf = header_block;
     rhs = lsqpack_dec_header_in(&dec, (void *) 1, 0, 10,
                                     &buf, 5, &hlist, NULL, NULL);
@@ -508,7 +508,7 @@ test_static_bounds_enc_stream (void)
     /* Static table index 1000 */
     unsigned char enc_stream[] = "\xFF\xA9\x07\x04" "dude";
 
-    lsqpack_dec_init(&dec, stderr, 0, 0, NULL);
+    lsqpack_dec_init(&dec, stderr, 0, 0, NULL, 0);
     r = lsqpack_dec_enc_in(&dec, enc_stream, 8);
     assert(r == -1);
     lsqpack_dec_cleanup(&dec);
@@ -525,7 +525,7 @@ test_wonr_name_too_large_huffman (void)
      */
     unsigned char enc_stream[] = "\x7F\xE2\x7F";
 
-    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL, 0);
     r = lsqpack_dec_enc_in(&dec, enc_stream, 3);
     assert(r == -1);
     lsqpack_dec_cleanup(&dec);
@@ -542,7 +542,7 @@ test_wonr_name_too_large_plain (void)
      */
     unsigned char enc_stream[] = "\x5F\xE2\x1F";
 
-    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL, 0);
     r = lsqpack_dec_enc_in(&dec, enc_stream, 3);
     assert(r == -1);
     lsqpack_dec_cleanup(&dec);
@@ -559,7 +559,7 @@ test_wonr_value_too_large_huffman (void)
      */
     unsigned char enc_stream[] = "\x42OK\xFF\x80\x7F";
 
-    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL, 0);
     r = lsqpack_dec_enc_in(&dec, enc_stream, 6);
     assert(r == -1);
     lsqpack_dec_cleanup(&dec);
@@ -576,7 +576,7 @@ test_wonr_value_too_large_plain (void)
      */
     unsigned char enc_stream[] = "\x42OK\x7F\x80\x1F";
 
-    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL, 0);
     r = lsqpack_dec_enc_in(&dec, enc_stream, 6);
     assert(r == -1);
     lsqpack_dec_cleanup(&dec);
@@ -594,7 +594,7 @@ test_winr_value_too_large_huffman (void)
     /* Refer to static entry 79: access-control-refer-headers (length 28) */
     unsigned char enc_stream[] = "\xFF\x10\xFF\xE5\x7E";
 
-    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL, 0);
     r = lsqpack_dec_enc_in(&dec, enc_stream, 5);
     assert(r == -1);
     lsqpack_dec_cleanup(&dec);
@@ -612,7 +612,7 @@ test_winr_value_too_large_plain (void)
     /* Refer to static entry 79: access-control-refer-headers (length 28) */
     unsigned char enc_stream[] = "\xFF\x10\x7F\xE5\x1E";
 
-    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL, 0);
     r = lsqpack_dec_enc_in(&dec, enc_stream, 5);
     assert(r == -1);
     lsqpack_dec_cleanup(&dec);
@@ -630,7 +630,7 @@ test_dec_header_zero_in (void)
     enum lsqpack_read_header_status rhs;
     const unsigned char *buf = (unsigned char *) "";
 
-    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL, 0);
 
     rhs = lsqpack_dec_header_in(&dec,
                 (void *) 123 /* hblock */,
@@ -655,7 +655,7 @@ test_dec_header_too_short (size_t header_size)
     enum lsqpack_read_header_status rhs;
     const unsigned char *buf = (unsigned char *) "";
 
-    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL, 0);
 
     rhs = lsqpack_dec_header_in(&dec,
                 (void *) 123 /* hblock */,
