@@ -334,29 +334,11 @@ void
 lsqpack_enc_cleanup (struct lsqpack_enc *);
 
 /**
- * The header is a single name/value pair.  The strings are not NUL-terminated.
- */
-struct lsqpack_header
-{
-    const char         *qh_name;
-    const char         *qh_value;
-    unsigned            qh_name_len;
-    unsigned            qh_value_len;
-    unsigned            qh_static_id;
-    enum {
-        /** Must be encoded with a literal representation */
-        QH_NEVER    = 1 << 0,
-        /** qh_static_id is set */
-        QH_ID_SET   = 1 << 1,
-    }                   qh_flags;
-};
-
-/**
  * The header list represents the decoded header block.
  */
 struct lsqpack_header_list
 {
-    struct lsqpack_header  **qhl_headers;
+    struct lsxpack_header  **qhl_headers;
     unsigned                 qhl_count;
 };
 

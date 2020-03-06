@@ -1580,10 +1580,9 @@ lsqpack_enc_encode2 (struct lsqpack_enc *enc,
     int update_hist;
     unsigned name_hash, nameval_hash, buckno;
 
-    const char *const name = header->name_ptr ? header->name_ptr
-                        : (const char *) header->buf + header->name_offset;
+    const char *const name = lsxpack_header_get_name(header);
     const size_t name_len = header->name_len;
-    const char *const value = header->buf + header->val_offset;
+    const char *const value = lsxpack_header_get_value(header);
     const size_t value_len = header->val_len;
 
     size_t enc_sz, hea_sz, sz;
@@ -3028,7 +3027,7 @@ lsqpack_dec_cleanup (struct lsqpack_dec *dec)
 
 struct header_internal
 {
-    struct lsqpack_header            hi_uhead;
+    struct lsxpack_header            hi_uhead;
     struct lsqpack_dec_table_entry  *hi_entry;
     enum {
         HI_OWN_NAME     = 1 << 0,
@@ -3040,7 +3039,7 @@ struct header_internal
 static struct header_internal *
 allocate_hint (struct header_block_read_ctx *read_ctx)
 {
-    struct lsqpack_header **headers;
+    struct lsxpack_header **headers;
     struct header_internal *hint;
     unsigned idx;
 
@@ -3090,14 +3089,13 @@ hlist_add_static_entry (struct lsqpack_dec *dec,
 
     if (idx < QPACK_STATIC_TABLE_SIZE && (hint = allocate_hint(read_ctx), hint != NULL))
     {
-        hint->hi_uhead.qh_name      = static_table[ idx ].name;
-        hint->hi_uhead.qh_value     = static_table[ idx ].val;
-        hint->hi_uhead.qh_name_len  = static_table[ idx ].name_len;
-        hint->hi_uhead.qh_value_len = static_table[ idx ].val_len;
-        hint->hi_uhead.qh_static_id = (unsigned int) idx;
-        hint->hi_uhead.qh_flags     = QH_ID_SET;
-        dec->qpd_bytes_out += hint->hi_uhead.qh_name_len
-                           + hint->hi_uhead.qh_value_len;
+        lsxpack_header_set_ptr(&hint->hi_uhead, static_table[ idx ].name,
+            static_table[ idx ].name_len, static_table[ idx ].val,
+            static_table[ idx ].val_len);
+        hint->hi_uhead.qpack_index  = (unsigned int) idx;
+        hint->hi_uhead.flags        = LSXPACK_QPACK_IDX | LSXPACK_VAL_MATCHED;
+        dec->qpd_bytes_out += hint->hi_uhead.name_len
+                           +  hint->hi_uhead.val_len;
         return 0;
     }
     else
@@ -3115,15 +3113,12 @@ hlist_add_dynamic_entry (struct lsqpack_dec *dec,
     if ((entry = qdec_get_table_entry_abs(dec, idx), entry != NULL)
                                     && (hint = allocate_hint(read_ctx), hint != NULL))
     {
-        hint->hi_uhead.qh_name      = DTE_NAME(entry);
-        hint->hi_uhead.qh_value     = DTE_VALUE(entry);
-        hint->hi_uhead.qh_name_len  = entry->dte_name_len;
-        hint->hi_uhead.qh_value_len = entry->dte_val_len;
-        hint->hi_uhead.qh_flags     = 0;
+        lsxpack_header_set_ptr(&hint->hi_uhead, DTE_NAME(entry),
+                entry->dte_name_len, DTE_VALUE(entry), entry->dte_val_len);
         hint->hi_entry = entry;
         ++entry->dte_refcnt;
-        dec->qpd_bytes_out += hint->hi_uhead.qh_name_len
-                           + hint->hi_uhead.qh_value_len;
+        dec->qpd_bytes_out += hint->hi_uhead.name_len
+                           +  hint->hi_uhead.val_len;
         return 0;
     }
     else
@@ -3141,18 +3136,16 @@ hlist_add_static_nameref_entry (struct lsqpack_dec *dec,
     hint = allocate_hint(read_ctx);
     if (hint)
     {
-        hint->hi_uhead.qh_name      = static_table[ idx ].name;
-        hint->hi_uhead.qh_name_len  = static_table[ idx ].name_len;
-        hint->hi_uhead.qh_value     = value;
-        hint->hi_uhead.qh_value_len = val_len;
-        hint->hi_uhead.qh_static_id = idx;
+        lsxpack_header_set_ptr(&hint->hi_uhead, static_table[ idx ].name,
+                static_table[ idx ].name_len, value, val_len);
+        hint->hi_uhead.qpack_index = idx;
         if (is_never)
-            hint->hi_uhead.qh_flags = QH_NEVER|QH_ID_SET;
+            hint->hi_uhead.flags = LSXPACK_NEVER_INDEX | LSXPACK_QPACK_IDX;
         else
-            hint->hi_uhead.qh_flags = QH_ID_SET;
+            hint->hi_uhead.flags = LSXPACK_QPACK_IDX;
         hint->hi_flags = HI_OWN_VALUE;
-        dec->qpd_bytes_out += hint->hi_uhead.qh_name_len
-                           + hint->hi_uhead.qh_value_len;
+        dec->qpd_bytes_out += hint->hi_uhead.name_len
+                           +  hint->hi_uhead.val_len;
         return 0;
     }
     else
@@ -3171,20 +3164,15 @@ hlist_add_dynamic_nameref_entry (struct lsqpack_dec *dec,
     hint = allocate_hint(read_ctx);
     if (hint)
     {
-        hint->hi_uhead.qh_name      = DTE_NAME(entry);
-        hint->hi_uhead.qh_name_len  = entry->dte_name_len;
-        hint->hi_uhead.qh_value     = value;
-        hint->hi_uhead.qh_value_len = val_len;
-        hint->hi_uhead.qh_static_id = 0;
+        lsxpack_header_set_ptr(&hint->hi_uhead, DTE_NAME(entry),
+                entry->dte_name_len, value, val_len);
         if (is_never)
-            hint->hi_uhead.qh_flags = QH_NEVER;
-        else
-            hint->hi_uhead.qh_flags = 0;
+            hint->hi_uhead.flags = LSXPACK_NEVER_INDEX;
         hint->hi_flags = HI_OWN_VALUE;
         hint->hi_entry = entry;
         ++entry->dte_refcnt;
-        dec->qpd_bytes_out += hint->hi_uhead.qh_name_len
-                           + hint->hi_uhead.qh_value_len;
+        dec->qpd_bytes_out += hint->hi_uhead.name_len
+                           +  hint->hi_uhead.val_len;
         return 0;
     }
     else
@@ -3202,18 +3190,13 @@ hlist_add_literal_entry (struct lsqpack_dec *dec,
     hint = allocate_hint(read_ctx);
     if (hint)
     {
-        hint->hi_uhead.qh_name      = nameandval;
-        hint->hi_uhead.qh_name_len  = name_len;
-        hint->hi_uhead.qh_value     = nameandval + name_len;
-        hint->hi_uhead.qh_value_len = val_len;
-        hint->hi_uhead.qh_static_id = 0;
+        lsxpack_header_set_ptr(&hint->hi_uhead, nameandval, name_len,
+                                            nameandval + name_len, val_len);
         if (is_never)
-            hint->hi_uhead.qh_flags = QH_NEVER;
-        else
-            hint->hi_uhead.qh_flags = 0;
+            hint->hi_uhead.flags = LSXPACK_NEVER_INDEX;
         hint->hi_flags = HI_OWN_NAME;
-        dec->qpd_bytes_out += hint->hi_uhead.qh_name_len
-                           + hint->hi_uhead.qh_value_len;
+        dec->qpd_bytes_out += hint->hi_uhead.name_len
+                           +  hint->hi_uhead.val_len;
         return 0;
     }
     else
@@ -5126,9 +5109,9 @@ lsqpack_dec_destroy_header_list (struct lsqpack_header_list *hlist)
         if (hint->hi_entry)
             qdec_decref_entry(hint->hi_entry);
         if (hint->hi_flags & HI_OWN_NAME)
-            free((char *) hint->hi_uhead.qh_name);
+            free((char *) hint->hi_uhead.name_ptr);
         if (hint->hi_flags & HI_OWN_VALUE)
-            free((char *) hint->hi_uhead.qh_value);
+            free((char *) hint->hi_uhead.buf);
         free(hint);
     }
     free(hlist->qhl_headers);

@@ -111,8 +111,8 @@ header_block_done (const struct buf *buf, struct lsqpack_header_list *set)
         fprintf(stderr, "Have headers for stream %"PRIu64":\n", buf->stream_id);
         for (n = 0; n < set->qhl_count; ++n)
             fprintf(stderr, "  %.*s: %.*s\n",
-                set->qhl_headers[n]->qh_name_len, set->qhl_headers[n]->qh_name,
-                set->qhl_headers[n]->qh_value_len, set->qhl_headers[n]->qh_value);
+                (int) set->qhl_headers[n]->name_len, lsxpack_header_get_name(set->qhl_headers[n]),
+                (int) set->qhl_headers[n]->val_len, lsxpack_header_get_value(set->qhl_headers[n]));
         fprintf(stderr, "\n");
     }
 
@@ -120,8 +120,8 @@ header_block_done (const struct buf *buf, struct lsqpack_header_list *set)
     fprintf(s_out, "# (stream ID above is used for sorting)\n");
     for (n = 0; n < set->qhl_count; ++n)
         fprintf(s_out, "%.*s\t%.*s\n",
-            set->qhl_headers[n]->qh_name_len, set->qhl_headers[n]->qh_name,
-            set->qhl_headers[n]->qh_value_len, set->qhl_headers[n]->qh_value);
+            (int) set->qhl_headers[n]->name_len, lsxpack_header_get_name(set->qhl_headers[n]),
+            (int) set->qhl_headers[n]->val_len, lsxpack_header_get_value(set->qhl_headers[n]));
     fprintf(s_out, "\n");
 
     lsqpack_dec_destroy_header_list(set);
