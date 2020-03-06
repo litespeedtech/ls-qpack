@@ -42,6 +42,8 @@ extern "C" {
 typedef SSIZE_T ssize_t;
 #endif
 
+#include "lsxpack_header.h"
+
 /* Until the RFC is published, the minor version will be the same as the
  * draft version, while the major version will be zero.  For example,
  * qpack-11 (if such draft ever published) will correspond to version 0.11.
@@ -235,6 +237,28 @@ lsqpack_enc_encode (struct lsqpack_enc *,
     unsigned char *header_buf, size_t *header_sz,
     const char *name, unsigned name_sz,
     const char *value, unsigned value_sz,
+    enum lsqpack_enc_flags);
+
+/**
+ * Encode header field into current header block.
+ *
+ * See @ref lsqpack_enc_status for explanation of the return values.
+ *
+ * enc_sz and header_sz parameters are used for both input and output.  If
+ * the return value is LQES_OK, they contain number of bytes written to
+ * enc_buf and header_buf, respectively.  enc_buf contains the bytes that
+ * must be written to the encoder stream; header_buf contains bytes that
+ * must be written to the header block.
+ *
+ * Note that even though this function may allocate memory, it falls back to
+ * not using the dynamic table should memory allocation fail.  Thus, failures
+ * to encode due to not enough memory do not exist.
+ */
+enum lsqpack_enc_status
+lsqpack_enc_encode2 (struct lsqpack_enc *,
+    unsigned char *enc_buf, size_t *enc_sz,
+    unsigned char *header_buf, size_t *header_sz,
+    const struct lsxpack_header *header,
     enum lsqpack_enc_flags);
 
 /**

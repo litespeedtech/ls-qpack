@@ -1565,11 +1565,10 @@ qenc_dup_draining (struct lsqpack_enc *enc, unsigned char *enc_buf,
 
 
 enum lsqpack_enc_status
-lsqpack_enc_encode (struct lsqpack_enc *enc,
+lsqpack_enc_encode2 (struct lsqpack_enc *enc,
         unsigned char *enc_buf, size_t *enc_sz_p,
         unsigned char *hea_buf, size_t *hea_sz_p,
-        const char *name, unsigned name_len,
-        const char *value, unsigned value_len,
+        const struct lsxpack_header *header,
         enum lsqpack_enc_flags flags)
 {
     unsigned char *const enc_buf_end = enc_buf + *enc_sz_p;
@@ -1580,6 +1579,12 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     int index, risk, use_dyn_table, static_id, enough_room, seen_nameval;
     int update_hist;
     unsigned name_hash, nameval_hash, buckno;
+
+    const char *const name = header->name_ptr ? header->name_ptr
+                        : (const char *) header->buf + header->name_offset;
+    const size_t name_len = header->name_len;
+    const char *const value = header->buf + header->val_offset;
+    const size_t value_len = header->val_len;
 
     size_t enc_sz, hea_sz, sz;
     unsigned char *dst;
@@ -1596,8 +1601,17 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     if (hea_buf == hea_buf_end)
         return LQES_NOBUF_HEAD;
 
-    name_hash = XXH32(name, name_len, LSQPACK_XXH_SEED);
-    nameval_hash = XXH32(value, value_len, name_hash);
+    if (header->flags & LSXPACK_NEVER_INDEX)
+        flags |= LQEF_NEVER_INDEX;
+
+    if (header->flags & LSXPACK_NAME_HASH)
+        name_hash = header->name_hash;
+    else
+        name_hash = XXH32(name, name_len, LSQPACK_XXH_SEED);
+    if (header->flags & LSXPACK_NAMEVAL_HASH)
+        nameval_hash = header->nameval_hash;
+    else
+        nameval_hash = XXH32(value, value_len, name_hash);
     E_DEBUG("name hash: 0x%X; nameval hash: 0x%X", name_hash, nameval_hash);
 
     /* Look for a full match in the static table */
@@ -2096,6 +2110,25 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     *enc_sz_p = enc_sz;
     *hea_sz_p = hea_sz;
     return LQES_OK;
+}
+
+
+enum lsqpack_enc_status
+lsqpack_enc_encode (struct lsqpack_enc *enc,
+        unsigned char *enc_buf, size_t *enc_sz_p,
+        unsigned char *hea_buf, size_t *hea_sz_p,
+        const char *name, unsigned name_len,
+        const char *value, unsigned value_len,
+        enum lsqpack_enc_flags flags)
+{
+    struct lsxpack_header header = {
+        .name_ptr   = name,
+        .name_len   = name_len,
+        .buf        = (char *) value,
+        .val_len    = value_len,
+    };
+    return lsqpack_enc_encode2(enc, enc_buf, enc_sz_p, hea_buf, hea_sz_p,
+                                                            &header, flags);
 }
 
 
