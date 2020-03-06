@@ -199,6 +199,13 @@ static const struct qpack_header_block_test
 
 };
 
+#define XHEADER_LIT(name_, nlen_, val_, vlen_) & (struct lsxpack_header) { \
+    .name_ptr = (char *) (name_), \
+    .buf = (char *) (val_), \
+    .val_len = (vlen_), \
+    .name_len = (nlen_), \
+}
+
 
 static void
 run_header_test (const struct qpack_header_block_test *test)
@@ -235,10 +242,10 @@ run_header_test (const struct qpack_header_block_test *test)
             enc_st = lsqpack_enc_encode(&enc,
                     enc_buf + enc_off, &enc_sz,
                     header_buf + header_off, &header_sz,
-                    test->qhbt_headers[i].name,
+                    XHEADER_LIT(test->qhbt_headers[i].name,
                     strlen(test->qhbt_headers[i].name),
                     test->qhbt_headers[i].value,
-                    strlen(test->qhbt_headers[i].value),
+                    strlen(test->qhbt_headers[i].value)),
                     test->qhbt_headers[i].flags);
             switch (enc_st)
             {
@@ -297,10 +304,10 @@ run_header_cancellation_test(const struct qpack_header_block_test *test) {
     enc_st = lsqpack_enc_encode(&enc,
                     NULL, &enc_sz,
                     header_buf, &header_sz,
-                    test->qhbt_headers[0].name,
+                    XHEADER_LIT(test->qhbt_headers[0].name,
                     strlen(test->qhbt_headers[0].name),
                     test->qhbt_headers[0].value,
-                    strlen(test->qhbt_headers[0].value),
+                    strlen(test->qhbt_headers[0].value)),
                     0);
     assert(enc_st == LQES_OK);
 
@@ -393,13 +400,13 @@ test_push_promise (void)
     header_sz = sizeof(header_buf);
     enc_st = lsqpack_enc_encode(&enc,
             enc_buf, &enc_sz, header_buf, &header_sz,
-            ":method", 7, "dude!", 5, 0);
+            XHEADER_LIT(":method", 7, "dude!", 5), 0);
     assert(LQES_OK == enc_st);
     enc_sz = sizeof(enc_buf);
     header_sz = sizeof(header_buf);
     enc_st = lsqpack_enc_encode(&enc,
             enc_buf, &enc_sz, header_buf, &header_sz,
-            ":method", 7, "dude!", 5, 0);
+            XHEADER_LIT(":method", 7, "dude!", 5), 0);
     assert(LQES_OK == enc_st);
     nw = lsqpack_enc_end_header(&enc, prefix_buf, sizeof(prefix_buf), &hflags);
     assert(2 == nw);
@@ -413,13 +420,13 @@ test_push_promise (void)
     header_sz = sizeof(header_buf);
     enc_st = lsqpack_enc_encode(&enc,
             enc_buf, &enc_sz, header_buf, &header_sz,
-            ":method", 7, "dude!", 5, LQEF_NO_HIST_UPD|LQEF_NO_DYN);
+            XHEADER_LIT(":method", 7, "dude!", 5), LQEF_NO_HIST_UPD|LQEF_NO_DYN);
     assert(LQES_OK == enc_st);
     enc_sz = sizeof(enc_buf);
     header_sz = sizeof(header_buf);
     enc_st = lsqpack_enc_encode(&enc,
             enc_buf, &enc_sz, header_buf, &header_sz,
-            ":method", 7, "where is my car?", 16, LQEF_NO_HIST_UPD|LQEF_NO_DYN);
+            XHEADER_LIT(":method", 7, "where is my car?", 16), LQEF_NO_HIST_UPD|LQEF_NO_DYN);
     nw = lsqpack_enc_end_header(&enc, prefix_buf, sizeof(prefix_buf), &hflags);
     assert(2 == nw);
     assert(prefix_buf[0] == 0 && prefix_buf[1] == 0); /* Dynamic table not used */
@@ -432,7 +439,7 @@ test_push_promise (void)
     header_sz = sizeof(header_buf);
     enc_st = lsqpack_enc_encode(&enc,
             enc_buf, &enc_sz, header_buf, &header_sz,
-            ":method", 7, "where is my car?", 16, 0);
+            XHEADER_LIT(":method", 7, "where is my car?", 16), 0);
     assert(enc_sz == 0);
     assert(LQES_OK == enc_st);
     nw = lsqpack_enc_end_header(&enc, prefix_buf, sizeof(prefix_buf), &hflags);
@@ -732,8 +739,8 @@ test_enc_risked_streams_test (const char *test)
             sz = sizeof(buf);
             /* We ignore the output */
             es = lsqpack_enc_encode(&enc, buf, &sz, buf, &sz,
-                        headers[arg].name, headers[arg].name_len,
-                        headers[arg].value, headers[arg].value_len, 0);
+                        XHEADER_LIT(headers[arg].name, headers[arg].name_len,
+                        headers[arg].value, headers[arg].value_len), 0);
             assert(LQES_OK == es);
             break;
         case 'e':   /* End header */

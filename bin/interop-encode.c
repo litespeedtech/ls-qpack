@@ -259,6 +259,7 @@ main (int argc, char **argv)
     char line_buf[0x1000];
     unsigned char tsu_buf[LSQPACK_LONGEST_SDTC];
     size_t tsu_buf_sz;
+    struct lsxpack_header header;
     enum lsqpack_enc_header_flags hflags;
     int fast = 0;
     unsigned char enc_buf[0x1000], hea_buf[0x1000], pref_buf[0x20];
@@ -472,9 +473,10 @@ main (int argc, char **argv)
         }
         while (1)
         {
+            lsxpack_header_set_ptr(&header, line, tab - line, tab + 1,
+                                                                end - tab - 1);
             st = lsqpack_enc_encode(&encoder, enc_buf + enc_off, &enc_sz,
-                        hea_buf + hea_off, &hea_sz, line, tab - line,
-                        tab + 1, end - tab - 1, 0);
+                        hea_buf + hea_off, &hea_sz, &header, 0);
             switch (st)
             {
             case LQES_NOBUF_ENC:

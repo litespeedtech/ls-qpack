@@ -1565,7 +1565,7 @@ qenc_dup_draining (struct lsqpack_enc *enc, unsigned char *enc_buf,
 
 
 enum lsqpack_enc_status
-lsqpack_enc_encode2 (struct lsqpack_enc *enc,
+lsqpack_enc_encode (struct lsqpack_enc *enc,
         unsigned char *enc_buf, size_t *enc_sz_p,
         unsigned char *hea_buf, size_t *hea_sz_p,
         const struct lsxpack_header *header,
@@ -2113,7 +2113,7 @@ lsqpack_enc_encode2 (struct lsqpack_enc *enc,
 
 
 enum lsqpack_enc_status
-lsqpack_enc_encode (struct lsqpack_enc *enc,
+lsqpack_enc_encode_old (struct lsqpack_enc *enc,
         unsigned char *enc_buf, size_t *enc_sz_p,
         unsigned char *hea_buf, size_t *hea_sz_p,
         const char *name, unsigned name_len,
@@ -2126,7 +2126,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         .buf        = (char *) value,
         .val_len    = value_len,
     };
-    return lsqpack_enc_encode2(enc, enc_buf, enc_sz_p, hea_buf, hea_sz_p,
+    return lsqpack_enc_encode(enc, enc_buf, enc_sz_p, hea_buf, hea_sz_p,
                                                             &header, flags);
 }
 
