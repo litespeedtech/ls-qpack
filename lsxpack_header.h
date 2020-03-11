@@ -1,5 +1,5 @@
-#ifndef LSXPACK_HEADER_H_v200
-#define LSXPACK_HEADER_H_v200
+#ifndef LSXPACK_HEADER_H_v202
+#define LSXPACK_HEADER_H_v202
 
 #ifdef __cplusplus
 extern "C" {
@@ -55,72 +55,92 @@ struct lsxpack_header
     uint8_t           qpack_index;  /* QPACK static table index */
     uint8_t           app_index;    /* APP header index */
     enum lsxpack_flag flags:8;      /* combination of lsxpack_flag */
+    uint8_t           indexed_type; /* control to disable index or not */
 };
 
 typedef struct lsxpack_header lsxpack_header_t;
 
 
-static inline void lsxpack_header_set_idx(lsxpack_header_t *hdr, int hpack_idx,
-                               const char *val, int val_len)
+static inline void
+lsxpack_header_set_idx(lsxpack_header_t *hdr, int hpack_idx,
+                       const char *val, size_t val_len)
 {
     memset(hdr, 0, sizeof(*hdr));
     hdr->buf = (char *)val;
     hdr->hpack_index = hpack_idx;
     assert(hpack_idx != 0);
     hdr->flags = LSXPACK_HPACK_IDX;
+    assert(val_len <= LSXPACK_MAX_STRLEN);
     hdr->val_len = val_len;
 }
 
 
-static inline void lsxpack_header_set_ptr(lsxpack_header_t *hdr,
-                               const char *name, int name_len,
-                               const char *val, int val_len)
+static inline void
+lsxpack_header_set_ptr(lsxpack_header_t *hdr,
+                       const char *name, size_t name_len,
+                       const char *val, size_t val_len)
 {
     memset(hdr, 0, sizeof(*hdr));
     hdr->buf = (char *)val;
+    assert(val_len <= LSXPACK_MAX_STRLEN);
     hdr->val_len = val_len;
     hdr->name_ptr = name;
+    assert(name_len <= LSXPACK_MAX_STRLEN);
     hdr->name_len = name_len;
 }
 
 
-static inline void lsxpack_header_set_offset(lsxpack_header_t *hdr, const char *buf,
-                               int name_offset, int name_len,
-                               int val_len)
+static inline void
+lsxpack_header_set_offset(lsxpack_header_t *hdr, const char *buf,
+                          size_t name_offset, size_t name_len,
+                          size_t val_len)
 {
     memset(hdr, 0, sizeof(*hdr));
     hdr->buf = (char *)buf;
     hdr->name_offset = name_offset;
+    assert(name_len <= LSXPACK_MAX_STRLEN);
     hdr->name_len = name_len;
+    assert(name_offset + name_len + 2 <= LSXPACK_MAX_STRLEN);
     hdr->val_offset = name_offset + name_len + 2;
+    assert(val_len <= LSXPACK_MAX_STRLEN);
     hdr->val_len = val_len;
 }
 
 
-static inline void lsxpack_header_set_offset2(lsxpack_header_t *hdr, const char *buf,
-                               int name_offset, int name_len,
-                               int val_offset, int val_len)
+static inline void
+lsxpack_header_set_offset2(lsxpack_header_t *hdr, const char *buf,
+                           size_t name_offset, size_t name_len,
+                           size_t val_offset, size_t val_len)
 {
     memset(hdr, 0, sizeof(*hdr));
     hdr->buf = (char *)buf;
     hdr->name_offset = name_offset;
+    assert(name_len <= LSXPACK_MAX_STRLEN);
     hdr->name_len = name_len;
+    assert(val_offset <= LSXPACK_MAX_STRLEN);
     hdr->val_offset = val_offset;
+    assert(val_len <= LSXPACK_MAX_STRLEN);
     hdr->val_len = val_len;
 }
 
 
-static inline void lsxpack_header_prepare_decode(lsxpack_header_t *hdr,
-                                                 char *out, int offset, int len)
+static inline void
+lsxpack_header_prepare_decode(lsxpack_header_t *hdr,
+                              char *out, size_t offset, size_t len)
 {
     memset(hdr, 0, sizeof(*hdr));
     hdr->buf = out;
+    assert(offset <= LSXPACK_MAX_STRLEN);
     hdr->name_offset = offset;
-    hdr->val_len = len;
+    if (len > LSXPACK_MAX_STRLEN)
+        hdr->val_len = LSXPACK_MAX_STRLEN;
+    else
+        hdr->val_len = len;
 }
 
 
-static inline const char *lsxpack_header_get_name(const lsxpack_header_t *hdr)
+static inline const char *
+lsxpack_header_get_name(const lsxpack_header_t *hdr)
 {
     return hdr->name_ptr ? hdr->name_ptr
                          : (hdr->name_len) ? hdr->buf + hdr->name_offset
@@ -128,7 +148,8 @@ static inline const char *lsxpack_header_get_name(const lsxpack_header_t *hdr)
 }
 
 
-static inline const char *lsxpack_header_get_value(const lsxpack_header_t *hdr)
+static inline const char *
+lsxpack_header_get_value(const lsxpack_header_t *hdr)
 {   return hdr->buf + hdr->val_offset;  }
 
 
@@ -136,4 +157,4 @@ static inline const char *lsxpack_header_get_value(const lsxpack_header_t *hdr)
 }
 #endif
 
-#endif //LSXPACK_HEADER_H_v200
+#endif //LSXPACK_HEADER_H_v202
