@@ -3078,6 +3078,33 @@ header_out_begin_literal (struct lsqpack_dec *dec,
 }
 
 
+static char *
+guarantee_out_bytes (struct lsqpack_dec *dec,
+                        struct header_block_read_ctx *read_ctx, size_t extra)
+{
+    size_t avail, need;
+    unsigned off;
+
+    assert(read_ctx->hbrc_out.xhdr);
+    if (read_ctx->hbrc_out.state == XOUT_NAME)
+        off = read_ctx->hbrc_out.xhdr->name_offset + read_ctx->hbrc_out.off;
+    else
+        off = read_ctx->hbrc_out.xhdr->val_offset + read_ctx->hbrc_out.off;
+
+    assert(read_ctx->hbrc_out.xhdr->val_len >= off);
+    avail = read_ctx->hbrc_out.xhdr->val_len - off;
+    if (avail < extra)
+    {
+        need = read_ctx->hbrc_out.xhdr->val_len + extra - avail;
+        read_ctx->hbrc_out.xhdr = dec->qpd_dh_if->dhi_prepare_decode(
+                        read_ctx->hbrc_hblock, read_ctx->hbrc_out.xhdr, need);
+        if (!read_ctx->hbrc_out.xhdr)
+            return NULL;
+    }
+    return read_ctx->hbrc_out.xhdr->buf + off;
+}
+
+
 static unsigned char *
 qdec_huff_dec4bits (uint8_t, unsigned char *, struct lsqpack_decode_status *);
 
@@ -3217,7 +3244,7 @@ parse_header_data (struct lsqpack_dec *dec,
     struct huff_decode_retval hdr;
     unsigned value;
     size_t size;
-    char *str;
+    char *str, *dst;
     unsigned prefix_bits = ~0u;
     int r;
 
@@ -3341,7 +3368,7 @@ parse_header_data (struct lsqpack_dec *dec,
                                                         &DATA.dec_int_state);
             if (r == 0)
             {
-                if (DATA.value)
+                if (DATA.left)
                 {
                     if (DATA.is_huffman)
                     {
@@ -3350,10 +3377,6 @@ parse_header_data (struct lsqpack_dec *dec,
                     }
                     else
                         DATA.state = DATA_STATE_LFINR_READ_VAL_PLAIN;
-                    if (DATA.value)
-                        break;
-                    else
-                        RETURN_ERROR();
                 }
                 else
                     goto lfinr_insert_entry;
@@ -3363,36 +3386,20 @@ parse_header_data (struct lsqpack_dec *dec,
             else
                 RETURN_ERROR();
         case DATA_STATE_LFINR_READ_VAL_HUFFMAN:
-            size = MIN((unsigned) (end - buf), DATA.val_len - DATA.nread);
-            hdr = lsqpack_huff_decode(buf, size,
-                    (unsigned char *) DATA.value + DATA.val_off,
-                    DATA.nalloc - DATA.val_off,
-                    &DATA.dec_huff_state, DATA.nread + size == DATA.val_len);
+            size = MIN((unsigned) (end - buf), DATA.left);
+            assert(size);
+            dst = guarantee_out_bytes(dec, read_ctx, size + size / 2);
+            hdr = lsqpack_huff_decode(buf, size, dst, size + size / 2,
+                    &DATA.dec_huff_state, DATA.left == size);
             switch (hdr.status)
             {
             case HUFF_DEC_OK:
-                buf += hdr.n_src;
-                DATA.val_off += hdr.n_dst;
                 DATA.state = DATA_STATE_NEXT_INSTRUCTION;
-                if (DATA.is_static)
-                    r = hlist_add_static_nameref_entry(dec, read_ctx,
-                            DATA.name_ref.static_idx, DATA.value,
-                            DATA.val_off, DATA.is_never);
-                else
-                {
-                    r = hlist_add_dynamic_nameref_entry(dec, read_ctx,
-                            DATA.name_ref.dyn_entry, DATA.value,
-                            DATA.val_off, DATA.is_never);
-                    qdec_decref_entry(DATA.name_ref.dyn_entry);
-                    DATA.name_ref.dyn_entry = NULL;
-                }
-                if (r == 0)
-                {
-                    DATA.value = NULL;
-                    break;
-                }
-                else
+                if (0 != header_out_write_value(dec, read_ctx, hdr.n_dst,
+                                                        DATA.left == size))
                     RETURN_ERROR();
+                buf += hdr.n_src;
+                break;
             case HUFF_DEC_END_SRC:
                 buf += hdr.n_src;
                 DATA.nread += hdr.n_src;
