@@ -39,6 +39,7 @@ main (int argc, char **argv)
 
 #include <errno.h>
 #include <inttypes.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -50,6 +51,7 @@ main (int argc, char **argv)
 #include <fcntl.h>
 
 #include "lsqpack.h"
+#include "lsxpack_header.h"
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
@@ -77,6 +79,65 @@ hblock_unblocked (void *buf_p)
 }
 
 
+struct header
+{
+    LIST_ENTRY(header)      next_header;
+    struct lsxpack_header   xhdr;
+    char                    buf[0x10000];
+};
+
+
+LIST_HEAD(, header)     s_headers;
+
+
+static struct lsxpack_header *
+prepare_decode (void *hblock_ctx, struct lsxpack_header *xhdr, size_t space)
+{
+    struct header *header;
+
+    if (xhdr)
+    {
+        /* If the original buffer is not enough, we don't reallocate */
+        header = (struct header *) ((char *) xhdr
+                                        - offsetof(struct header, xhdr));
+        LIST_REMOVE(header, next_header);
+        free(header);
+        return NULL;
+    }
+    else if (space <= LSXPACK_MAX_STRLEN)
+    {
+        header = malloc(sizeof(*header));
+        if (!header)
+            return NULL;
+        LIST_INSERT_HEAD(&s_headers, header, next_header);
+        lsxpack_header_prepare_decode(&header->xhdr, header->buf,
+                                                0, sizeof(header->buf));
+        return &header->xhdr;
+    }
+    else
+        return NULL;
+}
+
+
+static int
+process_header (void *hblock_ctx, struct lsxpack_header *xhdr)
+{
+    struct header *header;
+
+    header = (struct header *) ((char *) xhdr - offsetof(struct header, xhdr));
+    LIST_REMOVE(header, next_header);
+    free(header);
+    return 0;
+}
+
+
+static const struct lsqpack_dec_hset_if hset_if = {
+    .dhi_unblocked      = hblock_unblocked,
+    .dhi_prepare_decode = prepare_decode,
+    .dhi_process_header = process_header,
+};
+
+
 int
 main (int argc, char **argv)
 {
@@ -91,6 +152,7 @@ main (int argc, char **argv)
     uint64_t stream_id;
     uint32_t size;
     int r;
+    struct header *header;
 
     while (-1 != (opt = getopt(argc, argv, "i:f:s:t:h")))
     {
@@ -128,8 +190,9 @@ main (int argc, char **argv)
         }
     }
 
+    LIST_INIT(&s_headers);
     lsqpack_dec_init(&decoder, NULL, dyn_table_size, max_risked_streams,
-                                                        hblock_unblocked);
+                            &hset_if, 0 /* TODO: add command-line option */);
 
     if (in_fd < 0)
     {
@@ -177,13 +240,11 @@ main (int argc, char **argv)
         else
         {
             const unsigned char *cur = p;
-            struct lsqpack_header_list *hlist;
             enum lsqpack_read_header_status rhs;
             rhs = lsqpack_dec_header_in(&decoder, NULL, stream_id,
-                        size, &cur, size, &hlist, NULL, NULL);
+                        size, &cur, size, NULL, NULL);
             if (rhs != LQRHS_DONE || (uint32_t) (cur - p) != size)
                 abort();
-            lsqpack_dec_destroy_header_list(hlist);
         }
         p += size;
     }
@@ -226,11 +287,10 @@ main (int argc, char **argv)
         else
         {
             const unsigned char *cur = p;
-            struct lsqpack_header_list *hlist;
             enum lsqpack_read_header_status rhs;
             size = MIN(size, (uint32_t) (end - p));
             rhs = lsqpack_dec_header_in(&decoder, NULL, stream_id,
-                        size, &cur, size, &hlist, NULL, NULL);
+                        size, &cur, size, NULL, NULL);
             (void) rhs;
         }
         break;
@@ -240,6 +300,12 @@ main (int argc, char **argv)
     (void) close(fuzz_fd);
 
     lsqpack_dec_cleanup(&decoder);
+    while (!LIST_EMPTY(&s_headers))
+    {
+        header = LIST_FIRST(&s_headers);
+        LIST_REMOVE(header, next_header);
+        free(header);
+    }
 
     exit(0);
 }
