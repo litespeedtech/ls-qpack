@@ -448,6 +448,7 @@ test_push_promise (void)
 struct hblock_ctx
 {
     unsigned                n_headers;
+    int                     finished;
     struct lsxpack_header   xhdr;
     char                    buf[0x10000];
 };
@@ -481,7 +482,10 @@ process_header (void *hblock_ctx_p, struct lsxpack_header *xhdr)
 {
     struct hblock_ctx *const hctx = hblock_ctx_p;
 
-    ++hctx->n_headers;
+    if (xhdr)
+        ++hctx->n_headers;
+    else
+        hctx->finished = 1;
     return 0;
 }
 
@@ -509,12 +513,14 @@ test_discard_header (int err)
                                     &buf, 3 + !!err, NULL, NULL);
     if (err)
     {
-        assert(hctx.n_headers == 0);
+        assert(hctx.n_headers == 1);
+        assert(hctx.finished == 0);
         assert(LQRHS_ERROR == rhs);
     }
     else
     {
-        assert(hctx.n_headers == 0);
+        assert(hctx.n_headers == 1);
+        assert(hctx.finished == 0);
         assert(3 == buf - header_block);
         assert(LQRHS_NEED == rhs);
         lsqpack_dec_cleanup(&dec);
