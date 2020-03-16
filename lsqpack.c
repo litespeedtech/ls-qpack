@@ -3003,7 +3003,7 @@ header_out_begin_static_nameref (struct lsqpack_dec *dec,
         dst += 2;
     }
     xhdr->val_offset = dst - xhdr->buf - xhdr->name_offset;
-    read_ctx->hbrc_out.state = XOUT_NAME;
+    read_ctx->hbrc_out.state = XOUT_VALUE;
     read_ctx->hbrc_out.off = 0;
     return 0;
 }
@@ -3517,6 +3517,7 @@ parse_header_data (struct lsqpack_dec *dec,
                 return LQRHS_NEED;
             else
                 RETURN_ERROR();
+            break;
         case DATA_STATE_READ_VAL_HUFFMAN:
             size = MIN((unsigned) (end - buf), DATA.left);
             assert(size);
