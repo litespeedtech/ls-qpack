@@ -2905,7 +2905,7 @@ hlist_add_static_entry (struct lsqpack_dec *dec,
     xhdr->qpack_index = idx;
     xhdr->flags |= LSXPACK_VAL_MATCHED | LSXPACK_QPACK_IDX;
     xhdr->name_len = static_table[ idx ].name_len;
-    xhdr->val_len = static_table[ idx ].name_len;
+    xhdr->val_len = static_table[ idx ].val_len;
     dst = xhdr->buf + xhdr->name_offset;
     memcpy(dst, static_table[ idx ].name, static_table[ idx ].name_len);
     dst += static_table[ idx ].name_len;
