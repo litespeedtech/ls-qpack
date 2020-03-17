@@ -150,16 +150,11 @@ process_header (void *hblock_ctx, struct lsxpack_header *xhdr)
     struct buf *const buf = hblock_ctx;
     int nw;
 
-    if (xhdr)
-        nw = snprintf(buf->out_buf + buf->out_off,
-                sizeof(buf->out_buf) - buf->out_off,
-                "%.*s\t%.*s\n",
-                (int) xhdr->name_len, lsxpack_header_get_name(xhdr),
-                (int) xhdr->val_len, lsxpack_header_get_value(xhdr));
-    else
-        nw = snprintf(buf->out_buf + buf->out_off,
-                sizeof(buf->out_buf) - buf->out_off,
-                "\n");
+    nw = snprintf(buf->out_buf + buf->out_off,
+            sizeof(buf->out_buf) - buf->out_off,
+            "%.*s\t%.*s\n",
+            (int) xhdr->name_len, lsxpack_header_get_name(xhdr),
+            (int) xhdr->val_len, lsxpack_header_get_value(xhdr));
     assert(nw > 0 && (size_t) nw <= sizeof(buf->out_buf) - buf->out_off);
     buf->out_off += (unsigned) nw;
     free(buf->xhdr.buf);
@@ -180,7 +175,7 @@ header_block_done (const struct buf *buf)
 {
     fprintf(s_out, "# stream %"PRIu64"\n", buf->stream_id);
     fprintf(s_out, "# (stream ID above is used for sorting)\n");
-    fprintf(s_out, "%.*s", (int) buf->out_off, buf->out_buf);
+    fprintf(s_out, "%.*s\n", (int) buf->out_off, buf->out_buf);
 }
 
 
