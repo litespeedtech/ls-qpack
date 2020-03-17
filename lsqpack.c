@@ -3531,7 +3531,7 @@ parse_header_data (struct lsqpack_dec *dec,
                                                         DATA.left == size))
                     RETURN_ERROR();
                 buf += hdr.n_src;
-                DATA.left -= hdr.n_dst;
+                DATA.left -= hdr.n_src;
                 if (DATA.left == 0)
                     DATA.state = DATA_STATE_NEXT_INSTRUCTION;
                 break;
@@ -3540,14 +3540,14 @@ parse_header_data (struct lsqpack_dec *dec,
                                                 hdr.n_dst, DATA.left == size))
                     RETURN_ERROR();
                 buf += hdr.n_src;
-                DATA.left -= hdr.n_dst;
+                DATA.left -= hdr.n_src;
                 break;
             case HUFF_DEC_END_DST:
                 if (hdr.n_dst && 0 != header_out_write_value(dec, read_ctx,
                                                 hdr.n_dst, DATA.left == size))
                     RETURN_ERROR();
                 buf += hdr.n_src;
-                DATA.left -= hdr.n_dst;
+                DATA.left -= hdr.n_src;
                 if (0 != header_out_grow_buf(dec, read_ctx))
                     RETURN_ERROR();
                 break;
@@ -3604,7 +3604,7 @@ parse_header_data (struct lsqpack_dec *dec,
                                                         DATA.left == size))
                     RETURN_ERROR();
                 buf += hdr.n_src;
-                DATA.left -= hdr.n_dst;
+                DATA.left -= hdr.n_src;
                 if (DATA.left == 0)
                     DATA.state = DATA_STATE_BEGIN_READ_VAL_LEN;
                 break;
@@ -3613,14 +3613,14 @@ parse_header_data (struct lsqpack_dec *dec,
                                                 hdr.n_dst, DATA.left == size))
                     RETURN_ERROR();
                 buf += hdr.n_src;
-                DATA.left -= hdr.n_dst;
+                DATA.left -= hdr.n_src;
                 break;
             case HUFF_DEC_END_DST:
                 if (hdr.n_dst && 0 != header_out_write_value(dec, read_ctx,
                                                 hdr.n_dst, DATA.left == size))
                     RETURN_ERROR();
                 buf += hdr.n_src;
-                DATA.left -= hdr.n_dst;
+                DATA.left -= hdr.n_src;
                 if (0 != header_out_grow_buf(dec, read_ctx))
                     RETURN_ERROR();
                 break;
