@@ -3439,10 +3439,7 @@ parse_header_data (struct lsqpack_dec *dec,
                     check_dyn_table_errors(read_ctx, value);
                 }
                 if (r == 0)
-                {
                     DATA.state = DATA_STATE_NEXT_INSTRUCTION;
-                    break;
-                }
                 else
                     RETURN_ERROR();
             }
@@ -3450,6 +3447,7 @@ parse_header_data (struct lsqpack_dec *dec,
                 return LQRHS_NEED;
             else
                 RETURN_ERROR();
+            break;
         case DATA_STATE_READ_LFINR_IDX:
   data_state_read_lfinr_idx:
             r = lsqpack_dec_int24(&buf, end, prefix_bits, &value,
@@ -3524,30 +3522,26 @@ parse_header_data (struct lsqpack_dec *dec,
             dst = get_dst(dec, read_ctx, &dst_size);
             hdr = lsqpack_huff_decode(buf, size, dst, dst_size,
                     &DATA.dec_huff_state, DATA.left == size);
+            buf += hdr.n_src;
+            DATA.left -= hdr.n_src;
             switch (hdr.status)
             {
             case HUFF_DEC_OK:
                 if (0 != header_out_write_value(dec, read_ctx, hdr.n_dst,
                                                         DATA.left == size))
                     RETURN_ERROR();
-                buf += hdr.n_src;
-                DATA.left -= hdr.n_src;
                 if (DATA.left == 0)
                     DATA.state = DATA_STATE_NEXT_INSTRUCTION;
                 break;
             case HUFF_DEC_END_SRC:
                 if (hdr.n_dst && 0 != header_out_write_value(dec, read_ctx,
-                                                hdr.n_dst, DATA.left == size))
+                                                                hdr.n_dst, 0))
                     RETURN_ERROR();
-                buf += hdr.n_src;
-                DATA.left -= hdr.n_src;
                 break;
             case HUFF_DEC_END_DST:
                 if (hdr.n_dst && 0 != header_out_write_value(dec, read_ctx,
-                                                hdr.n_dst, DATA.left == size))
+                                                                hdr.n_dst, 0))
                     RETURN_ERROR();
-                buf += hdr.n_src;
-                DATA.left -= hdr.n_src;
                 if (0 != header_out_grow_buf(dec, read_ctx))
                     RETURN_ERROR();
                 break;
@@ -3591,36 +3585,33 @@ parse_header_data (struct lsqpack_dec *dec,
                 return LQRHS_NEED;
             else
                 RETURN_ERROR();
+            break;
         case DATA_STATE_READ_NAME_HUFFMAN:
             size = MIN((unsigned) (end - buf), DATA.left);
             assert(size);
             dst = get_dst(dec, read_ctx, &dst_size);
             hdr = lsqpack_huff_decode(buf, size, dst, dst_size,
                     &DATA.dec_huff_state, DATA.left == size);
+            buf += hdr.n_src;
+            DATA.left -= hdr.n_src;
             switch (hdr.status)
             {
             case HUFF_DEC_OK:
                 if (0 != header_out_write_name(dec, read_ctx, hdr.n_dst,
-                                                        DATA.left == size))
+                                                            DATA.left == 0))
                     RETURN_ERROR();
-                buf += hdr.n_src;
-                DATA.left -= hdr.n_src;
                 if (DATA.left == 0)
                     DATA.state = DATA_STATE_BEGIN_READ_VAL_LEN;
                 break;
             case HUFF_DEC_END_SRC:
-                if (hdr.n_dst && 0 != header_out_write_value(dec, read_ctx,
-                                                hdr.n_dst, DATA.left == size))
+                if (hdr.n_dst && 0 != header_out_write_name(dec, read_ctx,
+                                                                hdr.n_dst, 0))
                     RETURN_ERROR();
-                buf += hdr.n_src;
-                DATA.left -= hdr.n_src;
                 break;
             case HUFF_DEC_END_DST:
-                if (hdr.n_dst && 0 != header_out_write_value(dec, read_ctx,
-                                                hdr.n_dst, DATA.left == size))
+                if (hdr.n_dst && 0 != header_out_write_name(dec, read_ctx,
+                                                                hdr.n_dst, 0))
                     RETURN_ERROR();
-                buf += hdr.n_src;
-                DATA.left -= hdr.n_src;
                 if (0 != header_out_grow_buf(dec, read_ctx))
                     RETURN_ERROR();
                 break;
@@ -3652,10 +3643,7 @@ parse_header_data (struct lsqpack_dec *dec,
                 r = hlist_add_dynamic_entry(dec, read_ctx, value);
                 check_dyn_table_errors(read_ctx, value);
                 if (r == 0)
-                {
                     DATA.state = DATA_STATE_NEXT_INSTRUCTION;
-                    break;
-                }
                 else
                     RETURN_ERROR();
             }
@@ -3663,6 +3651,7 @@ parse_header_data (struct lsqpack_dec *dec,
                 return LQRHS_NEED;
             else
                 RETURN_ERROR();
+            break;
         case DATA_STATE_READ_IPBI_IDX:
   data_state_read_ipbi_idx:
             r = lsqpack_dec_int24(&buf, end, prefix_bits, &value,
@@ -3676,10 +3665,7 @@ parse_header_data (struct lsqpack_dec *dec,
                 r = hlist_add_dynamic_entry(dec, read_ctx, value);
                 check_dyn_table_errors(read_ctx, value);
                 if (r == 0)
-                {
                     DATA.state = DATA_STATE_NEXT_INSTRUCTION;
-                    break;
-                }
                 else
                     RETURN_ERROR();
             }
@@ -3687,6 +3673,7 @@ parse_header_data (struct lsqpack_dec *dec,
                 return LQRHS_NEED;
             else
                 RETURN_ERROR();
+            break;
         default:
             assert(0);
             RETURN_ERROR();
