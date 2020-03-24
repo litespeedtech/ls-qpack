@@ -3556,7 +3556,7 @@ parse_header_data (struct lsqpack_dec *dec,
             assert(size <= dst_size);
             memcpy(dst, buf, size);
             if (0 != header_out_write_value(dec, read_ctx,
-                                                hdr.n_dst, DATA.left == size))
+                                                size, DATA.left == size))
                 RETURN_ERROR();
             DATA.left -= size;
             buf += size;
