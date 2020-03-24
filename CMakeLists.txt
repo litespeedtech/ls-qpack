@@ -66,6 +66,8 @@ IF (HAS_NO_IMPLICIT_FALLTHROUGH)
     SET(CMAKE_C_CFLAGS "${CMAKE_C_FLAGS} -Wno-implicit-fallthrough")
 ENDIF()
 
+SET(CMAKE_C_FLAGS "${CMAKE_C_CFLAGS} $ENV{EXTRA_CFLAGS}")
+
 if(LSQPACK_TESTS)
     enable_testing()
     add_subdirectory(test)
