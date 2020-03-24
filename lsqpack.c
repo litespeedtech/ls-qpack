@@ -3626,12 +3626,12 @@ parse_header_data (struct lsqpack_dec *dec,
             assert(size <= dst_size);
             memcpy(dst, buf, size);
             if (0 != header_out_write_name(dec, read_ctx,
-                                                hdr.n_dst, DATA.left == size))
+                                                size, DATA.left == size))
                 RETURN_ERROR();
             DATA.left -= size;
             buf += size;
             if (DATA.left == 0)
-                DATA.state = DATA_STATE_NEXT_INSTRUCTION;
+                DATA.state = DATA_STATE_BEGIN_READ_VAL_LEN;
             break;
         case DATA_STATE_READ_LFPBNR_IDX:
   data_state_read_lfpbnr_idx:
