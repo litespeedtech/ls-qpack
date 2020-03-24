@@ -3528,7 +3528,7 @@ parse_header_data (struct lsqpack_dec *dec,
             {
             case HUFF_DEC_OK:
                 if (0 != header_out_write_value(dec, read_ctx, hdr.n_dst,
-                                                        DATA.left == size))
+                                                            DATA.left == 0))
                     RETURN_ERROR();
                 if (DATA.left == 0)
                     DATA.state = DATA_STATE_NEXT_INSTRUCTION;
