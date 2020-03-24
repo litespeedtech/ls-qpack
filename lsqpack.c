@@ -3076,10 +3076,10 @@ header_out_write_name (struct lsqpack_dec *dec,
         xhdr = read_ctx->hbrc_out.xhdr;
         if (dec->qpd_opts & LSQPACK_DEC_OPT_HTTP1X)
         {
-            if (read_ctx->hbrc_out.off + 2 < xhdr->val_len)
+            if (read_ctx->hbrc_out.off + 2 > xhdr->val_len)
             {
                 read_ctx->hbrc_out.xhdr = xhdr = dec->qpd_dh_if
-                    ->dhi_prepare_decode(read_ctx->hbrc_hblock, NULL,
+                    ->dhi_prepare_decode(read_ctx->hbrc_hblock, xhdr,
                             read_ctx->hbrc_out.off + 2);
                 if (!xhdr)
                     return -1;
@@ -3113,10 +3113,10 @@ header_out_write_value (struct lsqpack_dec *dec,
         xhdr = read_ctx->hbrc_out.xhdr;
         if (dec->qpd_opts & LSQPACK_DEC_OPT_HTTP1X)
         {
-            if (xhdr->val_offset + read_ctx->hbrc_out.off + 2 < xhdr->val_len)
+            if (xhdr->val_offset + read_ctx->hbrc_out.off + 2 > xhdr->val_len)
             {
                 read_ctx->hbrc_out.xhdr = xhdr = dec->qpd_dh_if
-                    ->dhi_prepare_decode(read_ctx->hbrc_hblock, NULL,
+                    ->dhi_prepare_decode(read_ctx->hbrc_hblock, xhdr,
                             xhdr->val_offset + read_ctx->hbrc_out.off + 2);
                 if (!xhdr)
                     return -1;

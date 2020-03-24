@@ -157,7 +157,7 @@ process_header (void *hblock_ctx, struct lsxpack_header *xhdr)
     {
         p = lsxpack_header_get_name(xhdr) + xhdr->name_len;
         assert(0 == memcmp(p, ": ", 2));
-        p += xhdr->val_len;
+        p += 2 + xhdr->val_len;
         assert(0 == memcmp(p, "\r\n", 2));
         assert(xhdr->dec_overhead == 4);
     }
