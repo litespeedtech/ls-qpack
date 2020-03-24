@@ -60,6 +60,12 @@ IF(LSQPACK_TESTS)
     SET(CMAKE_C_FLAGS "${CMAKE_C_CFLAGS} -DLSQPACK_DEVEL_MODE=1")
 ENDIF()
 
+INCLUDE(CheckCCompilerFlag)
+CHECK_C_COMPILER_FLAG(-Wno-implicit-fallthrough HAS_NO_IMPLICIT_FALLTHROUGH)
+IF (HAS_NO_IMPLICIT_FALLTHROUGH)
+    SET(CMAKE_C_CFLAGS "${CMAKE_C_FLAGS} -Wno-implicit-fallthrough")
+ENDIF()
+
 if(LSQPACK_TESTS)
     enable_testing()
     add_subdirectory(test)
