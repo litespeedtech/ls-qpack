@@ -2871,9 +2871,8 @@ lsqpack_dec_cleanup (struct lsqpack_dec *dec)
 }
 
 
-/* TODO: rename hlist_add_* functions to something more sensible */
 static int
-hlist_add_static_entry (struct lsqpack_dec *dec,
+header_out_static_entry (struct lsqpack_dec *dec,
                     struct header_block_read_ctx *read_ctx, uint64_t idx)
 {
     struct lsxpack_header *xhdr;
@@ -2918,7 +2917,7 @@ hlist_add_static_entry (struct lsqpack_dec *dec,
 
 
 static int
-hlist_add_dynamic_entry (struct lsqpack_dec *dec,
+header_out_dynamic_entry (struct lsqpack_dec *dec,
                     struct header_block_read_ctx *read_ctx, lsqpack_abs_id_t idx)
 {
     const struct lsqpack_dec_table_entry *entry;
@@ -3421,11 +3420,11 @@ parse_header_data (struct lsqpack_dec *dec,
             if (r == 0)
             {
                 if (DATA.is_static)
-                    r = hlist_add_static_entry(dec, read_ctx, value);
+                    r = header_out_static_entry(dec, read_ctx, value);
                 else
                 {
                     value = ID_MINUS(read_ctx->hbrc_base_index, value);
-                    r = hlist_add_dynamic_entry(dec, read_ctx, value);
+                    r = header_out_dynamic_entry(dec, read_ctx, value);
                     check_dyn_table_errors(read_ctx, value);
                 }
                 if (r == 0)
@@ -3651,7 +3650,7 @@ parse_header_data (struct lsqpack_dec *dec,
             if (r == 0)
             {
                 value = ID_PLUS(read_ctx->hbrc_base_index, value + 1);
-                r = hlist_add_dynamic_entry(dec, read_ctx, value);
+                r = header_out_dynamic_entry(dec, read_ctx, value);
                 check_dyn_table_errors(read_ctx, value);
                 if (r == 0)
                     DATA.state = DATA_STATE_NEXT_INSTRUCTION;
