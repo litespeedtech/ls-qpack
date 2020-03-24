@@ -16,6 +16,7 @@ struct lsqpack_dec_table_entry
     unsigned    dte_name_len;
     unsigned    dte_val_len;
     unsigned    dte_refcnt;
+    unsigned    dte_pad[3];     /* name hash, nameval hash, flags */
     char        dte_buf[0];     /* Contains both name and value */
 };
 

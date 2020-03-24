@@ -631,6 +631,56 @@ static const unsigned char nameval2id_plus_one[ 1 << XXH_NAMEVAL_WIDTH ] =
 };
 
 
+static const uint32_t name_hashes[] =
+{
+    0x653A915Bu, 0x3513518Du, 0xBEC8E440u, 0x16020A90u, 0x48F5CC19u,
+    0x0B486ED8u, 0x1A7AA369u, 0x6DE855BAu, 0xF2BADABEu, 0xD8CA2594u,
+    0x6B86C0B5u, 0xC62FECD2u, 0x8DA64A26u, 0x01F10233u, 0x8F7E493Eu,
+    0xC7742BE4u, 0xC7742BE4u, 0xC7742BE4u, 0xC7742BE4u, 0xC7742BE4u,
+    0xC7742BE4u, 0xC7742BE4u, 0xF49F1451u, 0xF49F1451u, 0x672BDA53u,
+    0x672BDA53u, 0x672BDA53u, 0x672BDA53u, 0x672BDA53u, 0x1AB214F8u,
+    0x1AB214F8u, 0xF93AD8A9u, 0x1DC691C8u, 0x7C21CFDFu, 0x7C21CFDFu,
+    0x7D3B7A3Bu, 0xC25511F2u, 0xC25511F2u, 0xC25511F2u, 0xC25511F2u,
+    0xC25511F2u, 0xC25511F2u, 0x48011191u, 0x48011191u, 0x085EF7C5u,
+    0x085EF7C5u, 0x085EF7C5u, 0x085EF7C5u, 0x085EF7C5u, 0x085EF7C5u,
+    0x085EF7C5u, 0x085EF7C5u, 0x085EF7C5u, 0x085EF7C5u, 0x085EF7C5u,
+    0xB396750Au, 0x85E74C58u, 0x85E74C58u, 0x85E74C58u, 0x1A04DF3Du,
+    0x1A04DF3Du, 0x28686A4Au, 0x9F8BCEBDu, 0x672BDA53u, 0x672BDA53u,
+    0x672BDA53u, 0x672BDA53u, 0x672BDA53u, 0x672BDA53u, 0x672BDA53u,
+    0x672BDA53u, 0x672BDA53u, 0x98BD32D3u, 0x0A829D4Eu, 0x0A829D4Eu,
+    0x7C21CFDFu, 0x363F796Du, 0x363F796Du, 0x363F796Du, 0xD8A0B17Eu,
+    0xAAF9FD79u, 0x617E4501u, 0x617E4501u, 0x1E6DBE38u, 0x19D88141u,
+    0x3392084Fu, 0x5579EF80u, 0x8F3D7765u, 0x7EDC71B6u, 0xFBA64C54u,
+    0x3ECDA708u, 0xEBA96E92u, 0x82E1B4E1u, 0x5AD275EAu, 0xDD09E931u,
+    0x34C0456Au, 0x5EF889E6u, 0x4B1BB7F1u, 0x4B1BB7F1u,
+};
+
+
+static const uint32_t nameval_hashes[] =
+{
+    0xF8614896u, 0xC8C267F6u, 0xF4617F61u, 0x8410A906u, 0xC8D109BBu,
+    0x51D448A4u, 0x52C167CFu, 0xFB22AA54u, 0x4F5272CDu, 0x9D4170E4u,
+    0x4E8C1DC3u, 0x684BDDBCu, 0xE113A2B0u, 0x5010D24Bu, 0xBCA5998Fu,
+    0xC8490E38u, 0x19094780u, 0x25D95A15u, 0x342283E4u, 0x15893F7Eu,
+    0x33968BB7u, 0x4C856F49u, 0x98573F68u, 0x16DDE443u, 0x813C3469u,
+    0x352A6556u, 0xD7988BC9u, 0x65E6ECA1u, 0x7EEE2551u, 0x77EBAE87u,
+    0xBDF5A53Au, 0x7F49F172u, 0xC06A7994u, 0xDB2FBCB8u, 0x343EA49Cu,
+    0xD143768Bu, 0x3E2D8753u, 0xA2EA09FCu, 0x467B5D0Bu, 0xCEB7F977u,
+    0x7119DC7Au, 0xDEFDA129u, 0x3F6EBC90u, 0x14E09A55u, 0x43C8B9D2u,
+    0xA707C426u, 0xFE372940u, 0x77591711u, 0xA6410F15u, 0xEACDE488u,
+    0x8B2C4DC6u, 0x8C2B11DDu, 0x9703CE5Bu, 0x0FAA28E3u, 0x13CCE32Du,
+    0xDCD68310u, 0x416F0B3Fu, 0x3BB4D68Eu, 0xF81F070Cu, 0xBDD89641u,
+    0x3915039Au, 0xF609E604u, 0x1C9DBB75u, 0x7ACD6A01u, 0xD4F462D2u,
+    0x125E66E0u, 0x0AD44FA7u, 0x4C3C90DEu, 0x27AD6982u, 0x0673640Cu,
+    0x65C03607u, 0xB05B7B87u, 0x97E01849u, 0xBA18BD33u, 0xDEF6041Bu,
+    0xE227F500u, 0x8A871E9Au, 0xCB120ACCu, 0x4B1B6336u, 0xEBDA42C6u,
+    0xFF166CA2u, 0x3A5E054Eu, 0x027207B6u, 0x04E3E645u, 0xAA95A0BCu,
+    0x77BFA4F4u, 0x3C95E0BEu, 0xD506A9D1u, 0x443EDFD4u, 0xD4E28BA1u,
+    0xA60BF66Eu, 0x46201E6Bu, 0xB2DE5570u, 0xF19F5DCCu, 0x73B6C636u,
+    0xDC83E7ECu, 0xAA333392u, 0x4EDB46C4u, 0xF64F937Fu,
+};
+
+
 /* -1 means not found */
 static int
 find_in_static_full (uint32_t nameval_hash, const char *name,
@@ -2467,6 +2517,12 @@ struct lsqpack_dec_table_entry
     unsigned    dte_name_len;
     unsigned    dte_val_len;
     unsigned    dte_refcnt;
+    unsigned    dte_name_hash;
+    unsigned    dte_nameval_hash;
+    enum {
+        DTEF_NAME_HASH      = 1 << 0,
+        DTEF_NAMEVAL_HASH   = 1 << 1,
+    }           dte_flags;
     char        dte_buf[0];     /* Contains both name and value */
 };
 
@@ -2871,6 +2927,29 @@ lsqpack_dec_cleanup (struct lsqpack_dec *dec)
 }
 
 
+static void
+qdec_maybe_update_entry_hashes (const struct lsqpack_dec *dec,
+                                    struct lsqpack_dec_table_entry *entry)
+{
+    if ((dec->qpd_opts & (LSQPACK_DEC_OPT_HASH_NAME
+                         |LSQPACK_DEC_OPT_HASH_NAMEVAL))
+                                && !(entry->dte_flags & DTEF_NAME_HASH))
+    {
+        entry->dte_flags |= DTEF_NAME_HASH;
+        entry->dte_name_hash = XXH32(DTE_NAME(entry), entry->dte_name_len,
+                                                            LSQPACK_XXH_SEED);
+    }
+    if ((dec->qpd_opts & LSQPACK_DEC_OPT_HASH_NAMEVAL)
+                                && !(entry->dte_flags & DTEF_NAMEVAL_HASH))
+    {
+        assert(entry->dte_flags & DTEF_NAME_HASH);
+        entry->dte_flags |= DTEF_NAMEVAL_HASH;
+        entry->dte_nameval_hash = XXH32(DTE_VALUE(entry), entry->dte_val_len,
+                                                        entry->dte_name_hash);
+    }
+}
+
+
 static int
 header_out_static_entry (struct lsqpack_dec *dec,
                     struct header_block_read_ctx *read_ctx, uint64_t idx)
@@ -2892,9 +2971,12 @@ header_out_static_entry (struct lsqpack_dec *dec,
 
     xhdr->dec_overhead = http1x;
     xhdr->qpack_index = idx;
-    xhdr->flags |= LSXPACK_VAL_MATCHED | LSXPACK_QPACK_IDX;
+    xhdr->flags |= LSXPACK_VAL_MATCHED | LSXPACK_QPACK_IDX
+                | LSXPACK_NAME_HASH | LSXPACK_NAMEVAL_HASH;
     xhdr->name_len = static_table[ idx ].name_len;
     xhdr->val_len = static_table[ idx ].val_len;
+    xhdr->name_hash = name_hashes[ idx ];
+    xhdr->nameval_hash = nameval_hashes[ idx ];
     dst = xhdr->buf + xhdr->name_offset;
     memcpy(dst, static_table[ idx ].name, static_table[ idx ].name_len);
     dst += static_table[ idx ].name_len;
@@ -2920,7 +3002,7 @@ static int
 header_out_dynamic_entry (struct lsqpack_dec *dec,
                     struct header_block_read_ctx *read_ctx, lsqpack_abs_id_t idx)
 {
-    const struct lsqpack_dec_table_entry *entry;
+    struct lsqpack_dec_table_entry *entry;
     struct lsxpack_header *xhdr;
     size_t need, http1x;
     char *dst;
@@ -2937,6 +3019,17 @@ header_out_dynamic_entry (struct lsqpack_dec *dec,
     if (!xhdr)
         return -1;
 
+    qdec_maybe_update_entry_hashes(dec, entry);
+    if (entry->dte_flags & DTEF_NAME_HASH)
+    {
+        xhdr->flags |= LSXPACK_NAME_HASH;
+        xhdr->name_hash = entry->dte_name_hash;
+    }
+    if (entry->dte_flags & DTEF_NAMEVAL_HASH)
+    {
+        xhdr->flags |= LSXPACK_NAMEVAL_HASH;
+        xhdr->nameval_hash = entry->dte_nameval_hash;
+    }
     xhdr->dec_overhead = http1x;
     xhdr->name_len = entry->dte_name_len;
     xhdr->val_len = entry->dte_val_len;
@@ -2982,7 +3075,8 @@ header_out_begin_static_nameref (struct lsqpack_dec *dec,
 
     xhdr->dec_overhead = http1x;
     xhdr->qpack_index = idx;
-    xhdr->flags |= LSXPACK_QPACK_IDX;
+    xhdr->flags |= LSXPACK_QPACK_IDX | LSXPACK_NAME_HASH;
+    xhdr->name_hash = name_hashes[ idx ];
     if (is_never)
         xhdr->flags |= LSXPACK_NEVER_INDEX;
     xhdr->name_len = static_table[ idx ].name_len;
@@ -3004,7 +3098,7 @@ header_out_begin_static_nameref (struct lsqpack_dec *dec,
 static int
 header_out_begin_dynamic_nameref (struct lsqpack_dec *dec,
                 struct header_block_read_ctx *read_ctx,
-                const struct lsqpack_dec_table_entry *entry, int is_never)
+                struct lsqpack_dec_table_entry *entry, int is_never)
 {
     struct lsxpack_header *xhdr;    /* Shorthand */
     size_t need, http1x;
@@ -3022,6 +3116,12 @@ header_out_begin_dynamic_nameref (struct lsqpack_dec *dec,
     xhdr->dec_overhead = http1x;
     if (is_never)
         xhdr->flags |= LSXPACK_NEVER_INDEX;
+    qdec_maybe_update_entry_hashes(dec, entry);
+    if (entry->dte_flags & DTEF_NAME_HASH)
+    {
+        xhdr->flags |= LSXPACK_NAME_HASH;
+        xhdr->name_hash = entry->dte_name_hash;
+    }
     xhdr->name_len = entry->dte_name_len;
     dst = xhdr->buf + xhdr->name_offset;
     memcpy(dst, DTE_NAME(entry), entry->dte_name_len);
@@ -3093,6 +3193,13 @@ header_out_write_name (struct lsqpack_dec *dec,
         xhdr->name_len = read_ctx->hbrc_out.off;
         read_ctx->hbrc_out.state = XOUT_VALUE;
         read_ctx->hbrc_out.off = 0;
+        if (dec->qpd_opts & (LSQPACK_DEC_OPT_HASH_NAME
+                            |LSQPACK_DEC_OPT_HASH_NAMEVAL))
+        {
+            xhdr->name_hash = XXH32(xhdr->buf + xhdr->name_offset,
+                                            xhdr->name_len, LSQPACK_XXH_SEED);
+            xhdr->flags |= LSXPACK_NAME_HASH;
+        }
     }
 
     return 0;
@@ -3125,6 +3232,13 @@ header_out_write_value (struct lsqpack_dec *dec,
                                                                 "\r\n", 2);
         }
         xhdr->val_len = read_ctx->hbrc_out.off;
+        if (dec->qpd_opts & LSQPACK_DEC_OPT_HASH_NAME)
+        {
+            assert(xhdr->flags & LSXPACK_NAME_HASH);
+            xhdr->nameval_hash = XXH32(xhdr->buf + xhdr->val_offset,
+                                            xhdr->val_len, xhdr->name_hash);
+            xhdr->flags |= LSXPACK_NAMEVAL_HASH;
+        }
         r = dec->qpd_dh_if->dhi_process_header(read_ctx->hbrc_hblock, xhdr);
         ++read_ctx->hbrc_header_count;
         memset(&read_ctx->hbrc_out, 0, sizeof(read_ctx->hbrc_out));
@@ -3356,7 +3470,7 @@ parse_header_data (struct lsqpack_dec *dec,
 {
 #define DATA read_ctx->hbrc_parse_ctx_u.data
     const unsigned char *const end = buf + bufsz;
-    const struct lsqpack_dec_table_entry *entry;
+    struct lsqpack_dec_table_entry *entry;
     struct huff_decode_retval hdr;
     unsigned value;
     size_t size, dst_size;
@@ -4430,6 +4544,18 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                                                     + WINR.alloced_val_len);
                 if (!WINR.entry)
                     return -1;
+                if (WINR.is_static)
+                {
+                    WINR.entry->dte_flags = DTEF_NAME_HASH;
+                    WINR.entry->dte_name_hash = name_hashes[WINR.name_idx];
+                }
+                else
+                {
+                    WINR.entry->dte_flags = WINR.reffed_entry->dte_flags
+                                                            & DTEF_NAME_HASH;
+                    WINR.entry->dte_name_hash
+                                        = WINR.reffed_entry->dte_name_hash;
+                }
                 WINR.entry->dte_name_len = WINR.name_len;
                 WINR.nread = 0;
                 WINR.val_off = 0;
@@ -4545,6 +4671,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 WONR.entry = malloc(size);
                 if (!WONR.entry)
                     return -1;
+                WONR.entry->dte_flags = 0;
                 WONR.nread = 0;
                 WONR.str_off = 0;
                 if (WONR.is_huffman)

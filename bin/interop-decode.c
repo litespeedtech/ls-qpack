@@ -41,11 +41,13 @@
 
 #include "lsqpack.h"
 #include "lsxpack_header.h"
+#include "xxhash.h"
 
 static size_t s_max_read_size = SIZE_MAX;
 
 static int s_verbose;
-static enum lsqpack_dec_opts s_dec_opts;
+static enum lsqpack_dec_opts s_dec_opts = LSQPACK_DEC_OPT_HASH_NAME
+                                        | LSQPACK_DEC_OPT_HASH_NAMEVAL;
 
 static FILE *s_out;
 
@@ -151,6 +153,8 @@ process_header (void *hblock_ctx, struct lsxpack_header *xhdr)
 {
     struct buf *const buf = hblock_ctx;
     const char *p;
+    const uint32_t seed = 39378473;
+    uint32_t hash;
     int nw;
 
     if (s_dec_opts & LSQPACK_DEC_OPT_HTTP1X)
@@ -163,6 +167,38 @@ process_header (void *hblock_ctx, struct lsxpack_header *xhdr)
     }
     else
         assert(xhdr->dec_overhead == 0);
+
+    if (s_dec_opts & LSQPACK_DEC_OPT_HASH_NAME)
+    {
+        assert(xhdr->flags & LSXPACK_NAME_HASH);
+        hash = XXH32(lsxpack_header_get_name(xhdr), xhdr->name_len, seed);
+        assert(hash == xhdr->name_hash);
+    }
+
+    if (s_dec_opts & LSQPACK_DEC_OPT_HASH_NAME)
+        assert(xhdr->flags & LSXPACK_NAME_HASH);
+
+    if (xhdr->flags & LSXPACK_NAME_HASH)
+    {
+        hash = XXH32(lsxpack_header_get_name(xhdr), xhdr->name_len, seed);
+        assert(hash == xhdr->name_hash);
+    }
+
+    if (s_dec_opts & LSQPACK_DEC_OPT_HASH_NAMEVAL);
+    {
+        /* This is not required by the API, but internally, if the library
+         * calculates nameval hash, it should also set the name hash.
+         */
+        assert(xhdr->flags & LSXPACK_NAME_HASH);
+        assert(xhdr->flags & LSXPACK_NAMEVAL_HASH);
+    }
+
+    if (xhdr->flags & LSXPACK_NAMEVAL_HASH)
+    {
+        hash = XXH32(lsxpack_header_get_name(xhdr), xhdr->name_len, seed);
+        hash = XXH32(lsxpack_header_get_value(xhdr), xhdr->val_len, hash);
+        assert(hash == xhdr->nameval_hash);
+    }
 
     nw = snprintf(buf->out_buf + buf->out_off,
             sizeof(buf->out_buf) - buf->out_off,
