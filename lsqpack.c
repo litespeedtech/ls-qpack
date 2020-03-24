@@ -2970,6 +2970,9 @@ header_out_begin_static_nameref (struct lsqpack_dec *dec,
 
     assert(!read_ctx->hbrc_out.xhdr);
 
+    if (idx >= QPACK_STATIC_TABLE_SIZE)
+        return -1;
+
     http1x = !!(dec->qpd_opts & LSQPACK_DEC_OPT_HTTP1X) << 2; /* 0 or 4 */
     need = static_table[ idx ].name_len + http1x;
     read_ctx->hbrc_out.xhdr = xhdr = dec->qpd_dh_if->dhi_prepare_decode(
