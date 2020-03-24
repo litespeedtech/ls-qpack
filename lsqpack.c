@@ -3640,12 +3640,14 @@ parse_header_data (struct lsqpack_dec *dec,
             if (r == 0)
             {
                 value = ID_PLUS(value, read_ctx->hbrc_base_index + 1);
-                r = hlist_add_dynamic_entry(dec, read_ctx, value);
-                check_dyn_table_errors(read_ctx, value);
-                if (r == 0)
-                    DATA.state = DATA_STATE_NEXT_INSTRUCTION;
-                else
+                entry = qdec_get_table_entry_abs(dec, value);
+                if (!entry)
                     RETURN_ERROR();
+                check_dyn_table_errors(read_ctx, value);
+                if (0 != header_out_begin_dynamic_nameref(dec,
+                                        read_ctx, entry, DATA.is_never))
+                    RETURN_ERROR();
+                DATA.state = DATA_STATE_BEGIN_READ_VAL_LEN;
             }
             else if (r == -1)
                 return LQRHS_NEED;
@@ -3658,9 +3660,6 @@ parse_header_data (struct lsqpack_dec *dec,
                                                         &DATA.dec_int_state);
             if (r == 0)
             {
-                /* XXX Hmm: is this the same logic as above due to modulo
-                 * arithmetic?
-                 */
                 value = ID_PLUS(read_ctx->hbrc_base_index, value + 1);
                 r = hlist_add_dynamic_entry(dec, read_ctx, value);
                 check_dyn_table_errors(read_ctx, value);
