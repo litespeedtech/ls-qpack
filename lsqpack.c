@@ -2824,15 +2824,6 @@ static enum lsqpack_read_header_status
 parse_header_data (struct lsqpack_dec *,
         struct header_block_read_ctx *, const unsigned char *, size_t);
 
-static void
-cleanup_read_ctx (struct header_block_read_ctx *read_ctx)
-{
-    if (read_ctx->hbrc_parse != parse_header_data)
-        return;
-
-    /* TODO */
-}
-
 
 float
 lsqpack_dec_ratio (const struct lsqpack_dec *dec)
@@ -2854,7 +2845,6 @@ lsqpack_dec_cleanup (struct lsqpack_dec *dec)
                                                     read_ctx = next_read_ctx)
     {
         next_read_ctx = TAILQ_NEXT(read_ctx, hbrc_next_all);
-        cleanup_read_ctx(read_ctx);
         free(read_ctx);
     }
 
@@ -3918,7 +3908,6 @@ destroy_header_block_read_ctx (struct lsqpack_dec *dec,
         TAILQ_REMOVE(&dec->qpd_blocked_headers[id], read_ctx, hbrc_next_blocked);
         --dec->qpd_n_blocked;
     }
-    cleanup_read_ctx(read_ctx);
     free(read_ctx);
 }
 
@@ -4089,11 +4078,8 @@ qdec_header_process (struct lsqpack_dec *dec,
     if (read_ctx->hbrc_flags & HBRC_ON_LIST)
     {
         qdec_remove_header_block(dec, read_ctx);
-        cleanup_read_ctx(read_ctx);
         free(read_ctx);
     }
-    else
-        cleanup_read_ctx(read_ctx);
 
     return st;
 }
