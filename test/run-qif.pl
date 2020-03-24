@@ -21,6 +21,10 @@ GetOptions(
     "no-cleanup"        => sub { $cleanup = 0 },
 );
 
+# To reduce the number of tests from doubling, check HTTP/1.x mode in some
+# input, but not others.  The value of this setting is easy to determine.
+my $http1x = ($aggressive + $table_size + $immed_ack + $risked_streams) & 1;
+
 my $dir = catfile(($ENV{TMP} || $ENV{TEMP} || "/tmp"),
                                                 "run-qif-out-" . rand . $$);
 mkdir $dir or die "cannot create temp directory $dir";
@@ -64,12 +68,12 @@ copy($ARGV[0], $qif_file) or die "cannot copy original $ARGV[0] to $qif_file";
 if ($^O eq 'MSWin32') {
     system('interop-encode', $encode_args, '-i', $qif_file, '-o', $bin_file)
         and die "interop-encode failed";
-    system('interop-decode', $decode_args, '-m', '1', '-i', $bin_file, '-o', $resulting_qif_file)
+    system('interop-decode', $decode_args, '-m', '1', '-i', $bin_file, '-o', $resulting_qif_file, '-H', $http1x)
         and die "interop-decode failed";
 } else {
     system("interop-encode $encode_args -i $qif_file -o $bin_file")
         and die "interop-encode failed";
-    system("interop-decode $decode_args -m 1 -i $bin_file -o $resulting_qif_file")
+    system("interop-decode $decode_args -m 1 -i $bin_file -o $resulting_qif_file -H $http1x")
         and die "interop-decode failed";
 }
 

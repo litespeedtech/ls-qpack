@@ -45,6 +45,7 @@
 static size_t s_max_read_size = SIZE_MAX;
 
 static int s_verbose;
+static enum lsqpack_dec_opts s_dec_opts;
 
 static FILE *s_out;
 
@@ -66,6 +67,7 @@ usage (const char *name)
 "   -s NUMBER   Maximum number of risked streams.  Defaults to %u.\n"
 "   -t NUMBER   Dynamic table size.  Defaults to %u.\n"
 "   -m NUMBER   Maximum read size.  Defaults to %zu.\n"
+"   -H [0|1]    Use HTTP/1.x mode and test each header (defaults to `off').\n"
 "   -v          Verbose: print headers and table state to stderr.\n"
 "\n"
 "   -h          Print this help screen and exit\n"
@@ -148,7 +150,19 @@ static int
 process_header (void *hblock_ctx, struct lsxpack_header *xhdr)
 {
     struct buf *const buf = hblock_ctx;
+    const char *p;
     int nw;
+
+    if (s_dec_opts & LSQPACK_DEC_OPT_HTTP1X)
+    {
+        p = lsxpack_header_get_name(xhdr) + xhdr->name_len;
+        assert(0 == memcmp(p, ": ", 2));
+        p += xhdr->val_len;
+        assert(0 == memcmp(p, "\r\n", 2));
+        assert(xhdr->dec_overhead == 4);
+    }
+    else
+        assert(xhdr->dec_overhead == 0);
 
     nw = snprintf(buf->out_buf + buf->out_off,
             sizeof(buf->out_buf) - buf->out_off,
@@ -204,7 +218,7 @@ main (int argc, char **argv)
     char command[0x100];
     char line_buf[0x100];
 
-    while (-1 != (opt = getopt(argc, argv, "i:o:r:s:t:m:hv")))
+    while (-1 != (opt = getopt(argc, argv, "i:o:r:s:t:m:hvH:")))
     {
         switch (opt)
         {
@@ -261,6 +275,12 @@ main (int argc, char **argv)
         case 'v':
             ++s_verbose;
             break;
+        case 'H':
+            if (atoi(optarg))
+                s_dec_opts |= LSQPACK_DEC_OPT_HTTP1X;
+            else
+                s_dec_opts &= ~LSQPACK_DEC_OPT_HTTP1X;
+            break;
         default:
             exit(EXIT_FAILURE);
         }
@@ -270,7 +290,7 @@ main (int argc, char **argv)
         s_out = stdout;
 
     lsqpack_dec_init(&decoder, s_verbose ? stderr : NULL, dyn_table_size,
-                        max_risked_streams, &hset_if, 0 /* TODO */);
+                        max_risked_streams, &hset_if, s_dec_opts);
 
     off = 0;
     while (1)
