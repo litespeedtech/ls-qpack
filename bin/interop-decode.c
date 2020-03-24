@@ -205,11 +205,18 @@ process_header (void *hblock_ctx, struct lsxpack_header *xhdr)
             "%.*s\t%.*s\n",
             (int) xhdr->name_len, lsxpack_header_get_name(xhdr),
             (int) xhdr->val_len, lsxpack_header_get_value(xhdr));
-    assert(nw > 0 && (size_t) nw <= sizeof(buf->out_buf) - buf->out_off);
-    buf->out_off += (unsigned) nw;
     free(buf->xhdr.buf);
     memset(&buf->xhdr, 0, sizeof(buf->xhdr));
-    return 0;
+    if (nw > 0 && (size_t) nw <= sizeof(buf->out_buf) - buf->out_off)
+    {
+        buf->out_off += (unsigned) nw;
+        return 0;
+    }
+    else
+    {
+        fprintf(stderr, "header list too long\n");
+        return -1;
+    }
 }
 
 
