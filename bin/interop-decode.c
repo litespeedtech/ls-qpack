@@ -40,10 +40,14 @@
 #include <fcntl.h>
 
 #include "lsqpack.h"
+#include "lsxpack_header.h"
+#include "xxhash.h"
 
 static size_t s_max_read_size = SIZE_MAX;
 
 static int s_verbose;
+static enum lsqpack_dec_opts s_dec_opts = LSQPACK_DEC_OPT_HASH_NAME
+                                        | LSQPACK_DEC_OPT_HASH_NAMEVAL;
 
 static FILE *s_out;
 
@@ -65,6 +69,7 @@ usage (const char *name)
 "   -s NUMBER   Maximum number of risked streams.  Defaults to %u.\n"
 "   -t NUMBER   Dynamic table size.  Defaults to %u.\n"
 "   -m NUMBER   Maximum read size.  Defaults to %zu.\n"
+"   -H [0|1]    Use HTTP/1.x mode and test each header (defaults to `off').\n"
 "   -v          Verbose: print headers and table state to stderr.\n"
 "\n"
 "   -h          Print this help screen and exit\n"
@@ -80,6 +85,22 @@ struct buf
     size_t                  size;
     size_t                  off;
     size_t                  file_off;
+
+    /* A single header name/value pair is stored in xhdr_buf.  When the
+     * header is done, the whole buffer can be used again for the next
+     * header.
+     */
+    struct lsxpack_header   xhdr;
+    unsigned                xhdr_off;       /* Used in xhdr_buf */
+    unsigned                xhdr_nalloc;    /* Number of bytes allocated */ /* TODO: use it */
+
+    /* Output is written to out_buf out header at a time and the printed all
+     * at once.  This logic is not very important and we use a reasonably
+     * large fixed-size buffer.
+     */
+    unsigned                out_off;
+    char                    out_buf[0x1000];
+
     unsigned char           buf[0];
 };
 
@@ -95,36 +116,123 @@ hblock_unblocked (void *buf_p)
 }
 
 
-static void
-header_block_done (const struct buf *buf, struct lsqpack_header_list *set)
+static struct lsxpack_header *
+prepare_decode (void *hblock_ctx, struct lsxpack_header *xhdr, size_t space)
 {
-    unsigned n;
+    struct buf *const buf = hblock_ctx;
+    char *new;
 
-    if (!set)
+    if (space > LSXPACK_MAX_STRLEN)
+        return NULL;
+
+    if (xhdr)
     {
-        fprintf(stderr, "Stream %"PRIu64" has empty header list\n", buf->stream_id);
-        return;
+        assert(xhdr == &buf->xhdr);
+        assert(space > xhdr->val_len);
+        new = realloc(xhdr->buf, space);
+        if (!new)
+            return NULL;
+        xhdr->buf = new;
+        xhdr->val_len = space;
+        return xhdr;
+    }
+    else
+    {
+        xhdr = &buf->xhdr;
+        new = malloc(space);
+        if (!new)
+            return NULL;
+        lsxpack_header_prepare_decode(xhdr, new, 0, space);
+        return xhdr;
+    }
+}
+
+
+static int
+process_header (void *hblock_ctx, struct lsxpack_header *xhdr)
+{
+    struct buf *const buf = hblock_ctx;
+    const char *p;
+    const uint32_t seed = 39378473;
+    uint32_t hash;
+    int nw;
+
+    if (s_dec_opts & LSQPACK_DEC_OPT_HTTP1X)
+    {
+        p = lsxpack_header_get_name(xhdr) + xhdr->name_len;
+        assert(0 == memcmp(p, ": ", 2));
+        p += 2 + xhdr->val_len;
+        assert(0 == memcmp(p, "\r\n", 2));
+        assert(xhdr->dec_overhead == 4);
+    }
+    else
+        assert(xhdr->dec_overhead == 0);
+
+    if (s_dec_opts & LSQPACK_DEC_OPT_HASH_NAME)
+    {
+        assert(xhdr->flags & LSXPACK_NAME_HASH);
+        hash = XXH32(lsxpack_header_get_name(xhdr), xhdr->name_len, seed);
+        assert(hash == xhdr->name_hash);
     }
 
-    if (s_verbose)
+    if (s_dec_opts & LSQPACK_DEC_OPT_HASH_NAME)
+        assert(xhdr->flags & LSXPACK_NAME_HASH);
+
+    if (xhdr->flags & LSXPACK_NAME_HASH)
     {
-        fprintf(stderr, "Have headers for stream %"PRIu64":\n", buf->stream_id);
-        for (n = 0; n < set->qhl_count; ++n)
-            fprintf(stderr, "  %.*s: %.*s\n",
-                set->qhl_headers[n]->qh_name_len, set->qhl_headers[n]->qh_name,
-                set->qhl_headers[n]->qh_value_len, set->qhl_headers[n]->qh_value);
-        fprintf(stderr, "\n");
+        hash = XXH32(lsxpack_header_get_name(xhdr), xhdr->name_len, seed);
+        assert(hash == xhdr->name_hash);
     }
 
+    if (s_dec_opts & LSQPACK_DEC_OPT_HASH_NAMEVAL);
+    {
+        /* This is not required by the API, but internally, if the library
+         * calculates nameval hash, it should also set the name hash.
+         */
+        assert(xhdr->flags & LSXPACK_NAME_HASH);
+        assert(xhdr->flags & LSXPACK_NAMEVAL_HASH);
+    }
+
+    if (xhdr->flags & LSXPACK_NAMEVAL_HASH)
+    {
+        hash = XXH32(lsxpack_header_get_name(xhdr), xhdr->name_len, seed);
+        hash = XXH32(lsxpack_header_get_value(xhdr), xhdr->val_len, hash);
+        assert(hash == xhdr->nameval_hash);
+    }
+
+    nw = snprintf(buf->out_buf + buf->out_off,
+            sizeof(buf->out_buf) - buf->out_off,
+            "%.*s\t%.*s\n",
+            (int) xhdr->name_len, lsxpack_header_get_name(xhdr),
+            (int) xhdr->val_len, lsxpack_header_get_value(xhdr));
+    free(buf->xhdr.buf);
+    memset(&buf->xhdr, 0, sizeof(buf->xhdr));
+    if (nw > 0 && (size_t) nw <= sizeof(buf->out_buf) - buf->out_off)
+    {
+        buf->out_off += (unsigned) nw;
+        return 0;
+    }
+    else
+    {
+        fprintf(stderr, "header list too long\n");
+        return -1;
+    }
+}
+
+
+static const struct lsqpack_dec_hset_if hset_if = {
+    .dhi_unblocked      = hblock_unblocked,
+    .dhi_prepare_decode = prepare_decode,
+    .dhi_process_header = process_header,
+};
+
+
+static void
+header_block_done (const struct buf *buf)
+{
     fprintf(s_out, "# stream %"PRIu64"\n", buf->stream_id);
     fprintf(s_out, "# (stream ID above is used for sorting)\n");
-    for (n = 0; n < set->qhl_count; ++n)
-        fprintf(s_out, "%.*s\t%.*s\n",
-            set->qhl_headers[n]->qh_name_len, set->qhl_headers[n]->qh_name,
-            set->qhl_headers[n]->qh_value_len, set->qhl_headers[n]->qh_value);
-    fprintf(s_out, "\n");
-
-    lsqpack_dec_destroy_header_list(set);
+    fprintf(s_out, "%.*s\n", (int) buf->out_off, buf->out_buf);
 }
 
 
@@ -153,7 +261,7 @@ main (int argc, char **argv)
     char command[0x100];
     char line_buf[0x100];
 
-    while (-1 != (opt = getopt(argc, argv, "i:o:r:s:t:m:hv")))
+    while (-1 != (opt = getopt(argc, argv, "i:o:r:s:t:m:hvH:")))
     {
         switch (opt)
         {
@@ -210,6 +318,12 @@ main (int argc, char **argv)
         case 'v':
             ++s_verbose;
             break;
+        case 'H':
+            if (atoi(optarg))
+                s_dec_opts |= LSQPACK_DEC_OPT_HTTP1X;
+            else
+                s_dec_opts &= ~LSQPACK_DEC_OPT_HTTP1X;
+            break;
         default:
             exit(EXIT_FAILURE);
         }
@@ -219,7 +333,7 @@ main (int argc, char **argv)
         s_out = stdout;
 
     lsqpack_dec_init(&decoder, s_verbose ? stderr : NULL, dyn_table_size,
-                        max_risked_streams, hblock_unblocked);
+                        max_risked_streams, &hset_if, s_dec_opts);
 
     off = 0;
     while (1)
@@ -305,12 +419,12 @@ main (int argc, char **argv)
                 rhs = lsqpack_dec_header_in(&decoder, buf, stream_id,
                             buf->size, &p,
                             buf->size /* FIXME: this should be `size' */,
-                            &hlist, NULL, NULL);
+                            NULL, NULL);
                 switch (rhs)
                 {
                 case LQRHS_DONE:
                     assert(p == buf->buf + buf->size);
-                    header_block_done(buf, hlist);
+                    header_block_done(buf);
                     if (s_verbose)
                         fprintf(stderr, "compression ratio: %.3f\n",
                             lsqpack_dec_ratio(&decoder));
@@ -368,16 +482,16 @@ main (int argc, char **argv)
             if (buf->off == 0)
                 rhs = lsqpack_dec_header_in(&decoder, buf, buf->stream_id,
                                 buf->size, &p, MIN(s_max_read_size, buf->size),
-                                &hlist, NULL, NULL);
+                                NULL, NULL);
             else
                 rhs = lsqpack_dec_header_read(buf->dec, buf, &p,
                                 MIN(s_max_read_size, (buf->size - buf->off)),
-                                &hlist, NULL, NULL);
+                                NULL, NULL);
             switch (rhs)
             {
             case LQRHS_DONE:
                 assert(p == buf->buf + buf->size);
-                header_block_done(buf, hlist);
+                header_block_done(buf);
                 if (s_verbose)
                     fprintf(stderr, "compression ratio: %.3f\n",
                         lsqpack_dec_ratio(&decoder));

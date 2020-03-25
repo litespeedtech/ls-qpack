@@ -11,6 +11,7 @@
 
 #include "lsqpack.h"
 #include "lsqpack-test.h"
+#include "lsxpack_header.h"
 
 #define ENC_BUF_SZ 200
 #define HEADER_BUF_SZ 200
@@ -444,28 +445,82 @@ test_push_promise (void)
 }
 
 
+struct hblock_ctx
+{
+    unsigned                n_headers;
+    int                     finished;
+    struct lsxpack_header   xhdr;
+    char                    buf[0x10000];
+};
+
+
+static void
+unblocked (void *hblock_ctx_p)
+{
+    assert(0);  /* Not expecting this to be called */
+}
+
+
+static struct lsxpack_header *
+prepare_decode (void *hblock_ctx_p, struct lsxpack_header *xhdr, size_t space)
+{
+    struct hblock_ctx *const hctx = hblock_ctx_p;
+
+    if (space > LSXPACK_MAX_STRLEN)
+        return NULL;
+
+    if (xhdr)
+        return NULL;
+
+    lsxpack_header_prepare_decode(&hctx->xhdr, hctx->buf, 0, sizeof(hctx->buf));
+    return &hctx->xhdr;
+}
+
+
+static int
+process_header (void *hblock_ctx_p, struct lsxpack_header *xhdr)
+{
+    struct hblock_ctx *const hctx = hblock_ctx_p;
+
+    if (xhdr)
+        ++hctx->n_headers;
+    else
+        hctx->finished = 1;
+    return 0;
+}
+
+
+static const struct lsqpack_dec_hset_if hset_if = {
+    .dhi_unblocked      = unblocked,
+    .dhi_prepare_decode = prepare_decode,
+    .dhi_process_header = process_header,
+};
+
+
 static void
 test_discard_header (int err)
 {
     struct lsqpack_dec dec;
     enum lsqpack_read_header_status rhs;
     const unsigned char *buf;
-    struct lsqpack_header_list *hlist = NULL;
     unsigned char header_block[] = "\x00\x00\xC0\x80";
+    struct hblock_ctx hctx = { .n_headers = 0, };
 
-    lsqpack_dec_init(&dec, NULL, 0, 0, NULL);
+    lsqpack_dec_init(&dec, NULL, 0, 0, &hset_if, LSQPACK_DEC_OPT_HTTP1X);
 
     buf = header_block;
-    rhs = lsqpack_dec_header_in(&dec, (void *) 1, 0, 10,
-                                    &buf, 3 + !!err, &hlist, NULL, NULL);
+    rhs = lsqpack_dec_header_in(&dec, &hctx, 0, 10,
+                                    &buf, 3 + !!err, NULL, NULL);
     if (err)
     {
-        assert(hlist == NULL);
+        assert(hctx.n_headers == 1);
+        assert(hctx.finished == 0);
         assert(LQRHS_ERROR == rhs);
     }
     else
     {
-        assert(hlist == NULL);
+        assert(hctx.n_headers == 1);
+        assert(hctx.finished == 0);
         assert(3 == buf - header_block);
         assert(LQRHS_NEED == rhs);
         lsqpack_dec_cleanup(&dec);
@@ -479,15 +534,15 @@ test_static_bounds_header_block (void)
     struct lsqpack_dec dec;
     enum lsqpack_read_header_status rhs;
     const unsigned char *buf;
-    struct lsqpack_header_list *hlist = NULL;
     /* Static table index 1000 */
     unsigned char header_block[] = "\x00\x00\xFF\xA9\x07";
+    struct hblock_ctx hctx = { .n_headers = 0, };
 
-    lsqpack_dec_init(&dec, stderr, 0, 0, NULL);
+    lsqpack_dec_init(&dec, stderr, 0, 0, &hset_if, LSQPACK_DEC_OPT_HTTP1X);
     buf = header_block;
-    rhs = lsqpack_dec_header_in(&dec, (void *) 1, 0, 10,
-                                    &buf, 5, &hlist, NULL, NULL);
-    assert(hlist == NULL);
+    rhs = lsqpack_dec_header_in(&dec, &hctx, 0, 10,
+                                    &buf, 5, NULL, NULL);
+    assert(hctx.n_headers == 0);
     assert(LQRHS_ERROR == rhs);
     lsqpack_dec_cleanup(&dec);
 }
@@ -501,7 +556,7 @@ test_static_bounds_enc_stream (void)
     /* Static table index 1000 */
     unsigned char enc_stream[] = "\xFF\xA9\x07\x04" "dude";
 
-    lsqpack_dec_init(&dec, stderr, 0, 0, NULL);
+    lsqpack_dec_init(&dec, NULL, 0, 0, &hset_if, LSQPACK_DEC_OPT_HTTP1X);
     r = lsqpack_dec_enc_in(&dec, enc_stream, 8);
     assert(r == -1);
     lsqpack_dec_cleanup(&dec);
@@ -518,7 +573,7 @@ test_wonr_name_too_large_huffman (void)
      */
     unsigned char enc_stream[] = "\x7F\xE2\x7F";
 
-    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, &hset_if, LSQPACK_DEC_OPT_HTTP1X);
     r = lsqpack_dec_enc_in(&dec, enc_stream, 3);
     assert(r == -1);
     lsqpack_dec_cleanup(&dec);
@@ -535,7 +590,7 @@ test_wonr_name_too_large_plain (void)
      */
     unsigned char enc_stream[] = "\x5F\xE2\x1F";
 
-    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    lsqpack_dec_init(&dec, stderr, 0, 0, &hset_if, LSQPACK_DEC_OPT_HTTP1X);
     r = lsqpack_dec_enc_in(&dec, enc_stream, 3);
     assert(r == -1);
     lsqpack_dec_cleanup(&dec);
@@ -552,7 +607,7 @@ test_wonr_value_too_large_huffman (void)
      */
     unsigned char enc_stream[] = "\x42OK\xFF\x80\x7F";
 
-    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    lsqpack_dec_init(&dec, stderr, 0, 0, &hset_if, LSQPACK_DEC_OPT_HTTP1X);
     r = lsqpack_dec_enc_in(&dec, enc_stream, 6);
     assert(r == -1);
     lsqpack_dec_cleanup(&dec);
@@ -569,7 +624,7 @@ test_wonr_value_too_large_plain (void)
      */
     unsigned char enc_stream[] = "\x42OK\x7F\x80\x1F";
 
-    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, &hset_if, LSQPACK_DEC_OPT_HTTP1X);
     r = lsqpack_dec_enc_in(&dec, enc_stream, 6);
     assert(r == -1);
     lsqpack_dec_cleanup(&dec);
@@ -587,7 +642,7 @@ test_winr_value_too_large_huffman (void)
     /* Refer to static entry 79: access-control-refer-headers (length 28) */
     unsigned char enc_stream[] = "\xFF\x10\xFF\xE5\x7E";
 
-    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, &hset_if, LSQPACK_DEC_OPT_HTTP1X);
     r = lsqpack_dec_enc_in(&dec, enc_stream, 5);
     assert(r == -1);
     lsqpack_dec_cleanup(&dec);
@@ -605,7 +660,7 @@ test_winr_value_too_large_plain (void)
     /* Refer to static entry 79: access-control-refer-headers (length 28) */
     unsigned char enc_stream[] = "\xFF\x10\x7F\xE5\x1E";
 
-    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, &hset_if, LSQPACK_DEC_OPT_HTTP1X);
     r = lsqpack_dec_enc_in(&dec, enc_stream, 5);
     assert(r == -1);
     lsqpack_dec_cleanup(&dec);
@@ -622,16 +677,16 @@ test_dec_header_zero_in (void)
     struct lsqpack_header_list *hlist;
     enum lsqpack_read_header_status rhs;
     const unsigned char *buf = (unsigned char *) "";
+    struct hblock_ctx hctx = { .n_headers = 0, };
 
-    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, &hset_if, LSQPACK_DEC_OPT_HTTP1X);
 
     rhs = lsqpack_dec_header_in(&dec,
-                (void *) 123 /* hblock */,
+                &hctx /* hblock */,
                 2 /* Stream ID */,
                 100 /* How long the thing is */,
                 &buf,
                 0 /* How many bytes are available */,
-                &hlist,
                 NULL, 0);
     assert(LQRHS_NEED == rhs);
 
@@ -647,16 +702,16 @@ test_dec_header_too_short (size_t header_size)
     struct lsqpack_header_list *hlist;
     enum lsqpack_read_header_status rhs;
     const unsigned char *buf = (unsigned char *) "";
+    struct hblock_ctx hctx = { .n_headers = 0, };
 
-    lsqpack_dec_init(&dec, stderr, 0x1000, 0, NULL);
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, &hset_if, LSQPACK_DEC_OPT_HTTP1X);
 
     rhs = lsqpack_dec_header_in(&dec,
-                (void *) 123 /* hblock */,
+                &hctx /* hblock */,
                 2 /* Stream ID */,
                 header_size,
                 &buf,
                 0 /* How many bytes are available */,
-                &hlist,
                 NULL, 0);
     assert(LQRHS_ERROR == rhs);
 

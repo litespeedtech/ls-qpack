@@ -2,7 +2,8 @@ function(lsqpack_add_executable TARGET)
     add_executable(${TARGET} "")
     target_link_libraries(${TARGET} PRIVATE ls-qpack)
 
-    target_sources(${TARGET} PRIVATE ${TARGET}.c)
+    target_sources(${TARGET} PRIVATE ${TARGET}.c ../deps/xxhash/xxhash.c)
+    target_include_directories(${TARGET} PRIVATE ../deps/xxhash)
 
     if(MSVC)
         target_include_directories(${TARGET} PRIVATE ../wincompat)

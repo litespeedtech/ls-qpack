@@ -60,6 +60,7 @@ typedef unsigned lsqpack_abs_id_t;
 
 struct lsqpack_enc;
 struct lsqpack_dec;
+struct lsxpack_header;
 
 enum lsqpack_enc_opts
 {
@@ -309,37 +310,33 @@ lsqpack_enc_header_block_prefix_size (const struct lsqpack_enc *);
 void
 lsqpack_enc_cleanup (struct lsqpack_enc *);
 
-/**
- * The header is a single name/value pair.  The strings are not NUL-terminated.
- */
-struct lsqpack_header
+/** Decoder header set interface */
+struct lsqpack_dec_hset_if
 {
-    const char         *qh_name;
-    const char         *qh_value;
-    unsigned            qh_name_len;
-    unsigned            qh_value_len;
-    unsigned            qh_static_id;
-    enum {
-        /** Must be encoded with a literal representation */
-        QH_NEVER    = 1 << 0,
-        /** qh_static_id is set */
-        QH_ID_SET   = 1 << 1,
-    }                   qh_flags;
+    void    (*dhi_unblocked)(void *hblock_ctx);
+    struct lsxpack_header *
+            (*dhi_prepare_decode)(void *hblock_ctx,
+                                  struct lsxpack_header *, size_t space);
+    int     (*dhi_process_header)(void *hblock_ctx, struct lsxpack_header *);
 };
 
-/**
- * The header list represents the decoded header block.
- */
-struct lsqpack_header_list
+enum lsqpack_dec_opts
 {
-    struct lsqpack_header  **qhl_headers;
-    unsigned                 qhl_count;
+    /**
+     * In this mode, returned lsxpack_header will contain ": " between
+     * name and value strings and have "\r\n" after the value.
+     */
+    LSQPACK_DEC_OPT_HTTP1X          = 1 << 0,
+    /** Include name hash into lsxpack_header */
+    LSQPACK_DEC_OPT_HASH_NAME       = 1 << 1,
+    /** Include nameval hash into lsxpack_header */
+    LSQPACK_DEC_OPT_HASH_NAMEVAL    = 1 << 2,
 };
 
 void
 lsqpack_dec_init (struct lsqpack_dec *, void *logger_ctx,
     unsigned dyn_table_size, unsigned max_risked_streams,
-    void (*hblock_unblocked)(void *hblock_ctx));
+    const struct lsqpack_dec_hset_if *, enum lsqpack_dec_opts);
 
 /**
  * Values returned by @ref lsqpack_dec_header_in() and
@@ -410,7 +407,6 @@ enum lsqpack_read_header_status
 lsqpack_dec_header_in (struct lsqpack_dec *, void *hblock_ctx,
                        uint64_t stream_id, size_t header_block_size,
                        const unsigned char **buf, size_t bufsz,
-                       struct lsqpack_header_list **hlist,
                        unsigned char *dec_buf, size_t *dec_buf_sz);
 
 /**
@@ -423,7 +419,6 @@ lsqpack_dec_header_in (struct lsqpack_dec *, void *hblock_ctx,
 enum lsqpack_read_header_status
 lsqpack_dec_header_read (struct lsqpack_dec *dec, void *hblock_ctx,
                          const unsigned char **buf, size_t bufsz,
-                         struct lsqpack_header_list **hlist,
                          unsigned char *dec_buf, size_t *dec_buf_sz);
 
 /**
@@ -432,13 +427,6 @@ lsqpack_dec_header_read (struct lsqpack_dec *dec, void *hblock_ctx,
  */
 int
 lsqpack_dec_enc_in (struct lsqpack_dec *, const unsigned char *, size_t);
-
-/**
- * Destroy the header list returned by either
- * @ref lsqpack_dec_header_in() or @ref lsqpack_dec_header_read().
- */
-void
-lsqpack_dec_destroy_header_list (struct lsqpack_header_list *);
 
 /**
  * Returns true if Insert Count Increment (ICI) instruction is pending.
@@ -662,6 +650,7 @@ struct lsqpack_dec_inst;
 
 struct lsqpack_dec
 {
+    enum lsqpack_dec_opts   qpd_opts;
     /** This is the hard limit set at initialization */
     unsigned                qpd_max_capacity;
     /** The current maximum capacity can be adjusted at run-time */
@@ -681,7 +670,8 @@ struct lsqpack_dec
     lsqpack_abs_id_t        qpd_last_id;
     /** TODO: describe the mechanism */
     lsqpack_abs_id_t        qpd_largest_known_id;
-    void                  (*qpd_hblock_unblocked)(void *hblock_ctx);
+    const struct lsqpack_dec_hset_if
+                           *qpd_dh_if;
 
     void                   *qpd_logger_ctx;
 

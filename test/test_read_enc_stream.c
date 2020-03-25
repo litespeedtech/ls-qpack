@@ -16,6 +16,7 @@ struct lsqpack_dec_table_entry
     unsigned    dte_name_len;
     unsigned    dte_val_len;
     unsigned    dte_refcnt;
+    unsigned    dte_pad[3];     /* name hash, nameval hash, flags */
     char        dte_buf[0];     /* Contains both name and value */
 };
 
@@ -225,7 +226,8 @@ run_test (const struct test_read_encoder_stream *test)
 
     for (chunk_sz = 1; chunk_sz <= test->input_sz; ++chunk_sz)
     {
-        lsqpack_dec_init(&dec, NULL, 0x1000, 100, NULL);
+        lsqpack_dec_init(&dec, NULL, 0x1000, 100, (void *) 1 /* hset */,
+                                                    LSQPACK_DEC_OPT_HTTP1X);
 
         off = 0;
         do
