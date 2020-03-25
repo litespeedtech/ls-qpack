@@ -1619,8 +1619,7 @@ enum lsqpack_enc_status
 lsqpack_enc_encode (struct lsqpack_enc *enc,
         unsigned char *enc_buf, size_t *enc_sz_p,
         unsigned char *hea_buf, size_t *hea_sz_p,
-        const char *name, unsigned name_len,
-        const char *value, unsigned value_len,
+        const struct lsxpack_header *xhdr,
         enum lsqpack_enc_flags flags)
 {
     unsigned char *const enc_buf_end = enc_buf + *enc_sz_p;
@@ -1638,6 +1637,11 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     unsigned n_cand;
     int r;
 
+    const char *const name = lsxpack_header_get_name(xhdr);
+    const char *const value = lsxpack_header_get_value(xhdr);
+    const unsigned name_len = xhdr->name_len;
+    const unsigned value_len = xhdr->val_len;
+
     E_DEBUG("encode `%.*s': `%.*s'", (int) name_len, name,
                                                 (int) value_len, value);
 
@@ -1647,15 +1651,32 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     if (hea_buf == hea_buf_end)
         return LQES_NOBUF_HEAD;
 
-    name_hash = XXH32(name, name_len, LSQPACK_XXH_SEED);
-    nameval_hash = XXH32(value, value_len, name_hash);
+    if (xhdr->flags & LSXPACK_NEVER_INDEX)
+        flags |= LQEF_NEVER_INDEX;
+
+    if (xhdr->flags & LSXPACK_NAME_HASH)
+        name_hash = xhdr->name_hash;
+    else
+        name_hash = XXH32(name, name_len, LSQPACK_XXH_SEED);
+    if (xhdr->flags & LSXPACK_NAMEVAL_HASH)
+        nameval_hash = xhdr->nameval_hash;
+    else
+        nameval_hash = XXH32(value, value_len, name_hash);
     E_DEBUG("name hash: 0x%X; nameval hash: 0x%X", name_hash, nameval_hash);
 
     /* Look for a full match in the static table */
-    static_id = find_in_static_full(nameval_hash, name, name_len, value,
+    if ((xhdr->flags & (LSXPACK_QPACK_IDX|LSXPACK_VAL_MATCHED))
+                                != (LSXPACK_QPACK_IDX|LSXPACK_VAL_MATCHED))
+        static_id = find_in_static_full(nameval_hash, name, name_len, value,
                                                                 value_len);
+    else
+    {
+        static_id = xhdr->qpack_index;
+        goto static_nameval_match;
+    }
     if (static_id >= 0)
     {
+  static_nameval_match:
         id = static_id;
         prog = (struct encode_program) {
                     .ep_enc_action = EEA_NONE,
@@ -1794,9 +1815,16 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
 #endif
 
     /* Look for name-only match in the static table */
-    static_id = find_in_static_headers(name_hash, name, name_len);
+    if (xhdr->flags & LSXPACK_QPACK_IDX)
+    {
+        static_id = xhdr->qpack_index;
+        goto static_name_match;
+    }
+    else
+        static_id = find_in_static_headers(name_hash, name, name_len);
     if (static_id >= 0)
     {
+  static_name_match:
         id = static_id;
         if (index && (enough_room = qenc_has_or_can_evict_at_least(enc,
                                              ENTRY_COST(name_len, value_len)), enough_room != 0))

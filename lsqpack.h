@@ -234,9 +234,8 @@ enum lsqpack_enc_status
 lsqpack_enc_encode (struct lsqpack_enc *,
     unsigned char *enc_buf, size_t *enc_sz,
     unsigned char *header_buf, size_t *header_sz,
-    const char *name, unsigned name_sz,
-    const char *value, unsigned value_sz,
-    enum lsqpack_enc_flags);
+    const struct lsxpack_header *,
+    enum lsqpack_enc_flags flags);
 
 /**
  * Cancel current header block. Cancellation is only allowed if the dynamic 
