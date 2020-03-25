@@ -504,7 +504,7 @@ test_discard_header (int err)
     enum lsqpack_read_header_status rhs;
     const unsigned char *buf;
     unsigned char header_block[] = "\x00\x00\xC0\x80";
-    struct hblock_ctx hctx = {};
+    struct hblock_ctx hctx = { .n_headers = 0, };
 
     lsqpack_dec_init(&dec, NULL, 0, 0, &hset_if, LSQPACK_DEC_OPT_HTTP1X);
 
@@ -536,7 +536,7 @@ test_static_bounds_header_block (void)
     const unsigned char *buf;
     /* Static table index 1000 */
     unsigned char header_block[] = "\x00\x00\xFF\xA9\x07";
-    struct hblock_ctx hctx = {};
+    struct hblock_ctx hctx = { .n_headers = 0, };
 
     lsqpack_dec_init(&dec, stderr, 0, 0, &hset_if, LSQPACK_DEC_OPT_HTTP1X);
     buf = header_block;
@@ -677,7 +677,7 @@ test_dec_header_zero_in (void)
     struct lsqpack_header_list *hlist;
     enum lsqpack_read_header_status rhs;
     const unsigned char *buf = (unsigned char *) "";
-    struct hblock_ctx hctx = {};
+    struct hblock_ctx hctx = { .n_headers = 0, };
 
     lsqpack_dec_init(&dec, stderr, 0x1000, 0, &hset_if, LSQPACK_DEC_OPT_HTTP1X);
 
@@ -702,7 +702,7 @@ test_dec_header_too_short (size_t header_size)
     struct lsqpack_header_list *hlist;
     enum lsqpack_read_header_status rhs;
     const unsigned char *buf = (unsigned char *) "";
-    struct hblock_ctx hctx = {};
+    struct hblock_ctx hctx = { .n_headers = 0, };
 
     lsqpack_dec_init(&dec, stderr, 0x1000, 0, &hset_if, LSQPACK_DEC_OPT_HTTP1X);
 
