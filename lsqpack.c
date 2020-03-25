@@ -4491,6 +4491,8 @@ lsqpack_dec_write_ici (struct lsqpack_dec *dec, unsigned char *buf, size_t sz)
 
     if (dec->qpd_last_id != dec->qpd_largest_known_id)
     {
+        if (sz == 0)
+            return -1;
         count = ID_MINUS(dec->qpd_last_id, dec->qpd_largest_known_id);
         *buf = 0;
         p = lsqpack_enc_int(buf, buf + sz, count, 6);
