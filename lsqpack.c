@@ -1654,21 +1654,25 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     if (xhdr->flags & LSXPACK_NEVER_INDEX)
         flags |= LQEF_NEVER_INDEX;
 
-    if (xhdr->flags & LSXPACK_NAME_HASH)
-        name_hash = xhdr->name_hash;
-    else
-        name_hash = XXH32(name, name_len, LSQPACK_XXH_SEED);
-    if (xhdr->flags & LSXPACK_NAMEVAL_HASH)
-        nameval_hash = xhdr->nameval_hash;
-    else
-        nameval_hash = XXH32(value, value_len, name_hash);
-    E_DEBUG("name hash: 0x%X; nameval hash: 0x%X", name_hash, nameval_hash);
-
     /* Look for a full match in the static table */
     if ((xhdr->flags & (LSXPACK_QPACK_IDX|LSXPACK_VAL_MATCHED))
                                 != (LSXPACK_QPACK_IDX|LSXPACK_VAL_MATCHED))
+    {
+        /* Hash calculation is delayed until we really have to do it */
+        if (xhdr->flags & LSXPACK_NAME_HASH)
+            name_hash = xhdr->name_hash;
+        else if (xhdr->flags & LSXPACK_QPACK_IDX)
+            name_hash = name_hashes[ xhdr->qpack_index ];
+        else
+            name_hash = XXH32(name, name_len, LSQPACK_XXH_SEED);
+        if (xhdr->flags & LSXPACK_NAMEVAL_HASH)
+            nameval_hash = xhdr->nameval_hash;
+        else
+            nameval_hash = XXH32(value, value_len, name_hash);
+        E_DEBUG("name hash: 0x%X; nameval hash: 0x%X", name_hash, nameval_hash);
         static_id = find_in_static_full(nameval_hash, name, name_len, value,
                                                                 value_len);
+    }
     else
     {
         static_id = xhdr->qpack_index;
