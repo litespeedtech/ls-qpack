@@ -3013,7 +3013,7 @@ header_out_static_entry (struct lsqpack_dec *dec,
         memcpy(dst, ": ", 2);
         dst += 2;
     }
-    xhdr->val_offset = dst - xhdr->buf - xhdr->name_offset;
+    xhdr->val_offset = dst - xhdr->buf;
     memcpy(dst, static_table[ idx ].val, static_table[ idx ].val_len);
     dst += static_table[ idx ].val_len;
     if (http1x)
@@ -3069,7 +3069,7 @@ header_out_dynamic_entry (struct lsqpack_dec *dec,
         memcpy(dst, ": ", 2);
         dst += 2;
     }
-    xhdr->val_offset = dst - xhdr->buf - xhdr->name_offset;
+    xhdr->val_offset = dst - xhdr->buf;
     memcpy(dst, DTE_VALUE(entry), entry->dte_val_len);
     dst += entry->dte_val_len;
     if (http1x)
@@ -3116,7 +3116,7 @@ header_out_begin_static_nameref (struct lsqpack_dec *dec,
         memcpy(dst, ": ", 2);
         dst += 2;
     }
-    xhdr->val_offset = dst - xhdr->buf - xhdr->name_offset;
+    xhdr->val_offset = dst - xhdr->buf;
     read_ctx->hbrc_out.state = XOUT_VALUE;
     read_ctx->hbrc_out.off = 0;
     return 0;
@@ -3159,7 +3159,7 @@ header_out_begin_dynamic_nameref (struct lsqpack_dec *dec,
         memcpy(dst, ": ", 2);
         dst += 2;
     }
-    xhdr->val_offset = dst - xhdr->buf - xhdr->name_offset;
+    xhdr->val_offset = dst - xhdr->buf;
     read_ctx->hbrc_out.state = XOUT_VALUE;
     read_ctx->hbrc_out.off = 0;
     return 0;
