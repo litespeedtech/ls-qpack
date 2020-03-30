@@ -184,7 +184,7 @@ process_header (void *hblock_ctx, struct lsxpack_header *xhdr)
         assert(hash == xhdr->name_hash);
     }
 
-    if (s_dec_opts & LSQPACK_DEC_OPT_HASH_NAMEVAL);
+    if (s_dec_opts & LSQPACK_DEC_OPT_HASH_NAMEVAL)
     {
         /* This is not required by the API, but internally, if the library
          * calculates nameval hash, it should also set the name hash.
