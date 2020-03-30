@@ -42,13 +42,9 @@ extern "C" {
 typedef SSIZE_T ssize_t;
 #endif
 
-/* Until the RFC is published, the minor version will be the same as the
- * draft version, while the major version will be zero.  For example,
- * qpack-11 (if such draft ever published) will correspond to version 0.11.
- */
-#define LSQPACK_MAJOR_VERSION 0
-#define LSQPACK_MINOR_VERSION 14
-#define LSQPACK_PATCH_VERSION 1
+#define LSQPACK_MAJOR_VERSION 2
+#define LSQPACK_MINOR_VERSION 0
+#define LSQPACK_PATCH_VERSION 0
 
 /** Let's start with four billion for now */
 typedef unsigned lsqpack_abs_id_t;
@@ -60,6 +56,7 @@ typedef unsigned lsqpack_abs_id_t;
 
 struct lsqpack_enc;
 struct lsqpack_dec;
+struct lsxpack_header;
 
 enum lsqpack_enc_opts
 {
@@ -233,9 +230,8 @@ enum lsqpack_enc_status
 lsqpack_enc_encode (struct lsqpack_enc *,
     unsigned char *enc_buf, size_t *enc_sz,
     unsigned char *header_buf, size_t *header_sz,
-    const char *name, unsigned name_sz,
-    const char *value, unsigned value_sz,
-    enum lsqpack_enc_flags);
+    const struct lsxpack_header *,
+    enum lsqpack_enc_flags flags);
 
 /**
  * Cancel current header block. Cancellation is only allowed if the dynamic 
@@ -309,37 +305,33 @@ lsqpack_enc_header_block_prefix_size (const struct lsqpack_enc *);
 void
 lsqpack_enc_cleanup (struct lsqpack_enc *);
 
-/**
- * The header is a single name/value pair.  The strings are not NUL-terminated.
- */
-struct lsqpack_header
+/** Decoder header set interface */
+struct lsqpack_dec_hset_if
 {
-    const char         *qh_name;
-    const char         *qh_value;
-    unsigned            qh_name_len;
-    unsigned            qh_value_len;
-    unsigned            qh_static_id;
-    enum {
-        /** Must be encoded with a literal representation */
-        QH_NEVER    = 1 << 0,
-        /** qh_static_id is set */
-        QH_ID_SET   = 1 << 1,
-    }                   qh_flags;
+    void    (*dhi_unblocked)(void *hblock_ctx);
+    struct lsxpack_header *
+            (*dhi_prepare_decode)(void *hblock_ctx,
+                                  struct lsxpack_header *, size_t space);
+    int     (*dhi_process_header)(void *hblock_ctx, struct lsxpack_header *);
 };
 
-/**
- * The header list represents the decoded header block.
- */
-struct lsqpack_header_list
+enum lsqpack_dec_opts
 {
-    struct lsqpack_header  **qhl_headers;
-    unsigned                 qhl_count;
+    /**
+     * In this mode, returned lsxpack_header will contain ": " between
+     * name and value strings and have "\r\n" after the value.
+     */
+    LSQPACK_DEC_OPT_HTTP1X          = 1 << 0,
+    /** Include name hash into lsxpack_header */
+    LSQPACK_DEC_OPT_HASH_NAME       = 1 << 1,
+    /** Include nameval hash into lsxpack_header */
+    LSQPACK_DEC_OPT_HASH_NAMEVAL    = 1 << 2,
 };
 
 void
 lsqpack_dec_init (struct lsqpack_dec *, void *logger_ctx,
     unsigned dyn_table_size, unsigned max_risked_streams,
-    void (*hblock_unblocked)(void *hblock_ctx));
+    const struct lsqpack_dec_hset_if *, enum lsqpack_dec_opts);
 
 /**
  * Values returned by @ref lsqpack_dec_header_in() and
@@ -410,7 +402,6 @@ enum lsqpack_read_header_status
 lsqpack_dec_header_in (struct lsqpack_dec *, void *hblock_ctx,
                        uint64_t stream_id, size_t header_block_size,
                        const unsigned char **buf, size_t bufsz,
-                       struct lsqpack_header_list **hlist,
                        unsigned char *dec_buf, size_t *dec_buf_sz);
 
 /**
@@ -423,7 +414,6 @@ lsqpack_dec_header_in (struct lsqpack_dec *, void *hblock_ctx,
 enum lsqpack_read_header_status
 lsqpack_dec_header_read (struct lsqpack_dec *dec, void *hblock_ctx,
                          const unsigned char **buf, size_t bufsz,
-                         struct lsqpack_header_list **hlist,
                          unsigned char *dec_buf, size_t *dec_buf_sz);
 
 /**
@@ -432,13 +422,6 @@ lsqpack_dec_header_read (struct lsqpack_dec *dec, void *hblock_ctx,
  */
 int
 lsqpack_dec_enc_in (struct lsqpack_dec *, const unsigned char *, size_t);
-
-/**
- * Destroy the header list returned by either
- * @ref lsqpack_dec_header_in() or @ref lsqpack_dec_header_read().
- */
-void
-lsqpack_dec_destroy_header_list (struct lsqpack_header_list *);
 
 /**
  * Returns true if Insert Count Increment (ICI) instruction is pending.
@@ -526,6 +509,115 @@ lsqpack_dec_get_err_info (const struct lsqpack_dec *);
 int
 lsqpack_get_stx_tab_id (const char *name, size_t,
                                             const char *val, size_t val_len);
+
+/**
+ * Enum for name/value entries in the static table.  Use it to speed up
+ * encoding by setting xhdr->qpack_index and LSXPACK_QPACK_IDX flag.  If
+ * it's a full match, set LSXPACK_VAL_MATCHED flag as well.
+ */
+enum lsqpack_tnv
+{
+    LSQPACK_TNV_AUTHORITY = 0, /* ":authority" "" */
+    LSQPACK_TNV_PATH = 1, /* ":path" "/" */
+    LSQPACK_TNV_AGE_0 = 2, /* "age" "0" */
+    LSQPACK_TNV_CONTENT_DISPOSITION = 3, /* "content-disposition" "" */
+    LSQPACK_TNV_CONTENT_LENGTH_0 = 4, /* "content-length" "0" */
+    LSQPACK_TNV_COOKIE = 5, /* "cookie" "" */
+    LSQPACK_TNV_DATE = 6, /* "date" "" */
+    LSQPACK_TNV_ETAG = 7, /* "etag" "" */
+    LSQPACK_TNV_IF_MODIFIED_SINCE = 8, /* "if-modified-since" "" */
+    LSQPACK_TNV_IF_NONE_MATCH = 9, /* "if-none-match" "" */
+    LSQPACK_TNV_LAST_MODIFIED = 10, /* "last-modified" "" */
+    LSQPACK_TNV_LINK = 11, /* "link" "" */
+    LSQPACK_TNV_LOCATION = 12, /* "location" "" */
+    LSQPACK_TNV_REFERER = 13, /* "referer" "" */
+    LSQPACK_TNV_SET_COOKIE = 14, /* "set-cookie" "" */
+    LSQPACK_TNV_METHOD_CONNECT = 15, /* ":method" "CONNECT" */
+    LSQPACK_TNV_METHOD_DELETE = 16, /* ":method" "DELETE" */
+    LSQPACK_TNV_METHOD_GET = 17, /* ":method" "GET" */
+    LSQPACK_TNV_METHOD_HEAD = 18, /* ":method" "HEAD" */
+    LSQPACK_TNV_METHOD_OPTIONS = 19, /* ":method" "OPTIONS" */
+    LSQPACK_TNV_METHOD_POST = 20, /* ":method" "POST" */
+    LSQPACK_TNV_METHOD_PUT = 21, /* ":method" "PUT" */
+    LSQPACK_TNV_SCHEME_HTTP = 22, /* ":scheme" "http" */
+    LSQPACK_TNV_SCHEME_HTTPS = 23, /* ":scheme" "https" */
+    LSQPACK_TNV_STATUS_103 = 24, /* ":status" "103" */
+    LSQPACK_TNV_STATUS_200 = 25, /* ":status" "200" */
+    LSQPACK_TNV_STATUS_304 = 26, /* ":status" "304" */
+    LSQPACK_TNV_STATUS_404 = 27, /* ":status" "404" */
+    LSQPACK_TNV_STATUS_503 = 28, /* ":status" "503" */
+    LSQPACK_TNV_ACCEPT = 29, /* "accept" star slash star */
+    LSQPACK_TNV_ACCEPT_APPLICATION_DNS_MESSAGE = 30, /* "accept" "application/dns-message" */
+    LSQPACK_TNV_ACCEPT_ENCODING_GZIP_DEFLATE_BR = 31, /* "accept-encoding" "gzip, deflate, br" */
+    LSQPACK_TNV_ACCEPT_RANGES_BYTES = 32, /* "accept-ranges" "bytes" */
+    LSQPACK_TNV_ACCESS_CONTROL_ALLOW_HEADERS_CACHE_CONTROL = 33, /* "access-control-allow-headers" "cache-control" */
+    LSQPACK_TNV_ACCESS_CONTROL_ALLOW_HEADERS_CONTENT_TYPE = 34, /* "access-control-allow-headers" "content-type" */
+    LSQPACK_TNV_ACCESS_CONTROL_ALLOW_ORIGIN = 35, /* "access-control-allow-origin" "*" */
+    LSQPACK_TNV_CACHE_CONTROL_MAX_AGE_0 = 36, /* "cache-control" "max-age=0" */
+    LSQPACK_TNV_CACHE_CONTROL_MAX_AGE_2592000 = 37, /* "cache-control" "max-age=2592000" */
+    LSQPACK_TNV_CACHE_CONTROL_MAX_AGE_604800 = 38, /* "cache-control" "max-age=604800" */
+    LSQPACK_TNV_CACHE_CONTROL_NO_CACHE = 39, /* "cache-control" "no-cache" */
+    LSQPACK_TNV_CACHE_CONTROL_NO_STORE = 40, /* "cache-control" "no-store" */
+    LSQPACK_TNV_CACHE_CONTROL_PUBLIC_MAX_AGE_31536000 = 41, /* "cache-control" "public, max-age=31536000" */
+    LSQPACK_TNV_CONTENT_ENCODING_BR = 42, /* "content-encoding" "br" */
+    LSQPACK_TNV_CONTENT_ENCODING_GZIP = 43, /* "content-encoding" "gzip" */
+    LSQPACK_TNV_CONTENT_TYPE_APPLICATION_DNS_MESSAGE = 44, /* "content-type" "application/dns-message" */
+    LSQPACK_TNV_CONTENT_TYPE_APPLICATION_JAVASCRIPT = 45, /* "content-type" "application/javascript" */
+    LSQPACK_TNV_CONTENT_TYPE_APPLICATION_JSON = 46, /* "content-type" "application/json" */
+    LSQPACK_TNV_CONTENT_TYPE_APPLICATION_X_WWW_FORM_URLENCODED = 47, /* "content-type" "application/x-www-form-urlencoded" */
+    LSQPACK_TNV_CONTENT_TYPE_IMAGE_GIF = 48, /* "content-type" "image/gif" */
+    LSQPACK_TNV_CONTENT_TYPE_IMAGE_JPEG = 49, /* "content-type" "image/jpeg" */
+    LSQPACK_TNV_CONTENT_TYPE_IMAGE_PNG = 50, /* "content-type" "image/png" */
+    LSQPACK_TNV_CONTENT_TYPE_TEXT_CSS = 51, /* "content-type" "text/css" */
+    LSQPACK_TNV_CONTENT_TYPE_TEXT_HTML_CHARSET_UTF_8 = 52, /* "content-type" "text/html; charset=utf-8" */
+    LSQPACK_TNV_CONTENT_TYPE_TEXT_PLAIN = 53, /* "content-type" "text/plain" */
+    LSQPACK_TNV_CONTENT_TYPE_TEXT_PLAIN_CHARSET_UTF_8 = 54, /* "content-type" "text/plain;charset=utf-8" */
+    LSQPACK_TNV_RANGE_BYTES_0 = 55, /* "range" "bytes=0-" */
+    LSQPACK_TNV_STRICT_TRANSPORT_SECURITY_MAX_AGE_31536000 = 56, /* "strict-transport-security" "max-age=31536000" */
+    LSQPACK_TNV_STRICT_TRANSPORT_SECURITY_MAX_AGE_31536000_INCLUDESUBDOMAINS = 57, /* "strict-transport-security" "max-age=31536000; includesubdomains" */
+    LSQPACK_TNV_STRICT_TRANSPORT_SECURITY_MAX_AGE_31536000_INCLUDESUBDOMAINS_PRELOAD = 58, /* "strict-transport-security" "max-age=31536000; includesubdomains; preload" */
+    LSQPACK_TNV_VARY_ACCEPT_ENCODING = 59, /* "vary" "accept-encoding" */
+    LSQPACK_TNV_VARY_ORIGIN = 60, /* "vary" "origin" */
+    LSQPACK_TNV_X_CONTENT_TYPE_OPTIONS_NOSNIFF = 61, /* "x-content-type-options" "nosniff" */
+    LSQPACK_TNV_X_XSS_PROTECTION_1_MODE_BLOCK = 62, /* "x-xss-protection" "1; mode=block" */
+    LSQPACK_TNV_STATUS_100 = 63, /* ":status" "100" */
+    LSQPACK_TNV_STATUS_204 = 64, /* ":status" "204" */
+    LSQPACK_TNV_STATUS_206 = 65, /* ":status" "206" */
+    LSQPACK_TNV_STATUS_302 = 66, /* ":status" "302" */
+    LSQPACK_TNV_STATUS_400 = 67, /* ":status" "400" */
+    LSQPACK_TNV_STATUS_403 = 68, /* ":status" "403" */
+    LSQPACK_TNV_STATUS_421 = 69, /* ":status" "421" */
+    LSQPACK_TNV_STATUS_425 = 70, /* ":status" "425" */
+    LSQPACK_TNV_STATUS_500 = 71, /* ":status" "500" */
+    LSQPACK_TNV_ACCEPT_LANGUAGE = 72, /* "accept-language" "" */
+    LSQPACK_TNV_ACCESS_CONTROL_ALLOW_CREDENTIALS_FALSE = 73, /* "access-control-allow-credentials" "FALSE" */
+    LSQPACK_TNV_ACCESS_CONTROL_ALLOW_CREDENTIALS_TRUE = 74, /* "access-control-allow-credentials" "TRUE" */
+    LSQPACK_TNV_ACCESS_CONTROL_ALLOW_HEADERS = 75, /* "access-control-allow-headers" "*" */
+    LSQPACK_TNV_ACCESS_CONTROL_ALLOW_METHODS_GET = 76, /* "access-control-allow-methods" "get" */
+    LSQPACK_TNV_ACCESS_CONTROL_ALLOW_METHODS_GET_POST_OPTIONS = 77, /* "access-control-allow-methods" "get, post, options" */
+    LSQPACK_TNV_ACCESS_CONTROL_ALLOW_METHODS_OPTIONS = 78, /* "access-control-allow-methods" "options" */
+    LSQPACK_TNV_ACCESS_CONTROL_EXPOSE_HEADERS_CONTENT_LENGTH = 79, /* "access-control-expose-headers" "content-length" */
+    LSQPACK_TNV_ACCESS_CONTROL_REQUEST_HEADERS_CONTENT_TYPE = 80, /* "access-control-request-headers" "content-type" */
+    LSQPACK_TNV_ACCESS_CONTROL_REQUEST_METHOD_GET = 81, /* "access-control-request-method" "get" */
+    LSQPACK_TNV_ACCESS_CONTROL_REQUEST_METHOD_POST = 82, /* "access-control-request-method" "post" */
+    LSQPACK_TNV_ALT_SVC_CLEAR = 83, /* "alt-svc" "clear" */
+    LSQPACK_TNV_AUTHORIZATION = 84, /* "authorization" "" */
+    LSQPACK_TNV_CONTENT_SECURITY_POLICY_SCRIPT_SRC_NONE_OBJECT_SRC_NONE_BASE_URI_NONE = 85, /* "content-security-policy" "script-src 'none'; object-src 'none'; base-uri 'none'" */
+    LSQPACK_TNV_EARLY_DATA_1 = 86, /* "early-data" "1" */
+    LSQPACK_TNV_EXPECT_CT = 87, /* "expect-ct" "" */
+    LSQPACK_TNV_FORWARDED = 88, /* "forwarded" "" */
+    LSQPACK_TNV_IF_RANGE = 89, /* "if-range" "" */
+    LSQPACK_TNV_ORIGIN = 90, /* "origin" "" */
+    LSQPACK_TNV_PURPOSE_PREFETCH = 91, /* "purpose" "prefetch" */
+    LSQPACK_TNV_SERVER = 92, /* "server" "" */
+    LSQPACK_TNV_TIMING_ALLOW_ORIGIN = 93, /* "timing-allow-origin" "*" */
+    LSQPACK_TNV_UPGRADE_INSECURE_REQUESTS_1 = 94, /* "upgrade-insecure-requests" "1" */
+    LSQPACK_TNV_USER_AGENT = 95, /* "user-agent" "" */
+    LSQPACK_TNV_X_FORWARDED_FOR = 96, /* "x-forwarded-for" "" */
+    LSQPACK_TNV_X_FRAME_OPTIONS_DENY = 97, /* "x-frame-options" "deny" */
+    LSQPACK_TNV_X_FRAME_OPTIONS_SAMEORIGIN = 98, /* "x-frame-options" "sameorigin" */
+};
+
 
 /*
  * Internals follow.  The internals are subject to change without notice.
@@ -662,6 +754,7 @@ struct lsqpack_dec_inst;
 
 struct lsqpack_dec
 {
+    enum lsqpack_dec_opts   qpd_opts;
     /** This is the hard limit set at initialization */
     unsigned                qpd_max_capacity;
     /** The current maximum capacity can be adjusted at run-time */
@@ -681,7 +774,8 @@ struct lsqpack_dec
     lsqpack_abs_id_t        qpd_last_id;
     /** TODO: describe the mechanism */
     lsqpack_abs_id_t        qpd_largest_known_id;
-    void                  (*qpd_hblock_unblocked)(void *hblock_ctx);
+    const struct lsqpack_dec_hset_if
+                           *qpd_dh_if;
 
     void                   *qpd_logger_ctx;
 

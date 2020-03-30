@@ -39,6 +39,7 @@
 #include <inttypes.h>
 
 #include "lsqpack.h"
+#include "lsxpack_header.h"
 
 static int s_verbose;
 
@@ -261,6 +262,7 @@ main (int argc, char **argv)
     size_t tsu_buf_sz;
     enum lsqpack_enc_header_flags hflags;
     int fast = 0;
+    struct lsxpack_header xhdr;
     unsigned char enc_buf[0x1000], hea_buf[0x1000], pref_buf[0x20];
 
     while (-1 != (opt = getopt(argc, argv, "ADMSa:i:no:s:t:hvf")))
@@ -472,9 +474,9 @@ main (int argc, char **argv)
         }
         while (1)
         {
+            lsxpack_header_set_ptr(&xhdr, line, tab - line, tab + 1, end - tab - 1);
             st = lsqpack_enc_encode(&encoder, enc_buf + enc_off, &enc_sz,
-                        hea_buf + hea_off, &hea_sz, line, tab - line,
-                        tab + 1, end - tab - 1, 0);
+                        hea_buf + hea_off, &hea_sz, &xhdr, 0);
             switch (st)
             {
             case LQES_NOBUF_ENC:

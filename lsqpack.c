@@ -40,6 +40,7 @@ SOFTWARE.
 #include <inttypes.h>
 
 #include "lsqpack.h"
+#include "lsxpack_header.h"
 
 #ifdef XXH_HEADER_NAME
 #include XXH_HEADER_NAME
@@ -627,6 +628,56 @@ static const unsigned char nameval2id_plus_one[ 1 << XXH_NAMEVAL_WIDTH ] =
     [244]  =  86,  [190]  =  87,  [465]  =  88,  [468]  =  89,  [417]  =  90,
     [110]  =  91,  [107]  =  92,  [368]  =  93,  [460]  =  94,  [54]   =  95,
     [492]  =  96,  [402]  =  97,  [196]  =  98,  [383]  =  99,
+};
+
+
+static const uint32_t name_hashes[] =
+{
+    0x653A915Bu, 0x3513518Du, 0xBEC8E440u, 0x16020A90u, 0x48F5CC19u,
+    0x0B486ED8u, 0x1A7AA369u, 0x6DE855BAu, 0xF2BADABEu, 0xD8CA2594u,
+    0x6B86C0B5u, 0xC62FECD2u, 0x8DA64A26u, 0x01F10233u, 0x8F7E493Eu,
+    0xC7742BE4u, 0xC7742BE4u, 0xC7742BE4u, 0xC7742BE4u, 0xC7742BE4u,
+    0xC7742BE4u, 0xC7742BE4u, 0xF49F1451u, 0xF49F1451u, 0x672BDA53u,
+    0x672BDA53u, 0x672BDA53u, 0x672BDA53u, 0x672BDA53u, 0x1AB214F8u,
+    0x1AB214F8u, 0xF93AD8A9u, 0x1DC691C8u, 0x7C21CFDFu, 0x7C21CFDFu,
+    0x7D3B7A3Bu, 0xC25511F2u, 0xC25511F2u, 0xC25511F2u, 0xC25511F2u,
+    0xC25511F2u, 0xC25511F2u, 0x48011191u, 0x48011191u, 0x085EF7C5u,
+    0x085EF7C5u, 0x085EF7C5u, 0x085EF7C5u, 0x085EF7C5u, 0x085EF7C5u,
+    0x085EF7C5u, 0x085EF7C5u, 0x085EF7C5u, 0x085EF7C5u, 0x085EF7C5u,
+    0xB396750Au, 0x85E74C58u, 0x85E74C58u, 0x85E74C58u, 0x1A04DF3Du,
+    0x1A04DF3Du, 0x28686A4Au, 0x9F8BCEBDu, 0x672BDA53u, 0x672BDA53u,
+    0x672BDA53u, 0x672BDA53u, 0x672BDA53u, 0x672BDA53u, 0x672BDA53u,
+    0x672BDA53u, 0x672BDA53u, 0x98BD32D3u, 0x0A829D4Eu, 0x0A829D4Eu,
+    0x7C21CFDFu, 0x363F796Du, 0x363F796Du, 0x363F796Du, 0xD8A0B17Eu,
+    0xAAF9FD79u, 0x617E4501u, 0x617E4501u, 0x1E6DBE38u, 0x19D88141u,
+    0x3392084Fu, 0x5579EF80u, 0x8F3D7765u, 0x7EDC71B6u, 0xFBA64C54u,
+    0x3ECDA708u, 0xEBA96E92u, 0x82E1B4E1u, 0x5AD275EAu, 0xDD09E931u,
+    0x34C0456Au, 0x5EF889E6u, 0x4B1BB7F1u, 0x4B1BB7F1u,
+};
+
+
+static const uint32_t nameval_hashes[] =
+{
+    0xF8614896u, 0xC8C267F6u, 0xF4617F61u, 0x8410A906u, 0xC8D109BBu,
+    0x51D448A4u, 0x52C167CFu, 0xFB22AA54u, 0x4F5272CDu, 0x9D4170E4u,
+    0x4E8C1DC3u, 0x684BDDBCu, 0xE113A2B0u, 0x5010D24Bu, 0xBCA5998Fu,
+    0xC8490E38u, 0x19094780u, 0x25D95A15u, 0x342283E4u, 0x15893F7Eu,
+    0x33968BB7u, 0x4C856F49u, 0x98573F68u, 0x16DDE443u, 0x813C3469u,
+    0x352A6556u, 0xD7988BC9u, 0x65E6ECA1u, 0x7EEE2551u, 0x77EBAE87u,
+    0xBDF5A53Au, 0x7F49F172u, 0xC06A7994u, 0xDB2FBCB8u, 0x343EA49Cu,
+    0xD143768Bu, 0x3E2D8753u, 0xA2EA09FCu, 0x467B5D0Bu, 0xCEB7F977u,
+    0x7119DC7Au, 0xDEFDA129u, 0x3F6EBC90u, 0x14E09A55u, 0x43C8B9D2u,
+    0xA707C426u, 0xFE372940u, 0x77591711u, 0xA6410F15u, 0xEACDE488u,
+    0x8B2C4DC6u, 0x8C2B11DDu, 0x9703CE5Bu, 0x0FAA28E3u, 0x13CCE32Du,
+    0xDCD68310u, 0x416F0B3Fu, 0x3BB4D68Eu, 0xF81F070Cu, 0xBDD89641u,
+    0x3915039Au, 0xF609E604u, 0x1C9DBB75u, 0x7ACD6A01u, 0xD4F462D2u,
+    0x125E66E0u, 0x0AD44FA7u, 0x4C3C90DEu, 0x27AD6982u, 0x0673640Cu,
+    0x65C03607u, 0xB05B7B87u, 0x97E01849u, 0xBA18BD33u, 0xDEF6041Bu,
+    0xE227F500u, 0x8A871E9Au, 0xCB120ACCu, 0x4B1B6336u, 0xEBDA42C6u,
+    0xFF166CA2u, 0x3A5E054Eu, 0x027207B6u, 0x04E3E645u, 0xAA95A0BCu,
+    0x77BFA4F4u, 0x3C95E0BEu, 0xD506A9D1u, 0x443EDFD4u, 0xD4E28BA1u,
+    0xA60BF66Eu, 0x46201E6Bu, 0xB2DE5570u, 0xF19F5DCCu, 0x73B6C636u,
+    0xDC83E7ECu, 0xAA333392u, 0x4EDB46C4u, 0xF64F937Fu,
 };
 
 
@@ -1568,8 +1619,7 @@ enum lsqpack_enc_status
 lsqpack_enc_encode (struct lsqpack_enc *enc,
         unsigned char *enc_buf, size_t *enc_sz_p,
         unsigned char *hea_buf, size_t *hea_sz_p,
-        const char *name, unsigned name_len,
-        const char *value, unsigned value_len,
+        const struct lsxpack_header *xhdr,
         enum lsqpack_enc_flags flags)
 {
     unsigned char *const enc_buf_end = enc_buf + *enc_sz_p;
@@ -1587,6 +1637,11 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     unsigned n_cand;
     int r;
 
+    const char *const name = lsxpack_header_get_name(xhdr);
+    const char *const value = lsxpack_header_get_value(xhdr);
+    const unsigned name_len = xhdr->name_len;
+    const unsigned value_len = xhdr->val_len;
+
     E_DEBUG("encode `%.*s': `%.*s'", (int) name_len, name,
                                                 (int) value_len, value);
 
@@ -1596,15 +1651,36 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     if (hea_buf == hea_buf_end)
         return LQES_NOBUF_HEAD;
 
-    name_hash = XXH32(name, name_len, LSQPACK_XXH_SEED);
-    nameval_hash = XXH32(value, value_len, name_hash);
-    E_DEBUG("name hash: 0x%X; nameval hash: 0x%X", name_hash, nameval_hash);
+    if (xhdr->flags & LSXPACK_NEVER_INDEX)
+        flags |= LQEF_NEVER_INDEX;
 
     /* Look for a full match in the static table */
-    static_id = find_in_static_full(nameval_hash, name, name_len, value,
+    if ((xhdr->flags & (LSXPACK_QPACK_IDX|LSXPACK_VAL_MATCHED))
+                                != (LSXPACK_QPACK_IDX|LSXPACK_VAL_MATCHED))
+    {
+        /* Hash calculation is delayed until we really have to do it */
+        if (xhdr->flags & LSXPACK_NAME_HASH)
+            name_hash = xhdr->name_hash;
+        else if (xhdr->flags & LSXPACK_QPACK_IDX)
+            name_hash = name_hashes[ xhdr->qpack_index ];
+        else
+            name_hash = XXH32(name, name_len, LSQPACK_XXH_SEED);
+        if (xhdr->flags & LSXPACK_NAMEVAL_HASH)
+            nameval_hash = xhdr->nameval_hash;
+        else
+            nameval_hash = XXH32(value, value_len, name_hash);
+        E_DEBUG("name hash: 0x%X; nameval hash: 0x%X", name_hash, nameval_hash);
+        static_id = find_in_static_full(nameval_hash, name, name_len, value,
                                                                 value_len);
+    }
+    else
+    {
+        static_id = xhdr->qpack_index;
+        goto static_nameval_match;
+    }
     if (static_id >= 0)
     {
+  static_nameval_match:
         id = static_id;
         prog = (struct encode_program) {
                     .ep_enc_action = EEA_NONE,
@@ -1743,9 +1819,16 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
 #endif
 
     /* Look for name-only match in the static table */
-    static_id = find_in_static_headers(name_hash, name, name_len);
+    if (xhdr->flags & LSXPACK_QPACK_IDX)
+    {
+        static_id = xhdr->qpack_index;
+        goto static_name_match;
+    }
+    else
+        static_id = find_in_static_headers(name_hash, name, name_len);
     if (static_id >= 0)
     {
+  static_name_match:
         id = static_id;
         if (index && (enough_room = qenc_has_or_can_evict_at_least(enc,
                                              ENTRY_COST(name_len, value_len)), enough_room != 0))
@@ -2466,6 +2549,12 @@ struct lsqpack_dec_table_entry
     unsigned    dte_name_len;
     unsigned    dte_val_len;
     unsigned    dte_refcnt;
+    unsigned    dte_name_hash;
+    unsigned    dte_nameval_hash;
+    enum {
+        DTEF_NAME_HASH      = 1 << 0,
+        DTEF_NAMEVAL_HASH   = 1 << 1,
+    }           dte_flags;
     char        dte_buf[0];     /* Contains both name and value */
 };
 
@@ -2675,10 +2764,11 @@ qdec_get_table_entry_abs (const struct lsqpack_dec *dec,
 void
 lsqpack_dec_init (struct lsqpack_dec *dec, void *logger_ctx,
     unsigned dyn_table_size, unsigned max_risked_streams,
-    void (*hblock_unblocked)(void *hblock))
+    const struct lsqpack_dec_hset_if *dh_if, enum lsqpack_dec_opts opts)
 {
     unsigned i;
     memset(dec, 0, sizeof(*dec));
+    dec->qpd_opts = opts;
     dec->qpd_logger_ctx = logger_ctx;
     dec->qpd_max_capacity = dyn_table_size;
     dec->qpd_cur_max_capacity = dyn_table_size;
@@ -2686,7 +2776,7 @@ lsqpack_dec_init (struct lsqpack_dec *dec, void *logger_ctx,
     dec->qpd_last_id = dec->qpd_max_entries * 2 - 1;
     dec->qpd_largest_known_id = dec->qpd_max_entries * 2 - 1;
     dec->qpd_max_risked_streams = max_risked_streams;
-    dec->qpd_hblock_unblocked = hblock_unblocked;
+    dec->qpd_dh_if = dh_if;
     TAILQ_INIT(&dec->qpd_hbrcs);
     for (i = 0; i < (1 << LSQPACK_DEC_BLOCKED_BITS); ++i)
         TAILQ_INIT(&dec->qpd_blocked_headers[i]);
@@ -2732,14 +2822,16 @@ struct header_block_read_ctx
     size_t                              hbrc_size;
     lsqpack_abs_id_t                    hbrc_largest_ref;   /* Parsed from prefix */
     lsqpack_abs_id_t                    hbrc_base_index;    /* Parsed from prefix */
+    unsigned                            hbrc_header_count;
 
-    /* The header list that is returned to the user is built up one entry
-     * at a time.
-     */
-    struct lsqpack_header_list         *hbrc_header_list;
-    unsigned                            hbrc_nalloced_headers;
-
-    unsigned                            hbrc_hlist_size;
+    struct {
+        struct lsxpack_header          *xhdr;               /* Current header */
+        enum {
+            XOUT_NAME,                                      /* Writing name */
+            XOUT_VALUE,                                     /* Writing value */
+        }                               state;
+        unsigned                        off;                /* How much has been written */
+    }                                   hbrc_out;
 
     /* There are two parsing phases: reading the prefix and reading the
      * instruction stream.
@@ -2792,158 +2884,33 @@ struct header_block_read_ctx
                 DATA_STATE_READ_IHF_IDX,
                 DATA_STATE_READ_IPBI_IDX,
                 DATA_STATE_READ_LFINR_IDX,
-                DATA_STATE_BEGIN_READ_LFINR_VAL_LEN,
-                DATA_STATE_READ_LFINR_VAL_LEN,
-                DATA_STATE_LFINR_READ_VAL_HUFFMAN,
-                DATA_STATE_LFINR_READ_VAL_PLAIN,
+                DATA_STATE_BEGIN_READ_VAL_LEN,
+                DATA_STATE_READ_VAL_LEN,
+                DATA_STATE_READ_VAL_HUFFMAN,
+                DATA_STATE_READ_VAL_PLAIN,
                 DATA_STATE_READ_LFONR_NAME_LEN,
-                DATA_STATE_READ_LFONR_NAME_HUFFMAN,
-                DATA_STATE_READ_LFONR_NAME_PLAIN,
-                DATA_STATE_BEGIN_READ_LFONR_VAL_LEN,
-                DATA_STATE_READ_LFONR_VAL_LEN,
-                DATA_STATE_READ_LFONR_VAL_HUFFMAN,
-                DATA_STATE_READ_LFONR_VAL_PLAIN,
+                DATA_STATE_READ_NAME_HUFFMAN,
+                DATA_STATE_READ_NAME_PLAIN,
                 DATA_STATE_READ_LFPBNR_IDX,
                 DATA_STATE_BEGIN_READ_LFPBNR_VAL_LEN,
                 DATA_STATE_READ_LFPBNR_VAL_LEN,
-                DATA_STATE_LFPBNR_READ_VAL_HUFFMAN,
-                DATA_STATE_LFPBNR_READ_VAL_PLAIN,
             }                                               state;
 
-            union
-            {
-                /* Indexed Header Field */
-                struct {
-                    struct lsqpack_dec_int_state    dec_int_state;
-                    unsigned                        value;
-                    int                             is_static;
-                }                                           ihf;
-
-                /* Literal Header Field With Name Reference */
-                struct {
-                    struct lsqpack_dec_int_state    dec_int_state;
-                    struct lsqpack_huff_decode_state
-                                                    dec_huff_state;
-                    union {
-                        unsigned                        static_idx;
-                        struct lsqpack_dec_table_entry *dyn_entry;
-                    }                               name_ref;
-                    char                           *value;
-                    unsigned                        nalloc;
-                    unsigned                        val_len;
-                    unsigned                        val_off;
-                    unsigned                        nread;
-                    int                             is_static;
-                    int                             is_never;
-                    int                             is_huffman;
-                }                                           lfinr;
-
-                /* Literal Header Field Without Name Reference */
-                struct {
-                    struct lsqpack_dec_int_state    dec_int_state;
-                    struct lsqpack_huff_decode_state
-                                                    dec_huff_state;
-                    /* name holds both name and value */
-                    char                           *name;
-                    unsigned                        nalloc;
-                    unsigned                        name_len;
-                    unsigned                        value_len;
-                    unsigned                        str_off;
-                    unsigned                        str_len;
-                    unsigned                        nread;
-                    int                             is_never;
-                    int                             is_huffman;
-                }                                           lfonr;
-
-                /* Indexed Header Field With Post-Base Index */
-                struct {
-                    struct lsqpack_dec_int_state    dec_int_state;
-                    unsigned                        value;
-                }                                           ipbi;
-
-                /* Literal Header Field With Post-Base Name Reference */
-                struct {
-                    struct lsqpack_dec_int_state    dec_int_state;
-                    struct lsqpack_huff_decode_state
-                                                    dec_huff_state;
-                    struct lsqpack_dec_table_entry *reffed_entry;
-                    char                           *value;
-                    unsigned                        nalloc;
-                    unsigned                        val_len;
-                    unsigned                        val_off;
-                    unsigned                        nread;
-                    int                             is_never;
-                    int                             is_huffman;
-                }                                           lfpbnr;
-            }                                               u;
+            /* We decode one string at a time, header name or header value. */
+            unsigned                                        left;   /* Left to read */
+            int                                             is_static;
+            int                                             is_never;
+            int                                             is_huffman;
+            struct lsqpack_dec_int_state                    dec_int_state;
+            struct lsqpack_huff_decode_state                dec_huff_state;
         }                                       data;
     }                                   hbrc_parse_ctx_u;
 };
 
 
-#define IHF read_ctx->hbrc_parse_ctx_u.data.u.ihf
-#define IPBI read_ctx->hbrc_parse_ctx_u.data.u.ipbi
-#define LFINR read_ctx->hbrc_parse_ctx_u.data.u.lfinr
-#define LFONR read_ctx->hbrc_parse_ctx_u.data.u.lfonr
-#define LFPBNR read_ctx->hbrc_parse_ctx_u.data.u.lfpbnr
-
-
 static enum lsqpack_read_header_status
 parse_header_data (struct lsqpack_dec *,
         struct header_block_read_ctx *, const unsigned char *, size_t);
-
-static void
-cleanup_read_ctx (struct header_block_read_ctx *read_ctx)
-{
-    if (read_ctx->hbrc_parse != parse_header_data)
-        return;
-
-    switch (read_ctx->hbrc_parse_ctx_u.data.state)
-    {
-    case DATA_STATE_NEXT_INSTRUCTION:
-    case DATA_STATE_READ_IHF_IDX:
-    case DATA_STATE_READ_IPBI_IDX:
-        break;
-    case DATA_STATE_READ_LFINR_IDX:
-    case DATA_STATE_BEGIN_READ_LFINR_VAL_LEN:
-    case DATA_STATE_READ_LFINR_VAL_LEN:
-    case DATA_STATE_LFINR_READ_VAL_HUFFMAN:
-    case DATA_STATE_LFINR_READ_VAL_PLAIN:
-        if (!LFINR.is_static && LFINR.name_ref.dyn_entry)
-            qdec_decref_entry(LFINR.name_ref.dyn_entry);
-        if (LFINR.value)
-            free(LFINR.value);
-        break;
-    case DATA_STATE_READ_LFONR_NAME_LEN:
-        break;
-    case DATA_STATE_READ_LFONR_NAME_HUFFMAN:
-    case DATA_STATE_READ_LFONR_NAME_PLAIN:
-    case DATA_STATE_BEGIN_READ_LFONR_VAL_LEN:
-    case DATA_STATE_READ_LFONR_VAL_LEN:
-    case DATA_STATE_READ_LFONR_VAL_HUFFMAN:
-    case DATA_STATE_READ_LFONR_VAL_PLAIN:
-        if (LFONR.name)
-            free(LFONR.name);
-        break;
-    case DATA_STATE_READ_LFPBNR_IDX:
-        break;
-    case DATA_STATE_BEGIN_READ_LFPBNR_VAL_LEN:
-    case DATA_STATE_READ_LFPBNR_VAL_LEN:
-        if (LFPBNR.reffed_entry)
-            qdec_decref_entry(LFPBNR.reffed_entry);
-        break;
-    case DATA_STATE_LFPBNR_READ_VAL_HUFFMAN:
-    case DATA_STATE_LFPBNR_READ_VAL_PLAIN:
-        if (LFPBNR.reffed_entry)
-            qdec_decref_entry(LFPBNR.reffed_entry);
-        if (LFPBNR.value)
-            free(LFPBNR.value);
-        break;
-    }
-
-    if (read_ctx->hbrc_header_list)
-        lsqpack_dec_destroy_header_list(read_ctx->hbrc_header_list);
-}
 
 
 float
@@ -2966,7 +2933,6 @@ lsqpack_dec_cleanup (struct lsqpack_dec *dec)
                                                     read_ctx = next_read_ctx)
     {
         next_read_ctx = TAILQ_NEXT(read_ctx, hbrc_next_all);
-        cleanup_read_ctx(read_ctx);
         free(read_ctx);
     }
 
@@ -2993,198 +2959,409 @@ lsqpack_dec_cleanup (struct lsqpack_dec *dec)
 }
 
 
-struct header_internal
+static void
+qdec_maybe_update_entry_hashes (const struct lsqpack_dec *dec,
+                                    struct lsqpack_dec_table_entry *entry)
 {
-    struct lsqpack_header            hi_uhead;
-    struct lsqpack_dec_table_entry  *hi_entry;
-    enum {
-        HI_OWN_NAME     = 1 << 0,
-        HI_OWN_VALUE    = 1 << 1,
-    }                                hi_flags;
-};
-
-
-static struct header_internal *
-allocate_hint (struct header_block_read_ctx *read_ctx)
-{
-    struct lsqpack_header **headers;
-    struct header_internal *hint;
-    unsigned idx;
-
-    if (!read_ctx->hbrc_header_list)
+    if ((dec->qpd_opts & (LSQPACK_DEC_OPT_HASH_NAME
+                         |LSQPACK_DEC_OPT_HASH_NAMEVAL))
+                                && !(entry->dte_flags & DTEF_NAME_HASH))
     {
-        assert(read_ctx->hbrc_nalloced_headers == 0);
-        read_ctx->hbrc_header_list
-                            = calloc(1, sizeof(*read_ctx->hbrc_header_list));
-        if (!read_ctx->hbrc_header_list)
-            return NULL;
+        entry->dte_flags |= DTEF_NAME_HASH;
+        entry->dte_name_hash = XXH32(DTE_NAME(entry), entry->dte_name_len,
+                                                            LSQPACK_XXH_SEED);
     }
-
-    if (read_ctx->hbrc_header_list->qhl_count >= read_ctx->hbrc_nalloced_headers)
+    if ((dec->qpd_opts & LSQPACK_DEC_OPT_HASH_NAMEVAL)
+                                && !(entry->dte_flags & DTEF_NAMEVAL_HASH))
     {
-        if (0 == read_ctx->hbrc_nalloced_headers && read_ctx->hbrc_hlist_size)
-            read_ctx->hbrc_nalloced_headers =
-                read_ctx->hbrc_hlist_size + read_ctx->hbrc_hlist_size / 4;
-        else if (read_ctx->hbrc_nalloced_headers)
-            read_ctx->hbrc_nalloced_headers *= 2;
-        else
-            read_ctx->hbrc_nalloced_headers = 4;
-        headers =
-            realloc(read_ctx->hbrc_header_list->qhl_headers,
-                read_ctx->hbrc_nalloced_headers
-                    * sizeof(read_ctx->hbrc_header_list->qhl_headers[0]));
-        if (headers)
-            read_ctx->hbrc_header_list->qhl_headers = headers;
-        else
-            return NULL;
+        assert(entry->dte_flags & DTEF_NAME_HASH);
+        entry->dte_flags |= DTEF_NAMEVAL_HASH;
+        entry->dte_nameval_hash = XXH32(DTE_VALUE(entry), entry->dte_val_len,
+                                                        entry->dte_name_hash);
     }
-
-    hint = calloc(1, sizeof(*hint));
-    if (!hint)
-        return NULL;
-
-    idx = read_ctx->hbrc_header_list->qhl_count++;
-    read_ctx->hbrc_header_list->qhl_headers[idx] = &hint->hi_uhead;
-    return hint;
 }
 
 
 static int
-hlist_add_static_entry (struct lsqpack_dec *dec,
+header_out_static_entry (struct lsqpack_dec *dec,
                     struct header_block_read_ctx *read_ctx, uint64_t idx)
 {
-    struct header_internal *hint;
+    struct lsxpack_header *xhdr;
+    size_t need, http1x;
+    char *dst;
+    int r;
 
-    if (idx < QPACK_STATIC_TABLE_SIZE && (hint = allocate_hint(read_ctx), hint != NULL))
-    {
-        hint->hi_uhead.qh_name      = static_table[ idx ].name;
-        hint->hi_uhead.qh_value     = static_table[ idx ].val;
-        hint->hi_uhead.qh_name_len  = static_table[ idx ].name_len;
-        hint->hi_uhead.qh_value_len = static_table[ idx ].val_len;
-        hint->hi_uhead.qh_static_id = (unsigned int) idx;
-        hint->hi_uhead.qh_flags     = QH_ID_SET;
-        dec->qpd_bytes_out += hint->hi_uhead.qh_name_len
-                           + hint->hi_uhead.qh_value_len;
-        return 0;
-    }
-    else
+    if (idx >= QPACK_STATIC_TABLE_SIZE)
         return -1;
+
+    http1x = !!(dec->qpd_opts & LSQPACK_DEC_OPT_HTTP1X) << 2; /* 0 or 4 */
+    need = static_table[ idx ].name_len + static_table[ idx ].val_len + http1x;
+    xhdr = dec->qpd_dh_if->dhi_prepare_decode(read_ctx->hbrc_hblock, NULL,
+                                                                        need);
+    if (!xhdr)
+        return -1;
+
+    xhdr->dec_overhead = http1x;
+    xhdr->qpack_index = idx;
+    xhdr->flags |= LSXPACK_VAL_MATCHED | LSXPACK_QPACK_IDX
+                | LSXPACK_NAME_HASH | LSXPACK_NAMEVAL_HASH;
+    xhdr->name_len = static_table[ idx ].name_len;
+    xhdr->val_len = static_table[ idx ].val_len;
+    xhdr->name_hash = name_hashes[ idx ];
+    xhdr->nameval_hash = nameval_hashes[ idx ];
+    dst = xhdr->buf + xhdr->name_offset;
+    memcpy(dst, static_table[ idx ].name, static_table[ idx ].name_len);
+    dst += static_table[ idx ].name_len;
+    if (http1x)
+    {
+        memcpy(dst, ": ", 2);
+        dst += 2;
+    }
+    xhdr->val_offset = dst - xhdr->buf;
+    memcpy(dst, static_table[ idx ].val, static_table[ idx ].val_len);
+    dst += static_table[ idx ].val_len;
+    if (http1x)
+        memcpy(dst, "\r\n", 2);
+    r = dec->qpd_dh_if->dhi_process_header(read_ctx->hbrc_hblock, xhdr);
+    if (r == 0)
+        dec->qpd_bytes_out += static_table[ idx ].name_len
+                            + static_table[ idx ].val_len;
+    return r;
 }
 
 
 static int
-hlist_add_dynamic_entry (struct lsqpack_dec *dec,
+header_out_dynamic_entry (struct lsqpack_dec *dec,
                     struct header_block_read_ctx *read_ctx, lsqpack_abs_id_t idx)
 {
     struct lsqpack_dec_table_entry *entry;
-    struct header_internal *hint;
+    struct lsxpack_header *xhdr;
+    size_t need, http1x;
+    char *dst;
+    int r;
 
-    if ((entry = qdec_get_table_entry_abs(dec, idx), entry != NULL)
-                                    && (hint = allocate_hint(read_ctx), hint != NULL))
-    {
-        hint->hi_uhead.qh_name      = DTE_NAME(entry);
-        hint->hi_uhead.qh_value     = DTE_VALUE(entry);
-        hint->hi_uhead.qh_name_len  = entry->dte_name_len;
-        hint->hi_uhead.qh_value_len = entry->dte_val_len;
-        hint->hi_uhead.qh_flags     = 0;
-        hint->hi_entry = entry;
-        ++entry->dte_refcnt;
-        dec->qpd_bytes_out += hint->hi_uhead.qh_name_len
-                           + hint->hi_uhead.qh_value_len;
-        return 0;
-    }
-    else
+    entry = qdec_get_table_entry_abs(dec, idx);
+    if (!entry)
         return -1;
+
+    http1x = !!(dec->qpd_opts & LSQPACK_DEC_OPT_HTTP1X) << 2; /* 0 or 4 */
+    need = entry->dte_name_len + entry->dte_val_len + http1x;
+    xhdr = dec->qpd_dh_if->dhi_prepare_decode(read_ctx->hbrc_hblock, NULL,
+                                                                        need);
+    if (!xhdr)
+        return -1;
+
+    qdec_maybe_update_entry_hashes(dec, entry);
+    if (entry->dte_flags & DTEF_NAME_HASH)
+    {
+        xhdr->flags |= LSXPACK_NAME_HASH;
+        xhdr->name_hash = entry->dte_name_hash;
+    }
+    if (entry->dte_flags & DTEF_NAMEVAL_HASH)
+    {
+        xhdr->flags |= LSXPACK_NAMEVAL_HASH;
+        xhdr->nameval_hash = entry->dte_nameval_hash;
+    }
+    xhdr->dec_overhead = http1x;
+    xhdr->name_len = entry->dte_name_len;
+    xhdr->val_len = entry->dte_val_len;
+    dst = xhdr->buf + xhdr->name_offset;
+    memcpy(dst, DTE_NAME(entry), entry->dte_name_len);
+    dst += entry->dte_name_len;
+    if (http1x)
+    {
+        memcpy(dst, ": ", 2);
+        dst += 2;
+    }
+    xhdr->val_offset = dst - xhdr->buf;
+    memcpy(dst, DTE_VALUE(entry), entry->dte_val_len);
+    dst += entry->dte_val_len;
+    if (http1x)
+        memcpy(dst, "\r\n", 2);
+    r = dec->qpd_dh_if->dhi_process_header(read_ctx->hbrc_hblock, xhdr);
+    if (r == 0)
+        dec->qpd_bytes_out += entry->dte_name_len + entry->dte_val_len;
+    return r;
 }
 
 
 static int
-hlist_add_static_nameref_entry (struct lsqpack_dec *dec,
+header_out_begin_static_nameref (struct lsqpack_dec *dec,
+        struct header_block_read_ctx *read_ctx, unsigned idx, int is_never)
+{
+    struct lsxpack_header *xhdr;    /* Shorthand */
+    size_t need, http1x;
+    char *dst;
+
+    assert(!read_ctx->hbrc_out.xhdr);
+
+    if (idx >= QPACK_STATIC_TABLE_SIZE)
+        return -1;
+
+    http1x = !!(dec->qpd_opts & LSQPACK_DEC_OPT_HTTP1X) << 2; /* 0 or 4 */
+    need = static_table[ idx ].name_len + http1x;
+    read_ctx->hbrc_out.xhdr = xhdr = dec->qpd_dh_if->dhi_prepare_decode(
+                                        read_ctx->hbrc_hblock, NULL, need);
+    if (!xhdr)
+        return -1;
+
+    xhdr->dec_overhead = http1x;
+    xhdr->qpack_index = idx;
+    xhdr->flags |= LSXPACK_QPACK_IDX | LSXPACK_NAME_HASH;
+    xhdr->name_hash = name_hashes[ idx ];
+    if (is_never)
+        xhdr->flags |= LSXPACK_NEVER_INDEX;
+    xhdr->name_len = static_table[ idx ].name_len;
+    dst = xhdr->buf + xhdr->name_offset;
+    memcpy(dst, static_table[ idx ].name, static_table[ idx ].name_len);
+    dst += static_table[ idx ].name_len;
+    if (http1x)
+    {
+        memcpy(dst, ": ", 2);
+        dst += 2;
+    }
+    xhdr->val_offset = dst - xhdr->buf;
+    read_ctx->hbrc_out.state = XOUT_VALUE;
+    read_ctx->hbrc_out.off = 0;
+    return 0;
+}
+
+
+static int
+header_out_begin_dynamic_nameref (struct lsqpack_dec *dec,
                 struct header_block_read_ctx *read_ctx,
-                unsigned idx, char *value, unsigned val_len, int is_never)
+                struct lsqpack_dec_table_entry *entry, int is_never)
 {
-    struct header_internal *hint;
+    struct lsxpack_header *xhdr;    /* Shorthand */
+    size_t need, http1x;
+    char *dst;
 
-    hint = allocate_hint(read_ctx);
-    if (hint)
-    {
-        hint->hi_uhead.qh_name      = static_table[ idx ].name;
-        hint->hi_uhead.qh_name_len  = static_table[ idx ].name_len;
-        hint->hi_uhead.qh_value     = value;
-        hint->hi_uhead.qh_value_len = val_len;
-        hint->hi_uhead.qh_static_id = idx;
-        if (is_never)
-            hint->hi_uhead.qh_flags = QH_NEVER|QH_ID_SET;
-        else
-            hint->hi_uhead.qh_flags = QH_ID_SET;
-        hint->hi_flags = HI_OWN_VALUE;
-        dec->qpd_bytes_out += hint->hi_uhead.qh_name_len
-                           + hint->hi_uhead.qh_value_len;
-        return 0;
-    }
-    else
+    assert(!read_ctx->hbrc_out.xhdr);
+
+    http1x = !!(dec->qpd_opts & LSQPACK_DEC_OPT_HTTP1X) << 2; /* 0 or 4 */
+    need = entry->dte_name_len + http1x;
+    read_ctx->hbrc_out.xhdr = xhdr = dec->qpd_dh_if->dhi_prepare_decode(
+                                        read_ctx->hbrc_hblock, NULL, need);
+    if (!xhdr)
         return -1;
+
+    xhdr->dec_overhead = http1x;
+    if (is_never)
+        xhdr->flags |= LSXPACK_NEVER_INDEX;
+    qdec_maybe_update_entry_hashes(dec, entry);
+    if (entry->dte_flags & DTEF_NAME_HASH)
+    {
+        xhdr->flags |= LSXPACK_NAME_HASH;
+        xhdr->name_hash = entry->dte_name_hash;
+    }
+    xhdr->name_len = entry->dte_name_len;
+    dst = xhdr->buf + xhdr->name_offset;
+    memcpy(dst, DTE_NAME(entry), entry->dte_name_len);
+    dst += entry->dte_name_len;
+    if (http1x)
+    {
+        memcpy(dst, ": ", 2);
+        dst += 2;
+    }
+    xhdr->val_offset = dst - xhdr->buf;
+    read_ctx->hbrc_out.state = XOUT_VALUE;
+    read_ctx->hbrc_out.off = 0;
+    return 0;
 }
 
 
 static int
-hlist_add_dynamic_nameref_entry (struct lsqpack_dec *dec,
-                struct header_block_read_ctx *read_ctx,
-                struct lsqpack_dec_table_entry *entry, char *value,
-                unsigned val_len, int is_never)
+header_out_begin_literal (struct lsqpack_dec *dec,
+        struct header_block_read_ctx *read_ctx, size_t need, int is_never)
 {
-    struct header_internal *hint;
+    struct lsxpack_header *xhdr;    /* Shorthand */
+    size_t http1x;
 
-    hint = allocate_hint(read_ctx);
-    if (hint)
-    {
-        hint->hi_uhead.qh_name      = DTE_NAME(entry);
-        hint->hi_uhead.qh_name_len  = entry->dte_name_len;
-        hint->hi_uhead.qh_value     = value;
-        hint->hi_uhead.qh_value_len = val_len;
-        hint->hi_uhead.qh_static_id = 0;
-        if (is_never)
-            hint->hi_uhead.qh_flags = QH_NEVER;
-        else
-            hint->hi_uhead.qh_flags = 0;
-        hint->hi_flags = HI_OWN_VALUE;
-        hint->hi_entry = entry;
-        ++entry->dte_refcnt;
-        dec->qpd_bytes_out += hint->hi_uhead.qh_name_len
-                           + hint->hi_uhead.qh_value_len;
-        return 0;
-    }
-    else
+    assert(!read_ctx->hbrc_out.xhdr);
+
+    http1x = !!(dec->qpd_opts & LSQPACK_DEC_OPT_HTTP1X) << 2; /* 0 or 4 */
+    need += http1x;
+    read_ctx->hbrc_out.xhdr = xhdr = dec->qpd_dh_if->dhi_prepare_decode(
+                                        read_ctx->hbrc_hblock, NULL, need);
+    if (!xhdr)
         return -1;
+
+    xhdr->dec_overhead = http1x;
+    if (is_never)
+        xhdr->flags |= LSXPACK_NEVER_INDEX;
+    read_ctx->hbrc_out.state = XOUT_NAME;
+    read_ctx->hbrc_out.off = 0;
+    return 0;
 }
 
 
 static int
-hlist_add_literal_entry (struct lsqpack_dec *dec,
-        struct header_block_read_ctx *read_ctx,
-        char *nameandval, unsigned name_len, unsigned val_len, int is_never)
+header_out_write_name (struct lsqpack_dec *dec,
+            struct header_block_read_ctx *read_ctx, size_t nwritten, int done)
 {
-    struct header_internal *hint;
+    struct lsxpack_header *xhdr;    /* Shorthand */
 
-    hint = allocate_hint(read_ctx);
-    if (hint)
+    read_ctx->hbrc_out.off += nwritten;
+
+    if (done)
     {
-        hint->hi_uhead.qh_name      = nameandval;
-        hint->hi_uhead.qh_name_len  = name_len;
-        hint->hi_uhead.qh_value     = nameandval + name_len;
-        hint->hi_uhead.qh_value_len = val_len;
-        hint->hi_uhead.qh_static_id = 0;
-        if (is_never)
-            hint->hi_uhead.qh_flags = QH_NEVER;
+        xhdr = read_ctx->hbrc_out.xhdr;
+        if (dec->qpd_opts & LSQPACK_DEC_OPT_HTTP1X)
+        {
+            if (read_ctx->hbrc_out.off + 2 > xhdr->val_len)
+            {
+                read_ctx->hbrc_out.xhdr = xhdr = dec->qpd_dh_if
+                    ->dhi_prepare_decode(read_ctx->hbrc_hblock, xhdr,
+                            read_ctx->hbrc_out.off + 2);
+                if (!xhdr)
+                    return -1;
+            }
+            memcpy(xhdr->buf + xhdr->name_offset + read_ctx->hbrc_out.off,
+                                                                    ": ", 2);
+            xhdr->val_offset = xhdr->name_offset + read_ctx->hbrc_out.off + 2;
+        }
         else
-            hint->hi_uhead.qh_flags = 0;
-        hint->hi_flags = HI_OWN_NAME;
-        dec->qpd_bytes_out += hint->hi_uhead.qh_name_len
-                           + hint->hi_uhead.qh_value_len;
-        return 0;
+            xhdr->val_offset = xhdr->name_offset + read_ctx->hbrc_out.off;
+        xhdr->name_len = read_ctx->hbrc_out.off;
+        read_ctx->hbrc_out.state = XOUT_VALUE;
+        read_ctx->hbrc_out.off = 0;
+        if (dec->qpd_opts & (LSQPACK_DEC_OPT_HASH_NAME
+                            |LSQPACK_DEC_OPT_HASH_NAMEVAL))
+        {
+            xhdr->name_hash = XXH32(xhdr->buf + xhdr->name_offset,
+                                            xhdr->name_len, LSQPACK_XXH_SEED);
+            xhdr->flags |= LSXPACK_NAME_HASH;
+        }
     }
+
+    return 0;
+}
+
+
+static int
+header_out_write_value (struct lsqpack_dec *dec,
+            struct header_block_read_ctx *read_ctx, size_t nwritten, int done)
+{
+    struct lsxpack_header *xhdr;    /* Shorthand */
+    int r;
+
+    read_ctx->hbrc_out.off += nwritten;
+
+    if (done)
+    {
+        xhdr = read_ctx->hbrc_out.xhdr;
+        if (dec->qpd_opts & LSQPACK_DEC_OPT_HTTP1X)
+        {
+            if (xhdr->val_offset + read_ctx->hbrc_out.off + 2 > xhdr->val_len)
+            {
+                read_ctx->hbrc_out.xhdr = xhdr = dec->qpd_dh_if
+                    ->dhi_prepare_decode(read_ctx->hbrc_hblock, xhdr,
+                            xhdr->val_offset + read_ctx->hbrc_out.off + 2);
+                if (!xhdr)
+                    return -1;
+            }
+            memcpy(xhdr->buf + xhdr->val_offset + read_ctx->hbrc_out.off,
+                                                                "\r\n", 2);
+        }
+        xhdr->val_len = read_ctx->hbrc_out.off;
+        if (dec->qpd_opts & LSQPACK_DEC_OPT_HASH_NAME)
+        {
+            assert(xhdr->flags & LSXPACK_NAME_HASH);
+            xhdr->nameval_hash = XXH32(xhdr->buf + xhdr->val_offset,
+                                            xhdr->val_len, xhdr->name_hash);
+            xhdr->flags |= LSXPACK_NAMEVAL_HASH;
+        }
+        r = dec->qpd_dh_if->dhi_process_header(read_ctx->hbrc_hblock, xhdr);
+        ++read_ctx->hbrc_header_count;
+        memset(&read_ctx->hbrc_out, 0, sizeof(read_ctx->hbrc_out));
+        if (r != 0)
+            return -1;
+    }
+
+    return 0;
+}
+
+
+static int
+header_out_grow_buf (struct lsqpack_dec *dec,
+                                    struct header_block_read_ctx *read_ctx)
+{
+    size_t size, need;
+    unsigned off;
+
+    assert(read_ctx->hbrc_out.xhdr);
+    if (read_ctx->hbrc_out.state == XOUT_NAME)
+        off = read_ctx->hbrc_out.xhdr->name_offset + read_ctx->hbrc_out.off;
     else
+        off = read_ctx->hbrc_out.xhdr->val_offset + read_ctx->hbrc_out.off;
+
+    /* name_off and val_off are not set until the whole string has been
+     * written.  Thus, `size' represents the number of bytes that was
+     * not enough to write either the name or the value.  We multiply this
+     * number by 1.5.
+     */
+    assert(read_ctx->hbrc_out.xhdr->val_len >= off);
+    size = read_ctx->hbrc_out.xhdr->val_len - off;
+    if (size < 2)
+        size = 2;
+    need = read_ctx->hbrc_out.xhdr->val_len + size / 2;
+    if (need > LSXPACK_MAX_STRLEN)
+        need = LSXPACK_MAX_STRLEN;
+    read_ctx->hbrc_out.xhdr = dec->qpd_dh_if->dhi_prepare_decode(
+                        read_ctx->hbrc_hblock, read_ctx->hbrc_out.xhdr, need);
+    if (!read_ctx->hbrc_out.xhdr)
         return -1;
+    if (read_ctx->hbrc_out.xhdr->val_len < need)
+    {
+        D_INFO("allocated xhdr size (%zd) is smaller than requested (%zd)",
+            (size_t) read_ctx->hbrc_out.xhdr->val_len, need);
+        memset(&read_ctx->hbrc_out, 0, sizeof(read_ctx->hbrc_out));
+        return -1;
+    }
+    return 0;
+}
+
+
+static int
+guarantee_out_bytes (struct lsqpack_dec *dec,
+                        struct header_block_read_ctx *read_ctx, size_t extra)
+{
+    size_t avail, need;
+    unsigned off;
+
+    assert(read_ctx->hbrc_out.xhdr);
+    assert(read_ctx->hbrc_out.state == XOUT_VALUE);
+    off = read_ctx->hbrc_out.xhdr->val_offset + read_ctx->hbrc_out.off;
+
+    assert(read_ctx->hbrc_out.xhdr->val_len >= off);
+    avail = read_ctx->hbrc_out.xhdr->val_len - off;
+    if (avail < extra)
+    {
+        need = read_ctx->hbrc_out.xhdr->val_len + extra - avail;
+        read_ctx->hbrc_out.xhdr = dec->qpd_dh_if->dhi_prepare_decode(
+                        read_ctx->hbrc_hblock, read_ctx->hbrc_out.xhdr, need);
+        if (!read_ctx->hbrc_out.xhdr)
+            return -1;
+    }
+    return 0;
+}
+
+
+static unsigned char *
+get_dst (struct lsqpack_dec *dec,
+                    struct header_block_read_ctx *read_ctx, size_t *dst_size)
+{
+    unsigned off;
+
+    assert(read_ctx->hbrc_out.xhdr);
+    if (read_ctx->hbrc_out.state == XOUT_NAME)
+        off = read_ctx->hbrc_out.xhdr->name_offset + read_ctx->hbrc_out.off;
+    else
+        off = read_ctx->hbrc_out.xhdr->val_offset + read_ctx->hbrc_out.off;
+
+    assert(read_ctx->hbrc_out.xhdr->val_len >= off);
+    *dst_size = read_ctx->hbrc_out.xhdr->val_len - off;
+    return (unsigned char *) read_ctx->hbrc_out.xhdr->buf + off;
 }
 
 
@@ -3321,11 +3498,13 @@ parse_header_data (struct lsqpack_dec *dec,
         struct header_block_read_ctx *read_ctx, const unsigned char *buf,
                                                                 size_t bufsz)
 {
+#define DATA read_ctx->hbrc_parse_ctx_u.data
     const unsigned char *const end = buf + bufsz;
+    struct lsqpack_dec_table_entry *entry;
     struct huff_decode_retval hdr;
     unsigned value;
-    size_t size;
-    char *str;
+    size_t size, dst_size;
+    unsigned char *dst;
     unsigned prefix_bits = ~0u;
     int r;
 
@@ -3333,84 +3512,70 @@ parse_header_data (struct lsqpack_dec *dec,
 
     while (buf < end)
     {
-        switch (read_ctx->hbrc_parse_ctx_u.data.state)
+        switch (DATA.state)
         {
         case DATA_STATE_NEXT_INSTRUCTION:
             if (buf[0] & 0x80)
             {
                 prefix_bits = 6;
-                IHF.is_static = buf[0] & 0x40;
-                IHF.dec_int_state.resume = 0;
-                read_ctx->hbrc_parse_ctx_u.data.state
-                                                = DATA_STATE_READ_IHF_IDX;
+                DATA.is_static = buf[0] & 0x40;
+                DATA.dec_int_state.resume = 0;
+                DATA.state = DATA_STATE_READ_IHF_IDX;
                 goto data_state_read_ihf_idx;
             }
             /* Literal Header Field With Name Reference */
             else if (buf[0] & 0x40)
             {
                 prefix_bits = 4;
-                LFINR.is_never = buf[0] & 0x20;
-                LFINR.is_static = buf[0] & 0x10;
-                LFINR.dec_int_state.resume = 0;
-                LFINR.value = NULL;
-                LFINR.name_ref.dyn_entry = NULL;
-                read_ctx->hbrc_parse_ctx_u.data.state
-                                                = DATA_STATE_READ_LFINR_IDX;
+                DATA.is_never = buf[0] & 0x20;
+                DATA.is_static = buf[0] & 0x10;
+                DATA.dec_int_state.resume = 0;
+                DATA.state = DATA_STATE_READ_LFINR_IDX;
                 goto data_state_read_lfinr_idx;
             }
             /* Literal Header Field Without Name Reference */
             else if (buf[0] & 0x20)
             {
                 prefix_bits = 3;
-                LFONR.is_never = buf[0] & 0x10;
-                LFONR.is_huffman = buf[0] & 0x08;
-                LFONR.dec_int_state.resume = 0;
-                LFONR.name = NULL;
-                read_ctx->hbrc_parse_ctx_u.data.state
-                                            = DATA_STATE_READ_LFONR_NAME_LEN;
+                DATA.is_never = buf[0] & 0x10;
+                DATA.is_huffman = buf[0] & 0x08;
+                DATA.dec_int_state.resume = 0;
+                DATA.state = DATA_STATE_READ_LFONR_NAME_LEN;
                 goto data_state_read_lfonr_name_len;
             }
             /* Indexed Header Field With Post-Base Index */
             else if (buf[0] & 0x10)
             {
                 prefix_bits = 4;
-                IPBI.dec_int_state.resume = 0;
-                read_ctx->hbrc_parse_ctx_u.data.state
-                                                = DATA_STATE_READ_IPBI_IDX;
+                DATA.dec_int_state.resume = 0;
+                DATA.state = DATA_STATE_READ_IPBI_IDX;
                 goto data_state_read_ipbi_idx;
             }
             /* Literal Header Field With Post-Base Name Reference */
             else
             {
                 prefix_bits = 3;
-                LFPBNR.is_never = buf[0] & 0x08;
-                LFPBNR.dec_int_state.resume = 0;
-                LFPBNR.value = NULL;
-                LFPBNR.reffed_entry = NULL;
-                read_ctx->hbrc_parse_ctx_u.data.state
-                                                = DATA_STATE_READ_LFPBNR_IDX;
+                DATA.is_never = buf[0] & 0x08;
+                DATA.dec_int_state.resume = 0;
+                DATA.state = DATA_STATE_READ_LFPBNR_IDX;
                 goto data_state_read_lfpbnr_idx;
             }
         case DATA_STATE_READ_IHF_IDX:
   data_state_read_ihf_idx:
-            r = lsqpack_dec_int24(&buf, end, prefix_bits, &IHF.value,
-                                                        &IHF.dec_int_state);
+            r = lsqpack_dec_int24(&buf, end, prefix_bits, &value,
+                                                        &DATA.dec_int_state);
             if (r == 0)
             {
-                if (IHF.is_static)
-                    r = hlist_add_static_entry(dec, read_ctx, IHF.value);
+                if (DATA.is_static)
+                    r = header_out_static_entry(dec, read_ctx, value);
                 else
                 {
-                    value = ID_MINUS(read_ctx->hbrc_base_index, IHF.value);
-                    r = hlist_add_dynamic_entry(dec, read_ctx, value);
+                    value = ID_MINUS(read_ctx->hbrc_base_index, value);
+                    r = header_out_dynamic_entry(dec, read_ctx, value);
                     check_dyn_table_errors(read_ctx, value);
                 }
                 if (r == 0)
-                {
-                    read_ctx->hbrc_parse_ctx_u.data.state
-                                            = DATA_STATE_NEXT_INSTRUCTION;
-                    break;
-                }
+                    DATA.state = DATA_STATE_NEXT_INSTRUCTION;
                 else
                     RETURN_ERROR();
             }
@@ -3418,513 +3583,224 @@ parse_header_data (struct lsqpack_dec *dec,
                 return LQRHS_NEED;
             else
                 RETURN_ERROR();
-#undef IHF
+            break;
         case DATA_STATE_READ_LFINR_IDX:
   data_state_read_lfinr_idx:
             r = lsqpack_dec_int24(&buf, end, prefix_bits, &value,
-                                                        &LFINR.dec_int_state);
+                                                        &DATA.dec_int_state);
             if (r == 0)
             {
-                if (LFINR.is_static)
+                if (DATA.is_static)
                 {
-                    if (value < QPACK_STATIC_TABLE_SIZE)
-                        LFINR.name_ref.static_idx = value;
-                    else
+                    if (0 != header_out_begin_static_nameref(dec,
+                                            read_ctx, value, DATA.is_never))
                         RETURN_ERROR();
                 }
                 else
                 {
                     value = ID_MINUS(read_ctx->hbrc_base_index, value);
-                    LFINR.name_ref.dyn_entry
-                        = qdec_get_table_entry_abs(dec, value);
-                    if (LFINR.name_ref.dyn_entry)
-                        ++LFINR.name_ref.dyn_entry->dte_refcnt;
-                    else
+                    entry = qdec_get_table_entry_abs(dec, value);
+                    if (!entry)
                         RETURN_ERROR();
                     check_dyn_table_errors(read_ctx, value);
-                }
-                read_ctx->hbrc_parse_ctx_u.data.state
-                                    = DATA_STATE_BEGIN_READ_LFINR_VAL_LEN;
-                break;
-            }
-            else if (r == -1)
-                return LQRHS_NEED;
-            else
-                RETURN_ERROR();
-        case DATA_STATE_BEGIN_READ_LFINR_VAL_LEN:
-            LFINR.is_huffman = buf[0] & 0x80;
-            prefix_bits = 7;
-            LFINR.dec_int_state.resume = 0;
-            read_ctx->hbrc_parse_ctx_u.data.state
-                                    = DATA_STATE_READ_LFINR_VAL_LEN;
-            /* Fall-through */
-        case DATA_STATE_READ_LFINR_VAL_LEN:
-            r = lsqpack_dec_int24(&buf, end, prefix_bits, &value,
-                                                        &LFINR.dec_int_state);
-            if (r == 0)
-            {
-                if (value)
-                {
-                    if (LFINR.is_huffman)
-                    {
-                        LFINR.nalloc = value + value / 2;
-                        LFINR.dec_huff_state.resume = 0;
-                        read_ctx->hbrc_parse_ctx_u.data.state
-                                            = DATA_STATE_LFINR_READ_VAL_HUFFMAN;
-                    }
-                    else
-                    {
-                        LFINR.nalloc = value;
-                        read_ctx->hbrc_parse_ctx_u.data.state
-                                            = DATA_STATE_LFINR_READ_VAL_PLAIN;
-                    }
-                    LFINR.val_len = value;
-                    LFINR.nread = 0;
-                    LFINR.val_off = 0;
-                    LFINR.value = malloc(LFINR.nalloc);
-                    if (LFINR.value)
-                        break;
-                    else
+                    if (0 != header_out_begin_dynamic_nameref(dec,
+                                            read_ctx, entry, DATA.is_never))
                         RETURN_ERROR();
                 }
-                else
-                {
-                    LFINR.nalloc = 0;
-                    LFINR.value = NULL;
-                    LFINR.val_len = 0;
-                    LFINR.val_off = 0;
-                    goto lfinr_insert_entry;
-                }
+                DATA.state = DATA_STATE_BEGIN_READ_VAL_LEN;
+                break;
             }
             else if (r == -1)
                 return LQRHS_NEED;
             else
                 RETURN_ERROR();
-        case DATA_STATE_LFINR_READ_VAL_HUFFMAN:
-            size = MIN((unsigned) (end - buf), LFINR.val_len - LFINR.nread);
-            hdr = lsqpack_huff_decode(buf, size,
-                    (unsigned char *) LFINR.value + LFINR.val_off,
-                    LFINR.nalloc - LFINR.val_off,
-                    &LFINR.dec_huff_state, LFINR.nread + size == LFINR.val_len);
+        case DATA_STATE_BEGIN_READ_VAL_LEN:
+            DATA.is_huffman = buf[0] & 0x80;
+            prefix_bits = 7;
+            DATA.dec_int_state.resume = 0;
+            DATA.state = DATA_STATE_READ_VAL_LEN;
+            /* Fall-through */
+        case DATA_STATE_READ_VAL_LEN:
+            r = lsqpack_dec_int24(&buf, end, prefix_bits, &DATA.left,
+                                                        &DATA.dec_int_state);
+            if (r == 0)
+            {
+                if (DATA.left)
+                {
+                    if (DATA.is_huffman)
+                    {
+                        if (0 != guarantee_out_bytes(dec, read_ctx,
+                                                    DATA.left + DATA.left / 2))
+                            RETURN_ERROR();
+                        DATA.dec_huff_state.resume = 0;
+                        DATA.state = DATA_STATE_READ_VAL_HUFFMAN;
+                    }
+                    else
+                    {
+                        if (0 != guarantee_out_bytes(dec, read_ctx, DATA.left))
+                            RETURN_ERROR();
+                        DATA.state = DATA_STATE_READ_VAL_PLAIN;
+                    }
+                }
+                else if (0 == header_out_write_value(dec, read_ctx, 0, 1))
+                    DATA.state = DATA_STATE_NEXT_INSTRUCTION;
+                else
+                    RETURN_ERROR();
+            }
+            else if (r == -1)
+                return LQRHS_NEED;
+            else
+                RETURN_ERROR();
+            break;
+        case DATA_STATE_READ_VAL_HUFFMAN:
+            size = MIN((unsigned) (end - buf), DATA.left);
+            assert(size);
+            dst = get_dst(dec, read_ctx, &dst_size);
+            hdr = lsqpack_huff_decode(buf, size, dst, dst_size,
+                    &DATA.dec_huff_state, DATA.left == size);
+            buf += hdr.n_src;
+            DATA.left -= hdr.n_src;
             switch (hdr.status)
             {
             case HUFF_DEC_OK:
-                buf += hdr.n_src;
-                LFINR.val_off += hdr.n_dst;
-                read_ctx->hbrc_parse_ctx_u.data.state
-                                    = DATA_STATE_NEXT_INSTRUCTION;
-                if (LFINR.is_static)
-                    r = hlist_add_static_nameref_entry(dec, read_ctx,
-                            LFINR.name_ref.static_idx, LFINR.value,
-                            LFINR.val_off, LFINR.is_never);
-                else
-                {
-                    r = hlist_add_dynamic_nameref_entry(dec, read_ctx,
-                            LFINR.name_ref.dyn_entry, LFINR.value,
-                            LFINR.val_off, LFINR.is_never);
-                    qdec_decref_entry(LFINR.name_ref.dyn_entry);
-                    LFINR.name_ref.dyn_entry = NULL;
-                }
-                if (r == 0)
-                {
-                    LFINR.value = NULL;
-                    break;
-                }
-                else
+                if (0 != header_out_write_value(dec, read_ctx, hdr.n_dst,
+                                                            DATA.left == 0))
                     RETURN_ERROR();
+                if (DATA.left == 0)
+                    DATA.state = DATA_STATE_NEXT_INSTRUCTION;
+                break;
             case HUFF_DEC_END_SRC:
-                buf += hdr.n_src;
-                LFINR.nread += hdr.n_src;
-                LFINR.val_off += hdr.n_dst;
+                if (hdr.n_dst && 0 != header_out_write_value(dec, read_ctx,
+                                                                hdr.n_dst, 0))
+                    RETURN_ERROR();
                 break;
             case HUFF_DEC_END_DST:
-                LFINR.nalloc *= 2;
-                str = realloc(LFINR.value, LFINR.nalloc);
-                if (!str)
+                if (hdr.n_dst && 0 != header_out_write_value(dec, read_ctx,
+                                                                hdr.n_dst, 0))
                     RETURN_ERROR();
-                LFINR.value = str;
-                buf += hdr.n_src;
-                LFINR.nread += hdr.n_src;
-                LFINR.val_off += hdr.n_dst;
+                if (0 != header_out_grow_buf(dec, read_ctx))
+                    RETURN_ERROR();
                 break;
             default:
                 RETURN_ERROR();
             }
             break;
-        case DATA_STATE_LFINR_READ_VAL_PLAIN:
-            size = MIN((unsigned) (end - buf), LFINR.val_len - LFINR.val_off);
-            memcpy(LFINR.value + LFINR.val_off, buf, size);
-            LFINR.val_off += size;
+        case DATA_STATE_READ_VAL_PLAIN:
+            size = MIN((unsigned) (end - buf), DATA.left);
+            assert(size);
+            dst = get_dst(dec, read_ctx, &dst_size);
+            assert(size <= dst_size);
+            memcpy(dst, buf, size);
+            if (0 != header_out_write_value(dec, read_ctx,
+                                                size, DATA.left == size))
+                RETURN_ERROR();
+            DATA.left -= size;
             buf += size;
-            if (LFINR.val_off == LFINR.val_len)
-            {
-  lfinr_insert_entry:
-                read_ctx->hbrc_parse_ctx_u.data.state
-                                    = DATA_STATE_NEXT_INSTRUCTION;
-                if (LFINR.is_static)
-                    r = hlist_add_static_nameref_entry(dec, read_ctx,
-                            LFINR.name_ref.static_idx, LFINR.value,
-                            LFINR.val_off, LFINR.is_never);
-                else
-                {
-                    r = hlist_add_dynamic_nameref_entry(dec, read_ctx,
-                            LFINR.name_ref.dyn_entry, LFINR.value,
-                            LFINR.val_off, LFINR.is_never);
-                    qdec_decref_entry(LFINR.name_ref.dyn_entry);
-                    LFINR.name_ref.dyn_entry = NULL;
-                }
-                if (r == 0)
-                {
-                    LFINR.value = NULL;
-                    break;
-                }
-                else
-                    RETURN_ERROR();
-            }
+            if (DATA.left == 0)
+                DATA.state = DATA_STATE_NEXT_INSTRUCTION;
             break;
-#undef LFINR
         case DATA_STATE_READ_LFONR_NAME_LEN:
   data_state_read_lfonr_name_len:
-            r = lsqpack_dec_int24(&buf, end, prefix_bits, &value,
-                                                        &LFONR.dec_int_state);
+            r = lsqpack_dec_int24(&buf, end, prefix_bits, &DATA.left,
+                                                        &DATA.dec_int_state);
             if (r == 0)
             {
-                LFONR.nread = 0;
-                LFONR.str_off = 0;
-                LFONR.str_len = value;
-                if (LFONR.is_huffman)
-                {
-                    LFONR.nalloc = value + value / 2;
-                    LFONR.dec_huff_state.resume = 0;
-                    read_ctx->hbrc_parse_ctx_u.data.state
-                                        = DATA_STATE_READ_LFONR_NAME_HUFFMAN;
-                }
-                else
-                {
-                    LFONR.nalloc = value;
-                    read_ctx->hbrc_parse_ctx_u.data.state
-                                        = DATA_STATE_READ_LFONR_NAME_PLAIN;
-                }
-                LFONR.name = malloc(LFONR.nalloc);
-                if (LFONR.name)
-                    break;
-                else
+                size = DATA.is_huffman ? DATA.left + DATA.left / 2 : DATA.left;
+                if (0 != header_out_begin_literal(dec, read_ctx, size,
+                                                            DATA.is_never))
                     RETURN_ERROR();
+                if (DATA.is_huffman)
+                {
+                    DATA.dec_huff_state.resume = 0;
+                    DATA.state = DATA_STATE_READ_NAME_HUFFMAN;
+                }
+                else
+                    DATA.state = DATA_STATE_READ_NAME_PLAIN;
             }
             else if (r == -1)
                 return LQRHS_NEED;
             else
                 RETURN_ERROR();
-        case DATA_STATE_READ_LFONR_NAME_HUFFMAN:
-            size = MIN((unsigned) (end - buf), LFONR.str_len - LFONR.nread);
-            hdr = lsqpack_huff_decode(buf, size,
-                    (unsigned char *) LFONR.name + LFONR.str_off,
-                    LFONR.nalloc - LFONR.str_off,
-                    &LFONR.dec_huff_state, LFONR.nread + size == LFONR.str_len);
+            break;
+        case DATA_STATE_READ_NAME_HUFFMAN:
+            size = MIN((unsigned) (end - buf), DATA.left);
+            assert(size);
+            dst = get_dst(dec, read_ctx, &dst_size);
+            hdr = lsqpack_huff_decode(buf, size, dst, dst_size,
+                    &DATA.dec_huff_state, DATA.left == size);
+            buf += hdr.n_src;
+            DATA.left -= hdr.n_src;
             switch (hdr.status)
             {
             case HUFF_DEC_OK:
-                buf += hdr.n_src;
-                LFONR.name_len = LFONR.str_off + hdr.n_dst;
-                read_ctx->hbrc_parse_ctx_u.data.state
-                                    = DATA_STATE_BEGIN_READ_LFONR_VAL_LEN;
+                if (0 != header_out_write_name(dec, read_ctx, hdr.n_dst,
+                                                            DATA.left == 0))
+                    RETURN_ERROR();
+                if (DATA.left == 0)
+                    DATA.state = DATA_STATE_BEGIN_READ_VAL_LEN;
                 break;
             case HUFF_DEC_END_SRC:
-                buf += hdr.n_src;
-                LFONR.nread += hdr.n_src;
-                LFONR.str_off += hdr.n_dst;
+                if (hdr.n_dst && 0 != header_out_write_name(dec, read_ctx,
+                                                                hdr.n_dst, 0))
+                    RETURN_ERROR();
                 break;
             case HUFF_DEC_END_DST:
-                LFONR.nalloc *= 2;
-                str = realloc(LFONR.name, LFONR.nalloc);
-                if (!str)
+                if (hdr.n_dst && 0 != header_out_write_name(dec, read_ctx,
+                                                                hdr.n_dst, 0))
                     RETURN_ERROR();
-                LFONR.name = str;
-                buf += hdr.n_src;
-                LFONR.nread += hdr.n_src;
-                LFONR.str_off += hdr.n_dst;
+                if (0 != header_out_grow_buf(dec, read_ctx))
+                    RETURN_ERROR();
                 break;
             default:
                 RETURN_ERROR();
             }
             break;
-        case DATA_STATE_READ_LFONR_NAME_PLAIN:
-            size = MIN((unsigned) (end - buf), LFONR.str_len - LFONR.str_off);
-            memcpy(LFONR.name + LFONR.str_off, buf, size);
-            buf += size;
-            LFONR.str_off += size;
-            if (LFONR.str_off >= LFONR.str_len)
-            {
-                LFONR.name_len = LFONR.str_len;
-                read_ctx->hbrc_parse_ctx_u.data.state
-                                    = DATA_STATE_BEGIN_READ_LFONR_VAL_LEN;
-            }
-            break;
-        case DATA_STATE_BEGIN_READ_LFONR_VAL_LEN:
-            LFONR.is_huffman = buf[0] & 0x80;
-            prefix_bits = 7;
-            LFONR.dec_int_state.resume = 0;
-            read_ctx->hbrc_parse_ctx_u.data.state
-                                            = DATA_STATE_READ_LFONR_VAL_LEN;
-            /* Fall-through */
-        case DATA_STATE_READ_LFONR_VAL_LEN:
-            r = lsqpack_dec_int24(&buf, end, prefix_bits, &value,
-                                                        &LFONR.dec_int_state);
-            if (r == 0)
-            {
-                LFONR.str_len = value;
-                LFONR.nread = 0;
-                LFONR.str_off = 0;
-                if (0 == LFONR.str_len)
-                    goto lfonr_insert_entry;
-                else if (LFONR.is_huffman)
-                {
-                    LFONR.dec_huff_state.resume = 0;
-                    read_ctx->hbrc_parse_ctx_u.data.state
-                                        = DATA_STATE_READ_LFONR_VAL_HUFFMAN;
-                }
-                else
-                {
-                    read_ctx->hbrc_parse_ctx_u.data.state
-                                        = DATA_STATE_READ_LFONR_VAL_PLAIN;
-                }
-                break;
-            }
-            else if (r == -1)
-                return LQRHS_NEED;
-            else
+        case DATA_STATE_READ_NAME_PLAIN:
+            size = MIN((unsigned) (end - buf), DATA.left);
+            assert(size);
+            dst = get_dst(dec, read_ctx, &dst_size);
+            assert(size <= dst_size);
+            memcpy(dst, buf, size);
+            if (0 != header_out_write_name(dec, read_ctx,
+                                                size, DATA.left == size))
                 RETURN_ERROR();
-        case DATA_STATE_READ_LFONR_VAL_HUFFMAN:
-            size = MIN((unsigned) (end - buf), LFONR.str_len - LFONR.nread);
-            hdr = lsqpack_huff_decode(buf, size,
-                    (unsigned char *) LFONR.name + LFONR.name_len
-                                                            + LFONR.str_off,
-                    LFONR.nalloc - LFONR.name_len - LFONR.str_off,
-                    &LFONR.dec_huff_state, LFONR.nread + size == LFONR.str_len);
-            switch (hdr.status)
-            {
-            case HUFF_DEC_OK:
-                buf += hdr.n_src;
-                read_ctx->hbrc_parse_ctx_u.data.state
-                                    = DATA_STATE_NEXT_INSTRUCTION;
-                r = hlist_add_literal_entry(dec, read_ctx,
-                        LFONR.name, LFONR.name_len, LFONR.str_off + hdr.n_dst,
-                        LFONR.is_never);
-                if (r == 0)
-                {
-                    LFONR.name = NULL;
-                    break;
-                }
-                else
-                    RETURN_ERROR();
-            case HUFF_DEC_END_SRC:
-                buf += hdr.n_src;
-                LFONR.nread += hdr.n_src;
-                LFONR.str_off += hdr.n_dst;
-                break;
-            case HUFF_DEC_END_DST:
-                if (LFONR.nalloc)
-                    LFONR.nalloc *= 2;
-                else
-                    LFONR.nalloc = LFONR.str_len * 2;
-                str = realloc(LFONR.name, LFONR.nalloc);
-                if (!str)
-                    RETURN_ERROR();
-                LFONR.name = str;
-                buf += hdr.n_src;
-                LFONR.nread += hdr.n_src;
-                LFONR.str_off += hdr.n_dst;
-                break;
-            default:
-                RETURN_ERROR();
-            }
-            break;
-        case DATA_STATE_READ_LFONR_VAL_PLAIN:
-            if (LFONR.nalloc < LFONR.name_len + LFONR.str_len)
-            {
-                LFONR.nalloc = LFONR.name_len + LFONR.str_len;
-                str = realloc(LFONR.name, LFONR.nalloc);
-                if (str)
-                    LFONR.name = str;
-                else
-                    RETURN_ERROR();
-            }
-            size = MIN((unsigned) (end - buf), LFONR.str_len - LFONR.str_off);
-            memcpy(LFONR.name + LFONR.name_len + LFONR.str_off, buf, size);
-            LFONR.str_off += size;
+            DATA.left -= size;
             buf += size;
-            if (LFONR.str_off == LFONR.str_len)
-            {
-  lfonr_insert_entry:
-                read_ctx->hbrc_parse_ctx_u.data.state
-                                    = DATA_STATE_NEXT_INSTRUCTION;
-                r = hlist_add_literal_entry(dec, read_ctx,
-                        LFONR.name, LFONR.name_len, LFONR.str_off,
-                        LFONR.is_never);
-                if (0 == r)
-                {
-                    LFONR.name = NULL;
-                    break;
-                }
-                else
-                    RETURN_ERROR();
-            }
+            if (DATA.left == 0)
+                DATA.state = DATA_STATE_BEGIN_READ_VAL_LEN;
             break;
-#undef LFONR
         case DATA_STATE_READ_LFPBNR_IDX:
   data_state_read_lfpbnr_idx:
             r = lsqpack_dec_int24(&buf, end, prefix_bits, &value,
-                                                        &LFPBNR.dec_int_state);
+                                                        &DATA.dec_int_state);
             if (r == 0)
             {
                 value = ID_PLUS(value, read_ctx->hbrc_base_index + 1);
-                LFPBNR.reffed_entry = qdec_get_table_entry_abs(dec, value);
-                if (LFPBNR.reffed_entry)
-                {
-                    ++LFPBNR.reffed_entry->dte_refcnt;
-                    check_dyn_table_errors(read_ctx, value);
-                    read_ctx->hbrc_parse_ctx_u.data.state
-                                        = DATA_STATE_BEGIN_READ_LFPBNR_VAL_LEN;
-                    break;
-                }
-                else
+                entry = qdec_get_table_entry_abs(dec, value);
+                if (!entry)
                     RETURN_ERROR();
+                check_dyn_table_errors(read_ctx, value);
+                if (0 != header_out_begin_dynamic_nameref(dec,
+                                        read_ctx, entry, DATA.is_never))
+                    RETURN_ERROR();
+                DATA.state = DATA_STATE_BEGIN_READ_VAL_LEN;
             }
             else if (r == -1)
                 return LQRHS_NEED;
             else
                 RETURN_ERROR();
-        case DATA_STATE_BEGIN_READ_LFPBNR_VAL_LEN:
-            LFPBNR.is_huffman = buf[0] & 0x80;
-            prefix_bits = 7;
-            LFPBNR.dec_int_state.resume = 0;
-            read_ctx->hbrc_parse_ctx_u.data.state
-                                    = DATA_STATE_READ_LFPBNR_VAL_LEN;
-            /* Fall-through */
-        case DATA_STATE_READ_LFPBNR_VAL_LEN:
-            r = lsqpack_dec_int24(&buf, end, prefix_bits, &value,
-                                                        &LFPBNR.dec_int_state);
-            if (r == 0)
-            {
-                LFPBNR.val_len = value;
-                LFPBNR.nread = 0;
-                LFPBNR.val_off = 0;
-                if (LFPBNR.val_len)
-                {
-                    if (LFPBNR.is_huffman)
-                    {
-                        LFPBNR.nalloc = value + value / 2;
-                        LFPBNR.dec_huff_state.resume = 0;
-                        read_ctx->hbrc_parse_ctx_u.data.state
-                                            = DATA_STATE_LFPBNR_READ_VAL_HUFFMAN;
-                    }
-                    else
-                    {
-                        LFPBNR.nalloc = value;
-                        read_ctx->hbrc_parse_ctx_u.data.state
-                                            = DATA_STATE_LFPBNR_READ_VAL_PLAIN;
-                    }
-                    LFPBNR.value = malloc(LFPBNR.nalloc);
-                    if (LFPBNR.value)
-                        break;
-                    else
-                        RETURN_ERROR();
-                }
-                else
-                {
-                    LFPBNR.value = NULL;
-                    LFPBNR.nalloc = 0;
-                    goto lfpbnr_insert_entry;
-                }
-            }
-            else if (r == -1)
-                return LQRHS_NEED;
-            else
-                RETURN_ERROR();
-        case DATA_STATE_LFPBNR_READ_VAL_HUFFMAN:
-            size = MIN((unsigned) (end - buf), LFPBNR.val_len - LFPBNR.nread);
-            hdr = lsqpack_huff_decode(buf, size,
-                    (unsigned char *) LFPBNR.value + LFPBNR.val_off,
-                    LFPBNR.nalloc - LFPBNR.val_off,
-                    &LFPBNR.dec_huff_state, LFPBNR.nread + size == LFPBNR.val_len);
-            switch (hdr.status)
-            {
-            case HUFF_DEC_OK:
-                buf += hdr.n_src;
-                LFPBNR.val_off += hdr.n_dst;
-                read_ctx->hbrc_parse_ctx_u.data.state
-                                    = DATA_STATE_NEXT_INSTRUCTION;
-                r = hlist_add_dynamic_nameref_entry(dec, read_ctx,
-                                LFPBNR.reffed_entry, LFPBNR.value,
-                                LFPBNR.val_off, LFPBNR.is_never);
-                qdec_decref_entry(LFPBNR.reffed_entry);
-                LFPBNR.reffed_entry = NULL;
-                if (r == 0)
-                {
-                    LFPBNR.value = NULL;
-                    break;
-                }
-                else
-                    RETURN_ERROR();
-            case HUFF_DEC_END_SRC:
-                buf += hdr.n_src;
-                LFPBNR.nread += hdr.n_src;
-                LFPBNR.val_off += hdr.n_dst;
-                break;
-            case HUFF_DEC_END_DST:
-                LFPBNR.nalloc *= 2;
-                str = realloc(LFPBNR.value, LFPBNR.nalloc);
-                if (!str)
-                    RETURN_ERROR();
-                LFPBNR.value = str;
-                buf += hdr.n_src;
-                LFPBNR.nread += hdr.n_src;
-                LFPBNR.val_off += hdr.n_dst;
-                break;
-            default:
-                RETURN_ERROR();
-            }
             break;
-        case DATA_STATE_LFPBNR_READ_VAL_PLAIN:
-            size = MIN((unsigned) (end - buf), LFPBNR.val_len - LFPBNR.val_off);
-            memcpy(LFPBNR.value + LFPBNR.val_off, buf, size);
-            LFPBNR.val_off += size;
-            buf += size;
-            if (LFPBNR.val_off == LFPBNR.val_len)
-            {
-  lfpbnr_insert_entry:
-                read_ctx->hbrc_parse_ctx_u.data.state
-                                    = DATA_STATE_NEXT_INSTRUCTION;
-                r = hlist_add_dynamic_nameref_entry(dec, read_ctx,
-                            LFPBNR.reffed_entry, LFPBNR.value,
-                            LFPBNR.val_off, LFPBNR.is_never);
-                qdec_decref_entry(LFPBNR.reffed_entry);
-                LFPBNR.reffed_entry = NULL;
-                if (r == 0)
-                {
-                    LFPBNR.value = NULL;
-                    break;
-                }
-                else
-                    RETURN_ERROR();
-            }
-            break;
-#undef LFPBNR
         case DATA_STATE_READ_IPBI_IDX:
   data_state_read_ipbi_idx:
-            r = lsqpack_dec_int24(&buf, end, prefix_bits, &IPBI.value,
-                                                        &IPBI.dec_int_state);
+            r = lsqpack_dec_int24(&buf, end, prefix_bits, &value,
+                                                        &DATA.dec_int_state);
             if (r == 0)
             {
-                value = ID_PLUS(read_ctx->hbrc_base_index, IPBI.value + 1);
-                r = hlist_add_dynamic_entry(dec, read_ctx, value);
+                value = ID_PLUS(read_ctx->hbrc_base_index, value + 1);
+                r = header_out_dynamic_entry(dec, read_ctx, value);
                 check_dyn_table_errors(read_ctx, value);
                 if (r == 0)
-                {
-                    read_ctx->hbrc_parse_ctx_u.data.state
-                                            = DATA_STATE_NEXT_INSTRUCTION;
-                    break;
-                }
+                    DATA.state = DATA_STATE_NEXT_INSTRUCTION;
                 else
                     RETURN_ERROR();
             }
@@ -3932,7 +3808,7 @@ parse_header_data (struct lsqpack_dec *dec,
                 return LQRHS_NEED;
             else
                 RETURN_ERROR();
-#undef IPBI
+            break;
         default:
             assert(0);
             RETURN_ERROR();
@@ -3941,9 +3817,7 @@ parse_header_data (struct lsqpack_dec *dec,
 
     if (read_ctx->hbrc_size > 0)
         return LQRHS_NEED;
-    else if (read_ctx->hbrc_parse_ctx_u.data.state
-                                            == DATA_STATE_NEXT_INSTRUCTION)
-    {
+    else if (DATA.state == DATA_STATE_NEXT_INSTRUCTION) {
         if ((read_ctx->hbrc_flags
                 & (HBRC_LARGEST_REF_SET|HBRC_LARGEST_REF_USED))
                                                     == HBRC_LARGEST_REF_SET)
@@ -3963,6 +3837,7 @@ parse_header_data (struct lsqpack_dec *dec,
     D_DEBUG("header block error on line %d, offset %"PRIu64", stream id "
         "%"PRIu64, dec->qpd_err.line, dec->qpd_err.off, dec->qpd_err.stream_id);
     return LQRHS_ERROR;
+#undef DATA
 }
 
 
@@ -4179,7 +4054,6 @@ destroy_header_block_read_ctx (struct lsqpack_dec *dec,
         TAILQ_REMOVE(&dec->qpd_blocked_headers[id], read_ctx, hbrc_next_blocked);
         --dec->qpd_n_blocked;
     }
-    cleanup_read_ctx(read_ctx);
     free(read_ctx);
 }
 
@@ -4274,7 +4148,6 @@ static enum lsqpack_read_header_status
 qdec_header_process (struct lsqpack_dec *dec,
             struct header_block_read_ctx *read_ctx,
             const unsigned char **buf, size_t bufsz,
-            struct lsqpack_header_list **hlist,
             unsigned char *dec_buf, size_t *dec_buf_sz)
 {
     struct header_block_read_ctx *read_ctx_copy;
@@ -4285,8 +4158,7 @@ qdec_header_process (struct lsqpack_dec *dec,
     switch (st)
     {
     case LQRHS_DONE:
-        update_ema(&dec->qpd_hlist_size_ema,
-                                        read_ctx->hbrc_header_list->qhl_count);
+        update_ema(&dec->qpd_hlist_size_ema, read_ctx->hbrc_header_count);
         if ((read_ctx->hbrc_flags & HBRC_LARGEST_REF_SET)
                                                     && dec_buf && dec_buf_sz)
         {
@@ -4303,8 +4175,6 @@ qdec_header_process (struct lsqpack_dec *dec,
         else if (dec_buf_sz)
             *dec_buf_sz = 0;
         *buf = *buf + read_ctx->hbrc_buf.off;
-        *hlist = read_ctx->hbrc_header_list;
-        read_ctx->hbrc_header_list = NULL;
         dec->qpd_bytes_in += read_ctx->hbrc_orig_size;
         if (dec->qpd_bytes_out > (1u << (sizeof(dec->qpd_bytes_out) * 8 - 1)))
         {
@@ -4354,11 +4224,8 @@ qdec_header_process (struct lsqpack_dec *dec,
     if (read_ctx->hbrc_flags & HBRC_ON_LIST)
     {
         qdec_remove_header_block(dec, read_ctx);
-        cleanup_read_ctx(read_ctx);
         free(read_ctx);
     }
-    else
-        cleanup_read_ctx(read_ctx);
 
     return st;
 }
@@ -4366,7 +4233,7 @@ qdec_header_process (struct lsqpack_dec *dec,
 
 enum lsqpack_read_header_status
 lsqpack_dec_header_read (struct lsqpack_dec *dec, void *hblock,
-    const unsigned char **buf, size_t bufsz, struct lsqpack_header_list **hlist,
+    const unsigned char **buf, size_t bufsz,
     unsigned char *dec_buf, size_t *dec_buf_sz)
 {
     struct header_block_read_ctx *read_ctx;
@@ -4376,7 +4243,7 @@ lsqpack_dec_header_read (struct lsqpack_dec *dec, void *hblock,
     {
         D_DEBUG("continue reading header block for stream %"PRIu64,
                                                     read_ctx->hbrc_stream_id);
-        return qdec_header_process(dec, read_ctx, buf, bufsz, hlist,
+        return qdec_header_process(dec, read_ctx, buf, bufsz,
                                    dec_buf, dec_buf_sz);
     }
     else
@@ -4390,8 +4257,7 @@ lsqpack_dec_header_read (struct lsqpack_dec *dec, void *hblock,
 enum lsqpack_read_header_status
 lsqpack_dec_header_in (struct lsqpack_dec *dec, void *hblock,
             uint64_t stream_id, size_t header_size, const unsigned char **buf,
-            size_t bufsz, struct lsqpack_header_list **hlist,
-            unsigned char *dec_buf, size_t *dec_buf_sz)
+            size_t bufsz, unsigned char *dec_buf, size_t *dec_buf_sz)
 {
     if (header_size < 2)
     {
@@ -4412,11 +4278,10 @@ lsqpack_dec_header_in (struct lsqpack_dec *dec, void *hblock,
         .hbrc_size      = header_size,
         .hbrc_orig_size = header_size,
         .hbrc_parse     = parse_header_prefix,
-        .hbrc_hlist_size= dec->qpd_hlist_size_ema,
     };
 
     D_DEBUG("begin reading header block for stream %"PRIu64, stream_id);
-    return qdec_header_process(dec, &read_ctx, buf, bufsz, hlist,
+    return qdec_header_process(dec, &read_ctx, buf, bufsz,
                                dec_buf, dec_buf_sz);
 }
 
@@ -4470,7 +4335,7 @@ qdec_process_blocked_headers (struct lsqpack_dec *dec)
             --dec->qpd_n_blocked;
             D_DEBUG("header block for stream %"PRIu64" has become unblocked",
                 read_ctx->hbrc_stream_id);
-            dec->qpd_hblock_unblocked(read_ctx->hbrc_hblock);
+            dec->qpd_dh_if->dhi_unblocked(read_ctx->hbrc_hblock);
         }
     }
 }
@@ -4711,6 +4576,18 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                                                     + WINR.alloced_val_len);
                 if (!WINR.entry)
                     return -1;
+                if (WINR.is_static)
+                {
+                    WINR.entry->dte_flags = DTEF_NAME_HASH;
+                    WINR.entry->dte_name_hash = name_hashes[WINR.name_idx];
+                }
+                else
+                {
+                    WINR.entry->dte_flags = WINR.reffed_entry->dte_flags
+                                                            & DTEF_NAME_HASH;
+                    WINR.entry->dte_name_hash
+                                        = WINR.reffed_entry->dte_name_hash;
+                }
                 WINR.entry->dte_name_len = WINR.name_len;
                 WINR.nread = 0;
                 WINR.val_off = 0;
@@ -4826,6 +4703,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 WONR.entry = malloc(size);
                 if (!WONR.entry)
                     return -1;
+                WONR.entry->dte_flags = 0;
                 WONR.nread = 0;
                 WONR.str_off = 0;
                 if (WONR.is_huffman)
@@ -5080,28 +4958,6 @@ lsqpack_dec_print_table (const struct lsqpack_dec *dec, FILE *out)
         id = ID_PLUS(id, 1);
     }
     fprintf(out, "\n");
-}
-
-
-void
-lsqpack_dec_destroy_header_list (struct lsqpack_header_list *hlist)
-{
-    struct header_internal *hint;
-    unsigned n;
-
-    for (n = 0; n < hlist->qhl_count; ++n)
-    {
-        hint = (struct header_internal *) hlist->qhl_headers[n];
-        if (hint->hi_entry)
-            qdec_decref_entry(hint->hi_entry);
-        if (hint->hi_flags & HI_OWN_NAME)
-            free((char *) hint->hi_uhead.qh_name);
-        if (hint->hi_flags & HI_OWN_VALUE)
-            free((char *) hint->hi_uhead.qh_value);
-        free(hint);
-    }
-    free(hlist->qhl_headers);
-    free(hlist);
 }
 
 
