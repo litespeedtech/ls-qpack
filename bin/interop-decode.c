@@ -71,6 +71,7 @@ usage (const char *name)
 "   -m NUMBER   Maximum read size.  Defaults to %zu.\n"
 "   -H [0|1]    Use HTTP/1.x mode and test each header (defaults to `off').\n"
 "   -v          Verbose: print headers and table state to stderr.\n"
+"   -S          Don't swap encoder stream and header blocks.\n"
 "\n"
 "   -h          Print this help screen and exit\n"
     , name, LSQPACK_DEF_MAX_RISKED_STREAMS, LSQPACK_DEF_DYN_TABLE_SIZE, SIZE_MAX);
@@ -106,7 +107,6 @@ struct buf
 
 
 TAILQ_HEAD(, buf) bufs = TAILQ_HEAD_INITIALIZER(bufs);
-
 
 static void
 hblock_unblocked (void *buf_p)
@@ -258,10 +258,11 @@ main (int argc, char **argv)
     char *line, *end;
     enum lsqpack_read_header_status rhs;
     struct lsqpack_header_list *hlist;
+    int do_swap = 1;
     char command[0x100];
     char line_buf[0x100];
 
-    while (-1 != (opt = getopt(argc, argv, "i:o:r:s:t:m:hvH:")))
+    while (-1 != (opt = getopt(argc, argv, "i:o:r:s:t:m:hvH:S")))
     {
         switch (opt)
         {
@@ -317,6 +318,9 @@ main (int argc, char **argv)
             exit(EXIT_SUCCESS);
         case 'v':
             ++s_verbose;
+            break;
+        case 'S':
+            do_swap = 0;
             break;
         case 'H':
             if (atoi(optarg))
@@ -456,6 +460,25 @@ main (int argc, char **argv)
             }
         }
         fclose(recipe);
+    }
+    else if (do_swap && max_risked_streams && dyn_table_size
+                    && TAILQ_FIRST(&bufs) && TAILQ_FIRST(&bufs)->stream_id)
+    {
+        /* Swap header blocks and encoder stream bufs to exercise blocked
+         * header blocks logic.
+         */
+        struct buf *saved_hblock = NULL, *next;
+        for (buf = TAILQ_FIRST(&bufs); buf; buf = next)
+        {
+            next = TAILQ_NEXT(buf, next_buf);
+            if (buf->stream_id)
+                continue;
+            if (saved_hblock)
+                TAILQ_INSERT_BEFORE(buf, saved_hblock, next_buf);
+            saved_hblock = buf;
+            TAILQ_REMOVE(&bufs, buf, next_buf);
+        }
+        TAILQ_INSERT_TAIL(&bufs, saved_hblock, next_buf);
     }
 
     while (buf = TAILQ_FIRST(&bufs), buf != NULL)
