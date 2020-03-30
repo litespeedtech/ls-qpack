@@ -390,6 +390,8 @@ main (int argc, char **argv)
             exit(EXIT_FAILURE);
         TAILQ_INSERT_TAIL(&bufs, buf, next_buf);
     }
+    (void) fclose(in);
+    in = NULL;
 
     if (recipe)
     {
