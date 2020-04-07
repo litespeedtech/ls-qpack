@@ -3331,7 +3331,10 @@ guarantee_out_bytes (struct lsqpack_dec *dec,
 
     assert(read_ctx->hbrc_out.xhdr);
     assert(read_ctx->hbrc_out.state == XOUT_VALUE);
-    off = read_ctx->hbrc_out.xhdr->val_offset + read_ctx->hbrc_out.off;
+    assert(read_ctx->hbrc_out.xhdr->val_offset
+                                    >= read_ctx->hbrc_out.xhdr->name_offset);
+    off = read_ctx->hbrc_out.xhdr->val_offset
+            - read_ctx->hbrc_out.xhdr->name_offset + read_ctx->hbrc_out.off;
 
     assert(read_ctx->hbrc_out.xhdr->val_len >= off);
     avail = read_ctx->hbrc_out.xhdr->val_len - off;
