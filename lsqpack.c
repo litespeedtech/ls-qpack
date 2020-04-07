@@ -3293,7 +3293,8 @@ header_out_grow_buf (struct lsqpack_dec *dec,
     if (read_ctx->hbrc_out.state == XOUT_NAME)
         off = read_ctx->hbrc_out.xhdr->name_offset + read_ctx->hbrc_out.off;
     else
-        off = read_ctx->hbrc_out.xhdr->val_offset + read_ctx->hbrc_out.off;
+        off = read_ctx->hbrc_out.xhdr->val_offset
+            - read_ctx->hbrc_out.xhdr->name_offset + read_ctx->hbrc_out.off;
 
     /* name_off and val_off are not set until the whole string has been
      * written.  Thus, `size' represents the number of bytes that was
@@ -3360,11 +3361,13 @@ get_dst (struct lsqpack_dec *dec,
     if (read_ctx->hbrc_out.state == XOUT_NAME)
         off = read_ctx->hbrc_out.xhdr->name_offset + read_ctx->hbrc_out.off;
     else
-        off = read_ctx->hbrc_out.xhdr->val_offset + read_ctx->hbrc_out.off;
+        off = read_ctx->hbrc_out.xhdr->val_offset
+            - read_ctx->hbrc_out.xhdr->name_offset + read_ctx->hbrc_out.off;
 
     assert(read_ctx->hbrc_out.xhdr->val_len >= off);
     *dst_size = read_ctx->hbrc_out.xhdr->val_len - off;
-    return (unsigned char *) read_ctx->hbrc_out.xhdr->buf + off;
+    return (unsigned char *) read_ctx->hbrc_out.xhdr->buf
+                                + read_ctx->hbrc_out.xhdr->name_offset + off;
 }
 
 
