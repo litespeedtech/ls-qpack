@@ -3359,7 +3359,7 @@ get_dst (struct lsqpack_dec *dec,
 
     assert(read_ctx->hbrc_out.xhdr);
     if (read_ctx->hbrc_out.state == XOUT_NAME)
-        off = read_ctx->hbrc_out.xhdr->name_offset + read_ctx->hbrc_out.off;
+        off = read_ctx->hbrc_out.off;
     else
         off = read_ctx->hbrc_out.xhdr->val_offset
             - read_ctx->hbrc_out.xhdr->name_offset + read_ctx->hbrc_out.off;

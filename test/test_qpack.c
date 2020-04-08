@@ -150,9 +150,10 @@ static const struct qpack_header_block_test
         .qhbt_lineno        = __LINE__,
         .qhbt_table_size    = 0x1000,
         .qhbt_max_risked_streams = 0,
-        .qhbt_n_headers     = 1,
+        .qhbt_n_headers     = 2,
         .qhbt_headers       = {
             { "dude", "where is my car?", 0, },
+            { ":method", "GET", 0, },
         },
         .qhbt_enc_sz        = 17,
         .qhbt_enc_buf       = {
@@ -164,13 +165,14 @@ static const struct qpack_header_block_test
         },
         .qhbt_prefix_sz     = 2,
         .qhbt_prefix_buf    = "\x00\x00",
-        .qhbt_header_sz     = 17,
+        .qhbt_header_sz     = 18,
         .qhbt_header_buf    = {
             0x20 | 0x08 | 3,
             0x92, 0xd9, 0x0b,
             0x80 | 0xC,
             0xf1, 0x39, 0x6c, 0x2a, 0x86, 0x42, 0x94, 0xfa,
             0x50, 0x83, 0xb3, 0xfc,
+            0x80 | 0x40 | 17,
         },
     },
 
@@ -279,6 +281,154 @@ run_header_test (const struct qpack_header_block_test *test)
 
     lsqpack_enc_cleanup(&enc);
 }
+
+
+struct dhte /* decoded header test ext */
+{
+    struct lsxpack_header       xhdr;
+    size_t                      buf_off;
+    char                        buf[0x1000];
+};
+
+
+static void
+dht_unblocked (void *hblock_ctx_p)
+{
+    assert(0);  /* Not expecting this to be called */
+}
+
+
+static struct lsxpack_header *
+dht_prepare_decode (void *hblock_ctx_p, struct lsxpack_header *xhdr, size_t space)
+{
+    struct dhte *const dhte = hblock_ctx_p;
+    size_t avail;
+
+    if (space > LSXPACK_MAX_STRLEN)
+        return NULL;
+
+    if (xhdr)
+    {
+        assert(xhdr == &dhte->xhdr);
+        assert(xhdr->val_len < space);
+        avail = sizeof(dhte->buf) - xhdr->name_offset - 1 /* NUL */;
+        if (avail < space)
+            return NULL;
+        xhdr->val_len = space;
+    }
+    else
+    {
+        avail = sizeof(dhte->buf) - dhte->buf_off - 1 /* NUL */;
+        if (avail < space)
+            return NULL;
+        lsxpack_header_prepare_decode(&dhte->xhdr, dhte->buf, dhte->buf_off,
+                                                                        space);
+    }
+
+    return &dhte->xhdr;
+}
+
+
+static int
+dht_process_header (void *hblock_ctx_p, struct lsxpack_header *xhdr)
+{
+    struct dhte *const dhte = hblock_ctx_p;
+
+    assert(xhdr == &dhte->xhdr);
+    dhte->buf_off += lsxpack_header_get_dec_size(xhdr);
+
+    return 0;
+}
+
+
+static void
+run_decoded_headers_test_ext (const struct qpack_header_block_test *test,
+                const enum lsqpack_dec_opts opts, const size_t name_offset)
+{
+    struct lsqpack_dec dec;
+    char exp_hbuf[0x1000];  /* Large enough to hold all headers */
+    struct dhte dhte;
+    size_t sz;
+    unsigned i;
+    int s;
+    enum lsqpack_read_header_status rhs;
+    const unsigned char *buf;
+    unsigned char dec_buf[LSQPACK_LONGEST_HEADER_ACK];
+    size_t dec_sz;
+    const struct lsqpack_dec_hset_if dht_if = {
+        .dhi_unblocked      = dht_unblocked,
+        .dhi_prepare_decode = dht_prepare_decode,
+        .dhi_process_header = dht_process_header,
+    };
+
+    /* Construct expected headers buffer: */
+    sz = 0;
+    exp_hbuf[0] = '\0';
+    for (i = 0; i < test->qhbt_n_headers; ++i)
+    {
+        strcpy(exp_hbuf + sz, test->qhbt_headers[i].name);
+        sz += strlen(test->qhbt_headers[i].name);
+        if (opts & LSQPACK_DEC_OPT_HTTP1X)
+        {
+            strcpy(exp_hbuf + sz, ": ");
+            sz += 2;
+        }
+        strcpy(exp_hbuf + sz, test->qhbt_headers[i].value);
+        sz += strlen(test->qhbt_headers[i].value);
+        if (opts & LSQPACK_DEC_OPT_HTTP1X)
+        {
+            strcpy(exp_hbuf + sz, "\r\n");
+            sz += 2;
+        }
+    }
+    assert(sz < sizeof(exp_hbuf));  /* Self-check */
+
+    /* Decode headers into dhte buffer */
+    dhte.buf_off = name_offset;
+    lsqpack_dec_init(&dec, NULL, test->qhbt_table_size,
+                                test->qhbt_max_risked_streams, &dht_if, opts);
+    if (test->qhbt_enc_sz)
+    {
+        s = lsqpack_dec_enc_in(&dec, test->qhbt_enc_buf, test->qhbt_enc_sz);
+        assert(s == 0);
+    }
+    assert(test->qhbt_header_sz);   /* Self-check */
+    buf = test->qhbt_prefix_buf;
+    dec_sz = sizeof(dec_buf);
+    rhs = lsqpack_dec_header_in(&dec, &dhte, 0,
+                test->qhbt_prefix_sz + test->qhbt_header_sz,
+                &buf, test->qhbt_prefix_sz,
+                dec_buf, &dec_sz);
+    assert(rhs == LQRHS_NEED);
+    assert(buf == test->qhbt_prefix_buf + test->qhbt_prefix_sz);
+    buf = test->qhbt_header_buf;
+    dec_sz = sizeof(dec_buf);
+    rhs = lsqpack_dec_header_read(&dec, &dhte,
+                &buf, test->qhbt_header_sz,
+                dec_buf, &dec_sz);
+    assert(rhs == LQRHS_DONE);
+    assert(buf == test->qhbt_header_buf + test->qhbt_header_sz);
+    lsqpack_dec_cleanup(&dec);
+
+    /* Now compare the buffers */
+    dhte.buf[dhte.buf_off] = '\0';
+    s = strcmp(dhte.buf + name_offset, exp_hbuf);
+    assert(s == 0);
+}
+
+
+static void
+run_decoded_headers_test (const struct qpack_header_block_test *test)
+{
+    const enum lsqpack_dec_opts opts[] = { 0, LSQPACK_DEC_OPT_HTTP1X, };
+    const size_t offs[] = { 0, 1, 20, };
+    unsigned i, j;
+
+    for (i = 0; i < sizeof(opts) / sizeof(opts[0]); ++i)
+        for (j = 0; j < sizeof(offs) / sizeof(offs[0]); ++j)
+            run_decoded_headers_test_ext(test, opts[i], offs[j]);
+}
+
 
 static void
 run_header_cancellation_test(const struct qpack_header_block_test *test) {
@@ -901,7 +1051,10 @@ main (void)
 
     for (i = 0; i < sizeof(header_block_tests)
                                 / sizeof(header_block_tests[0]); ++i)
+    {
         run_header_test(&header_block_tests[i]);
+        run_decoded_headers_test(&header_block_tests[i]);
+    }
 
     run_header_cancellation_test(&header_block_tests[0]);
     test_enc_init();
