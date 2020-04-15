@@ -501,16 +501,6 @@ const struct lsqpack_dec_err *
 lsqpack_dec_get_err_info (const struct lsqpack_dec *);
 
 /**
- * Look for match in static table.
- *
- * Return a non-negative integer on success -- that's the static table ID --
- * or -1 on failure.
- */
-int
-lsqpack_get_stx_tab_id (const char *name, size_t,
-                                            const char *val, size_t val_len);
-
-/**
  * Enum for name/value entries in the static table.  Use it to speed up
  * encoding by setting xhdr->qpack_index and LSXPACK_QPACK_IDX flag.  If
  * it's a full match, set LSXPACK_VAL_MATCHED flag as well.

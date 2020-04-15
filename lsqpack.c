@@ -729,41 +729,6 @@ lsqpack_find_in_static_headers (uint32_t name_hash, const char *name,
 }
 
 
-int
-lsqpack_get_stx_tab_id (const char *name, size_t name_len,
-                                            const char *val, size_t val_len)
-{
-    unsigned name_hash, nameval_hash, id;
-
-    name_hash = XXH32(name, name_len, LSQPACK_XXH_SEED);
-    nameval_hash = XXH32(val, val_len, name_hash);
-
-    id = nameval2id_plus_one[ (nameval_hash >> XXH_NAMEVAL_SHIFT)
-                                    & ((1 << XXH_NAMEVAL_WIDTH) - 1) ];
-    if (id > 1)
-    {
-        --id;
-        if (static_table[id].name_len == name_len
-                && static_table[id].val_len == val_len
-                && memcmp(static_table[id].name, name, name_len) == 0
-                && memcmp(static_table[id].val, val, val_len) == 0)
-            return id;
-    }
-
-    id = name2id_plus_one[ (name_hash >> XXH_NAME_SHIFT)
-                                    & ((1 << XXH_NAME_WIDTH) - 1) ];
-    if (id > 0)
-    {
-        --id;
-        if (static_table[id].name_len == name_len
-                && memcmp(static_table[id].name, name, name_len) == 0)
-            return id;
-    }
-
-    return -1;
-}
-
-
 static unsigned
 lsqpack_val2len (uint64_t value, unsigned prefix_bits)
 {
