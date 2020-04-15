@@ -42,12 +42,134 @@
 #include "lsqpack.h"
 #include "lsxpack_header.h"
 #include "xxhash.h"
+#ifndef DEBUG
+#include "lsqpack-test.h"
+#endif
+
+#ifndef NDEBUG
+struct static_table_entry
+{
+    const char       *name;
+    const char       *val;
+    unsigned          name_len;
+    unsigned          val_len;
+};
+
+/* [draft-ietf-quic-qpack-03] Appendix A */
+static const struct static_table_entry static_table[] =
+{
+    {":authority", "", 10, 0,},
+    {":path", "/", 5, 1,},
+    {"age", "0", 3, 1,},
+    {"content-disposition", "", 19, 0,},
+    {"content-length", "0", 14, 1,},
+    {"cookie", "", 6, 0,},
+    {"date", "", 4, 0,},
+    {"etag", "", 4, 0,},
+    {"if-modified-since", "", 17, 0,},
+    {"if-none-match", "", 13, 0,},
+    {"last-modified", "", 13, 0,},
+    {"link", "", 4, 0,},
+    {"location", "", 8, 0,},
+    {"referer", "", 7, 0,},
+    {"set-cookie", "", 10, 0,},
+    {":method", "CONNECT", 7, 7,},
+    {":method", "DELETE", 7, 6,},
+    {":method", "GET", 7, 3,},
+    {":method", "HEAD", 7, 4,},
+    {":method", "OPTIONS", 7, 7,},
+    {":method", "POST", 7, 4,},
+    {":method", "PUT", 7, 3,},
+    {":scheme", "http", 7, 4,},
+    {":scheme", "https", 7, 5,},
+    {":status", "103", 7, 3,},
+    {":status", "200", 7, 3,},
+    {":status", "304", 7, 3,},
+    {":status", "404", 7, 3,},
+    {":status", "503", 7, 3,},
+    {"accept", "*/*", 6, 3,},
+    {"accept", "application/dns-message", 6, 23,},
+    {"accept-encoding", "gzip, deflate, br", 15, 17,},
+    {"accept-ranges", "bytes", 13, 5,},
+    {"access-control-allow-headers", "cache-control", 28, 13,},
+    {"access-control-allow-headers", "content-type", 28, 12,},
+    {"access-control-allow-origin", "*", 27, 1,},
+    {"cache-control", "max-age=0", 13, 9,},
+    {"cache-control", "max-age=2592000", 13, 15,},
+    {"cache-control", "max-age=604800", 13, 14,},
+    {"cache-control", "no-cache", 13, 8,},
+    {"cache-control", "no-store", 13, 8,},
+    {"cache-control", "public, max-age=31536000", 13, 24,},
+    {"content-encoding", "br", 16, 2,},
+    {"content-encoding", "gzip", 16, 4,},
+    {"content-type", "application/dns-message", 12, 23,},
+    {"content-type", "application/javascript", 12, 22,},
+    {"content-type", "application/json", 12, 16,},
+    {"content-type", "application/x-www-form-urlencoded", 12, 33,},
+    {"content-type", "image/gif", 12, 9,},
+    {"content-type", "image/jpeg", 12, 10,},
+    {"content-type", "image/png", 12, 9,},
+    {"content-type", "text/css", 12, 8,},
+    {"content-type", "text/html; charset=utf-8", 12, 24,},
+    {"content-type", "text/plain", 12, 10,},
+    {"content-type", "text/plain;charset=utf-8", 12, 24,},
+    {"range", "bytes=0-", 5, 8,},
+    {"strict-transport-security", "max-age=31536000", 25, 16,},
+    {"strict-transport-security", "max-age=31536000; includesubdomains",
+                                                                25, 35,},
+    {"strict-transport-security",
+                "max-age=31536000; includesubdomains; preload", 25, 44,},
+    {"vary", "accept-encoding", 4, 15,},
+    {"vary", "origin", 4, 6,},
+    {"x-content-type-options", "nosniff", 22, 7,},
+    {"x-xss-protection", "1; mode=block", 16, 13,},
+    {":status", "100", 7, 3,},
+    {":status", "204", 7, 3,},
+    {":status", "206", 7, 3,},
+    {":status", "302", 7, 3,},
+    {":status", "400", 7, 3,},
+    {":status", "403", 7, 3,},
+    {":status", "421", 7, 3,},
+    {":status", "425", 7, 3,},
+    {":status", "500", 7, 3,},
+    {"accept-language", "", 15, 0,},
+    {"access-control-allow-credentials", "FALSE", 32, 5,},
+    {"access-control-allow-credentials", "TRUE", 32, 4,},
+    {"access-control-allow-headers", "*", 28, 1,},
+    {"access-control-allow-methods", "get", 28, 3,},
+    {"access-control-allow-methods", "get, post, options", 28, 18,},
+    {"access-control-allow-methods", "options", 28, 7,},
+    {"access-control-expose-headers", "content-length", 29, 14,},
+    {"access-control-request-headers", "content-type", 30, 12,},
+    {"access-control-request-method", "get", 29, 3,},
+    {"access-control-request-method", "post", 29, 4,},
+    {"alt-svc", "clear", 7, 5,},
+    {"authorization", "", 13, 0,},
+    {"content-security-policy",
+            "script-src 'none'; object-src 'none'; base-uri 'none'", 23, 53,},
+    {"early-data", "1", 10, 1,},
+    {"expect-ct", "", 9, 0,},
+    {"forwarded", "", 9, 0,},
+    {"if-range", "", 8, 0,},
+    {"origin", "", 6, 0,},
+    {"purpose", "prefetch", 7, 8,},
+    {"server", "", 6, 0,},
+    {"timing-allow-origin", "*", 19, 1,},
+    {"upgrade-insecure-requests", "1", 25, 1,},
+    {"user-agent", "", 10, 0,},
+    {"x-forwarded-for", "", 15, 0,},
+    {"x-frame-options", "deny", 15, 4,},
+    {"x-frame-options", "sameorigin", 15, 10,},
+};
+#endif
 
 static size_t s_max_read_size = SIZE_MAX;
 
 static int s_verbose;
 static enum lsqpack_dec_opts s_dec_opts = LSQPACK_DEC_OPT_HASH_NAME
                                         | LSQPACK_DEC_OPT_HASH_NAMEVAL;
+
+static int s_check_unset_qpack_idx = 1;
 
 static FILE *s_out;
 
@@ -72,6 +194,7 @@ usage (const char *name)
 "   -H [0|1]    Use HTTP/1.x mode and test each header (defaults to `off').\n"
 "   -v          Verbose: print headers and table state to stderr.\n"
 "   -S          Don't swap encoder stream and header blocks.\n"
+"   -Q          Don't check static table when LSXPACK_QPACK_IDX is not set.\n"
 "\n"
 "   -h          Print this help screen and exit\n"
     , name, LSQPACK_DEF_MAX_RISKED_STREAMS, LSQPACK_DEF_DYN_TABLE_SIZE, SIZE_MAX);
@@ -154,7 +277,7 @@ process_header (void *hblock_ctx, struct lsxpack_header *xhdr)
     struct buf *const buf = hblock_ctx;
     const char *p;
     const uint32_t seed = 39378473;
-    uint32_t hash;
+    uint32_t hash, name_hash;
     int nw;
 
     if (s_dec_opts & LSQPACK_DEC_OPT_HTTP1X)
@@ -180,9 +303,14 @@ process_header (void *hblock_ctx, struct lsxpack_header *xhdr)
 
     if (xhdr->flags & LSXPACK_NAME_HASH)
     {
-        hash = XXH32(lsxpack_header_get_name(xhdr), xhdr->name_len, seed);
+        name_hash = XXH32(lsxpack_header_get_name(xhdr), xhdr->name_len, seed);
         assert(hash == xhdr->name_hash);
     }
+#ifndef NDEBUG
+    else if (!(xhdr->flags & LSXPACK_QPACK_IDX))
+        /* Calculate for upcoming "not in static table check" */
+        name_hash = XXH32(lsxpack_header_get_name(xhdr), xhdr->name_len, seed);
+#endif
 
     if (s_dec_opts & LSQPACK_DEC_OPT_HASH_NAMEVAL)
     {
@@ -199,6 +327,28 @@ process_header (void *hblock_ctx, struct lsxpack_header *xhdr)
         hash = XXH32(lsxpack_header_get_value(xhdr), xhdr->val_len, hash);
         assert(hash == xhdr->nameval_hash);
     }
+
+#ifndef NDEBUG
+    if (xhdr->flags & LSXPACK_QPACK_IDX)
+    {
+        assert(xhdr->qpack_index <
+                            sizeof(static_table) / sizeof(static_table[0]));
+        assert(static_table[xhdr->qpack_index].name_len == xhdr->name_len);
+        assert(0 == memcmp(lsxpack_header_get_name(xhdr),
+                        static_table[xhdr->qpack_index].name, xhdr->name_len));
+    }
+    else if (s_check_unset_qpack_idx)
+    {
+        /* The decoder does best effort: if the encoder did not use the
+         * static table, QPACK index is not set.  However, since we are
+         * testing our decoder, we assume that the encoder always uses
+         * the static table when it can.
+         */
+        int idx = lsqpack_find_in_static_headers(name_hash,
+                            lsxpack_header_get_name(xhdr), xhdr->name_len);
+        assert(idx < 0);
+    }
+#endif
 
     nw = snprintf(buf->out_buf + buf->out_off,
             sizeof(buf->out_buf) - buf->out_off,
@@ -262,7 +412,7 @@ main (int argc, char **argv)
     char command[0x100];
     char line_buf[0x100];
 
-    while (-1 != (opt = getopt(argc, argv, "i:o:r:s:t:m:hvH:S")))
+    while (-1 != (opt = getopt(argc, argv, "i:o:r:s:t:m:hvH:SQ")))
     {
         switch (opt)
         {
@@ -327,6 +477,9 @@ main (int argc, char **argv)
                 s_dec_opts |= LSQPACK_DEC_OPT_HTTP1X;
             else
                 s_dec_opts &= ~LSQPACK_DEC_OPT_HTTP1X;
+            break;
+        case 'Q':
+            s_check_unset_qpack_idx = 0;
             break;
         default:
             exit(EXIT_FAILURE);

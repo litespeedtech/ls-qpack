@@ -705,8 +705,12 @@ find_in_static_full (uint32_t nameval_hash, const char *name,
 }
 
 
-static int
-find_in_static_headers (uint32_t name_hash, const char *name, unsigned name_len)
+#ifdef NDEBUG
+static
+#endif
+int
+lsqpack_find_in_static_headers (uint32_t name_hash, const char *name,
+                                                            unsigned name_len)
 {
     unsigned id;
 
@@ -1825,7 +1829,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         goto static_name_match;
     }
     else
-        static_id = find_in_static_headers(name_hash, name, name_len);
+        static_id = lsqpack_find_in_static_headers(name_hash, name, name_len);
     if (static_id >= 0)
     {
   static_name_match:
@@ -2551,9 +2555,11 @@ struct lsqpack_dec_table_entry
     unsigned    dte_refcnt;
     unsigned    dte_name_hash;
     unsigned    dte_nameval_hash;
+    unsigned    dte_name_idx;
     enum {
         DTEF_NAME_HASH      = 1 << 0,
         DTEF_NAMEVAL_HASH   = 1 << 1,
+        DTEF_NAME_IDX       = 1 << 2,
     }           dte_flags;
     char        dte_buf[0];     /* Contains both name and value */
 };
@@ -3062,6 +3068,11 @@ header_out_dynamic_entry (struct lsqpack_dec *dec,
         xhdr->flags |= LSXPACK_NAMEVAL_HASH;
         xhdr->nameval_hash = entry->dte_nameval_hash;
     }
+    if (entry->dte_flags & DTEF_NAME_IDX)
+    {
+        xhdr->flags |= LSXPACK_QPACK_IDX;
+        xhdr->qpack_index = entry->dte_name_idx;
+    }
     xhdr->dec_overhead = http1x;
     xhdr->name_len = entry->dte_name_len;
     xhdr->val_len = entry->dte_val_len;
@@ -3153,6 +3164,11 @@ header_out_begin_dynamic_nameref (struct lsqpack_dec *dec,
     {
         xhdr->flags |= LSXPACK_NAME_HASH;
         xhdr->name_hash = entry->dte_name_hash;
+    }
+    if (entry->dte_flags & DTEF_NAME_IDX)
+    {
+        xhdr->flags |= LSXPACK_QPACK_IDX;
+        xhdr->qpack_index = entry->dte_name_idx;
     }
     xhdr->name_len = entry->dte_name_len;
     dst = xhdr->buf + xhdr->name_offset;
@@ -4584,15 +4600,17 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                     return -1;
                 if (WINR.is_static)
                 {
-                    WINR.entry->dte_flags = DTEF_NAME_HASH;
+                    WINR.entry->dte_flags = DTEF_NAME_HASH | DTEF_NAME_IDX;
                     WINR.entry->dte_name_hash = name_hashes[WINR.name_idx];
+                    WINR.entry->dte_name_idx = WINR.name_idx;
                 }
                 else
                 {
                     WINR.entry->dte_flags = WINR.reffed_entry->dte_flags
-                                                            & DTEF_NAME_HASH;
+                                            & (DTEF_NAME_HASH|DTEF_NAME_IDX);
                     WINR.entry->dte_name_hash
                                         = WINR.reffed_entry->dte_name_hash;
+                    WINR.entry->dte_name_idx = WINR.reffed_entry->dte_name_idx;
                 }
                 WINR.entry->dte_name_len = WINR.name_len;
                 WINR.nread = 0;
