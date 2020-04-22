@@ -44,7 +44,7 @@ typedef SSIZE_T ssize_t;
 
 #define LSQPACK_MAJOR_VERSION 2
 #define LSQPACK_MINOR_VERSION 1
-#define LSQPACK_PATCH_VERSION 0
+#define LSQPACK_PATCH_VERSION 1
 
 /** Let's start with four billion for now */
 typedef unsigned lsqpack_abs_id_t;
@@ -453,6 +453,19 @@ lsqpack_dec_write_ici (struct lsqpack_dec *, unsigned char *, size_t);
 ssize_t
 lsqpack_dec_cancel_stream (struct lsqpack_dec *, void *hblock_ctx,
                                 unsigned char *buf, size_t buf_sz);
+
+/**
+ * Generate Cancel Stream instruction for stream `stream_id'.  Call when
+ * abandoning stream (see [draft-ietf-quic-qpack-14] Section 2.2.2.2).
+ *
+ * Return values:
+ *  -1  error (`buf' is too short)
+ *   0  Emitting Cancel Stream instruction is unnecessary
+ *  >0  Size of Cancel Stream instruction written to `buf'.
+ */
+ssize_t
+lsqpack_dec_cancel_stream_id (struct lsqpack_dec *dec, uint64_t stream_id,
+                                        unsigned char *buf, size_t buf_sz);
 
 /**
  * Delete reference to the header block context `hblock_ctx'.  Use this
