@@ -59,7 +59,8 @@ int main(int argc, const char * argv[]) {
 
         size_t usedHeaderSize = 0, headerSize = sizeof(headerBuffer);
 
-        struct lsxpack_header header = {};
+        struct lsxpack_header header;
+        memset(&header, 0, sizeof(header));
 
         const char *name, *value;
 
