@@ -42,13 +42,9 @@ extern "C" {
 typedef SSIZE_T ssize_t;
 #endif
 
-/* Until the RFC is published, the minor version will be the same as the
- * draft version, while the major version will be zero.  For example,
- * qpack-11 (if such draft ever published) will correspond to version 0.11.
- */
-#define LSQPACK_MAJOR_VERSION 0
-#define LSQPACK_MINOR_VERSION 14
-#define LSQPACK_PATCH_VERSION 0
+#define LSQPACK_MAJOR_VERSION 1
+#define LSQPACK_MINOR_VERSION 0
+#define LSQPACK_PATCH_VERSION 2
 
 /** Let's start with four billion for now */
 typedef unsigned lsqpack_abs_id_t;
