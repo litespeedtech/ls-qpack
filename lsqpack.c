@@ -4567,6 +4567,38 @@ lsqpack_dec_cancel_stream (struct lsqpack_dec *dec, void *hblock,
 }
 
 
+ssize_t
+lsqpack_dec_cancel_stream_id (struct lsqpack_dec *dec, uint64_t stream_id,
+                                        unsigned char *buf, size_t buf_sz)
+{
+    unsigned char *p;
+
+    /* From qpack-14: "A decoder with a maximum dynamic table capacity
+     * equal to zero MAY omit sending Stream Cancellations..."
+     */
+    if (dec->qpd_max_capacity == 0)
+        return 0;
+
+    if (buf_sz == 0)
+        return -1;
+
+    *buf = 0x40;
+    p = lsqpack_enc_int(buf, buf + buf_sz, stream_id, 6);
+    if (p > buf)
+    {
+        D_DEBUG("generate Cancel Stream %"PRIu64" instruction of %u bytes",
+            stream_id, (unsigned) (p - buf));
+        return p - buf;
+    }
+    else
+    {
+        D_DEBUG("cannot generate Cancel Stream instruction for stream %"PRIu64
+            "; buf size=%zu", stream_id, buf_sz);
+        return -1;
+    }
+}
+
+
 static int
 lsqpack_dec_push_entry (struct lsqpack_dec *dec,
                                         struct lsqpack_dec_table_entry *entry)
