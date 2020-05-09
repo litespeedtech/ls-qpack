@@ -1144,7 +1144,8 @@ qenc_add_to_risked_list (struct lsqpack_enc *enc,
     TAILQ_INSERT_TAIL(&enc->qpe_risked_hinfos, hinfo, qhi_next_risked);
     if (enc->qpe_cur_header.other_at_risk)
     {
-        hinfo->qhi_same_stream_id = enc->qpe_cur_header.other_at_risk;
+        hinfo->qhi_same_stream_id
+                    = enc->qpe_cur_header.other_at_risk->qhi_same_stream_id;
         enc->qpe_cur_header.other_at_risk->qhi_same_stream_id = hinfo;
     }
     else
@@ -1171,7 +1172,7 @@ qenc_remove_from_risked_list (struct lsqpack_enc *enc,
     else
     {
         for (prev = hinfo->qhi_same_stream_id;
-                                    prev->qhi_same_stream_id != hinfo; ++prev)
+            prev->qhi_same_stream_id != hinfo; prev = prev->qhi_same_stream_id)
             ;
         prev->qhi_same_stream_id = hinfo->qhi_same_stream_id;
         hinfo->qhi_same_stream_id = hinfo;
