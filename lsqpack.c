@@ -705,8 +705,12 @@ find_in_static_full (uint32_t nameval_hash, const char *name,
 }
 
 
-static int
-find_in_static_headers (uint32_t name_hash, const char *name, unsigned name_len)
+#ifdef NDEBUG
+static
+#endif
+int
+lsqpack_find_in_static_headers (uint32_t name_hash, const char *name,
+                                                            unsigned name_len)
 {
     unsigned id;
 
@@ -722,41 +726,6 @@ find_in_static_headers (uint32_t name_hash, const char *name, unsigned name_len)
         return id;
     else
         return -1;
-}
-
-
-int
-lsqpack_get_stx_tab_id (const char *name, size_t name_len,
-                                            const char *val, size_t val_len)
-{
-    unsigned name_hash, nameval_hash, id;
-
-    name_hash = XXH32(name, name_len, LSQPACK_XXH_SEED);
-    nameval_hash = XXH32(val, val_len, name_hash);
-
-    id = nameval2id_plus_one[ (nameval_hash >> XXH_NAMEVAL_SHIFT)
-                                    & ((1 << XXH_NAMEVAL_WIDTH) - 1) ];
-    if (id > 1)
-    {
-        --id;
-        if (static_table[id].name_len == name_len
-                && static_table[id].val_len == val_len
-                && memcmp(static_table[id].name, name, name_len) == 0
-                && memcmp(static_table[id].val, val, val_len) == 0)
-            return id;
-    }
-
-    id = name2id_plus_one[ (name_hash >> XXH_NAME_SHIFT)
-                                    & ((1 << XXH_NAME_WIDTH) - 1) ];
-    if (id > 0)
-    {
-        --id;
-        if (static_table[id].name_len == name_len
-                && memcmp(static_table[id].name, name, name_len) == 0)
-            return id;
-    }
-
-    return -1;
 }
 
 
@@ -1175,7 +1144,8 @@ qenc_add_to_risked_list (struct lsqpack_enc *enc,
     TAILQ_INSERT_TAIL(&enc->qpe_risked_hinfos, hinfo, qhi_next_risked);
     if (enc->qpe_cur_header.other_at_risk)
     {
-        hinfo->qhi_same_stream_id = enc->qpe_cur_header.other_at_risk;
+        hinfo->qhi_same_stream_id
+                    = enc->qpe_cur_header.other_at_risk->qhi_same_stream_id;
         enc->qpe_cur_header.other_at_risk->qhi_same_stream_id = hinfo;
     }
     else
@@ -1202,7 +1172,7 @@ qenc_remove_from_risked_list (struct lsqpack_enc *enc,
     else
     {
         for (prev = hinfo->qhi_same_stream_id;
-                                    prev->qhi_same_stream_id != hinfo; ++prev)
+            prev->qhi_same_stream_id != hinfo; prev = prev->qhi_same_stream_id)
             ;
         prev->qhi_same_stream_id = hinfo->qhi_same_stream_id;
         hinfo->qhi_same_stream_id = hinfo;
@@ -1825,7 +1795,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         goto static_name_match;
     }
     else
-        static_id = find_in_static_headers(name_hash, name, name_len);
+        static_id = lsqpack_find_in_static_headers(name_hash, name, name_len);
     if (static_id >= 0)
     {
   static_name_match:
@@ -2551,9 +2521,11 @@ struct lsqpack_dec_table_entry
     unsigned    dte_refcnt;
     unsigned    dte_name_hash;
     unsigned    dte_nameval_hash;
+    unsigned    dte_name_idx;
     enum {
         DTEF_NAME_HASH      = 1 << 0,
         DTEF_NAMEVAL_HASH   = 1 << 1,
+        DTEF_NAME_IDX       = 1 << 2,
     }           dte_flags;
     char        dte_buf[0];     /* Contains both name and value */
 };
@@ -3062,6 +3034,11 @@ header_out_dynamic_entry (struct lsqpack_dec *dec,
         xhdr->flags |= LSXPACK_NAMEVAL_HASH;
         xhdr->nameval_hash = entry->dte_nameval_hash;
     }
+    if (entry->dte_flags & DTEF_NAME_IDX)
+    {
+        xhdr->flags |= LSXPACK_QPACK_IDX;
+        xhdr->qpack_index = entry->dte_name_idx;
+    }
     xhdr->dec_overhead = http1x;
     xhdr->name_len = entry->dte_name_len;
     xhdr->val_len = entry->dte_val_len;
@@ -3153,6 +3130,11 @@ header_out_begin_dynamic_nameref (struct lsqpack_dec *dec,
     {
         xhdr->flags |= LSXPACK_NAME_HASH;
         xhdr->name_hash = entry->dte_name_hash;
+    }
+    if (entry->dte_flags & DTEF_NAME_IDX)
+    {
+        xhdr->flags |= LSXPACK_QPACK_IDX;
+        xhdr->qpack_index = entry->dte_name_idx;
     }
     xhdr->name_len = entry->dte_name_len;
     dst = xhdr->buf + xhdr->name_offset;
@@ -4440,6 +4422,38 @@ lsqpack_dec_cancel_stream (struct lsqpack_dec *dec, void *hblock,
 }
 
 
+ssize_t
+lsqpack_dec_cancel_stream_id (struct lsqpack_dec *dec, uint64_t stream_id,
+                                        unsigned char *buf, size_t buf_sz)
+{
+    unsigned char *p;
+
+    /* From qpack-14: "A decoder with a maximum dynamic table capacity
+     * equal to zero MAY omit sending Stream Cancellations..."
+     */
+    if (dec->qpd_max_capacity == 0)
+        return 0;
+
+    if (buf_sz == 0)
+        return -1;
+
+    *buf = 0x40;
+    p = lsqpack_enc_int(buf, buf + buf_sz, stream_id, 6);
+    if (p > buf)
+    {
+        D_DEBUG("generate Cancel Stream %"PRIu64" instruction of %u bytes",
+            stream_id, (unsigned) (p - buf));
+        return p - buf;
+    }
+    else
+    {
+        D_DEBUG("cannot generate Cancel Stream instruction for stream %"PRIu64
+            "; buf size=%zu", stream_id, buf_sz);
+        return -1;
+    }
+}
+
+
 static int
 lsqpack_dec_push_entry (struct lsqpack_dec *dec,
                                         struct lsqpack_dec_table_entry *entry)
@@ -4584,15 +4598,17 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                     return -1;
                 if (WINR.is_static)
                 {
-                    WINR.entry->dte_flags = DTEF_NAME_HASH;
+                    WINR.entry->dte_flags = DTEF_NAME_HASH | DTEF_NAME_IDX;
                     WINR.entry->dte_name_hash = name_hashes[WINR.name_idx];
+                    WINR.entry->dte_name_idx = WINR.name_idx;
                 }
                 else
                 {
                     WINR.entry->dte_flags = WINR.reffed_entry->dte_flags
-                                                            & DTEF_NAME_HASH;
+                                            & (DTEF_NAME_HASH|DTEF_NAME_IDX);
                     WINR.entry->dte_name_hash
                                         = WINR.reffed_entry->dte_name_hash;
+                    WINR.entry->dte_name_idx = WINR.reffed_entry->dte_name_idx;
                 }
                 WINR.entry->dte_name_len = WINR.name_len;
                 WINR.nread = 0;

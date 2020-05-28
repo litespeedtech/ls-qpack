@@ -43,8 +43,8 @@ typedef SSIZE_T ssize_t;
 #endif
 
 #define LSQPACK_MAJOR_VERSION 2
-#define LSQPACK_MINOR_VERSION 0
-#define LSQPACK_PATCH_VERSION 5
+#define LSQPACK_MINOR_VERSION 1
+#define LSQPACK_PATCH_VERSION 2
 
 /** Let's start with four billion for now */
 typedef unsigned lsqpack_abs_id_t;
@@ -455,6 +455,19 @@ lsqpack_dec_cancel_stream (struct lsqpack_dec *, void *hblock_ctx,
                                 unsigned char *buf, size_t buf_sz);
 
 /**
+ * Generate Cancel Stream instruction for stream `stream_id'.  Call when
+ * abandoning stream (see [draft-ietf-quic-qpack-14] Section 2.2.2.2).
+ *
+ * Return values:
+ *  -1  error (`buf' is too short)
+ *   0  Emitting Cancel Stream instruction is unnecessary
+ *  >0  Size of Cancel Stream instruction written to `buf'.
+ */
+ssize_t
+lsqpack_dec_cancel_stream_id (struct lsqpack_dec *dec, uint64_t stream_id,
+                                        unsigned char *buf, size_t buf_sz);
+
+/**
  * Delete reference to the header block context `hblock_ctx'.  Use this
  * instead of @ref lsqpack_dec_cancel_stream() when producing a Cancel Stream
  * instruction is not necessary.
@@ -499,16 +512,6 @@ struct lsqpack_dec_err
 
 const struct lsqpack_dec_err *
 lsqpack_dec_get_err_info (const struct lsqpack_dec *);
-
-/**
- * Look for match in static table.
- *
- * Return a non-negative integer on success -- that's the static table ID --
- * or -1 on failure.
- */
-int
-lsqpack_get_stx_tab_id (const char *name, size_t,
-                                            const char *val, size_t val_len);
 
 /**
  * Enum for name/value entries in the static table.  Use it to speed up

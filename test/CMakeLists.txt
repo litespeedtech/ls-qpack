@@ -21,7 +21,7 @@ lsqpack_add_test(enc_str)
 lsqpack_add_test(huff_dec)
 lsqpack_add_test(read_enc_stream)
 lsqpack_add_test(qpack)
-lsqpack_add_test(get_stx_id)
+lsqpack_add_test(circ_list)
 
 if(MSVC)
     message(WARNING "Scenario tests are disabled on Windows (TODO)")

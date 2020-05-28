@@ -40,4 +40,8 @@ lsqpack_huff_decode_full (const unsigned char *src, int src_len,
             unsigned char *dst, int dst_len,
             struct lsqpack_huff_decode_state *state, int final);
 
+int
+lsqpack_find_in_static_headers (uint32_t name_hash, const char *name,
+                                                        unsigned name_len);
+
 #endif

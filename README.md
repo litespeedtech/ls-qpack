@@ -63,3 +63,6 @@ The API is documented in the header file, [lsqpack.h](lsqpack.h).
 One example how it is used in real code can be seen in
 [lsquic](https://github.com/litespeedtech/lsquic), a QUIC and HTTP/3 library
 developed by LiteSpeed Technologies.
+
+A different API, without the use of `struct lsxpack_header`, is available
+on branch-v1.

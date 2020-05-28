@@ -20,3 +20,5 @@ lsqpack_add_executable(interop-encode)
 lsqpack_add_executable(interop-decode)
 lsqpack_add_executable(encode-int)
 lsqpack_add_executable(fuzz-decode)
+
+target_include_directories(interop-decode PRIVATE ../test)
