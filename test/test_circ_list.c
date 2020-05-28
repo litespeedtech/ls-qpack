@@ -66,9 +66,9 @@ int main(int argc, const char * argv[]) {
 
         lsqpack_enc_start_header(&qpackEncoder, 0, i);
 
-        name = ":authority"; value = "localhost";
+        name = ":authority" "localhost";
 
-        lsxpack_header_set_ptr(&header, name, strlen(name), value, strlen(value));
+        lsxpack_header_set_offset2(&header, name, 0, strlen(":authority"), strlen(":authority"), strlen("localhost"));
 
         enum lsqpack_enc_status status = lsqpack_enc_encode(&qpackEncoder, &encoderBuffer[usedEncoderSize], &encoderSize, &headerBuffer[usedHeaderSize], &headerSize, &header, (enum lsqpack_enc_flags)0);
 

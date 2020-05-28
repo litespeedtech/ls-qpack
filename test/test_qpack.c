@@ -218,6 +218,31 @@ static const struct qpack_header_block_test
 };
 
 
+struct header_buf
+{
+    unsigned    off;
+    char        buf[UINT16_MAX];
+};
+
+
+int
+header_set_ptr (struct lsxpack_header *hdr, struct header_buf *header_buf,
+                const char *name, size_t name_len,
+                const char *val, size_t val_len)
+{
+    if (header_buf->off + name_len + val_len <= sizeof(header_buf->buf))
+    {
+        memcpy(header_buf->buf + header_buf->off, name, name_len);
+        memcpy(header_buf->buf + header_buf->off + name_len, val, val_len);
+        lsxpack_header_set_offset2(hdr, header_buf->buf + header_buf->off,
+                                            0, name_len, name_len, val_len);
+        header_buf->off += name_len + val_len;
+        return 0;
+    }
+    else
+        return -1;
+}
+
 static void
 run_header_test (const struct qpack_header_block_test *test)
 {
@@ -233,6 +258,7 @@ run_header_test (const struct qpack_header_block_test *test)
     float ratio;
     unsigned char dec_buf[LSQPACK_LONGEST_SDTC];
     struct lsxpack_header xhdr;
+    struct header_buf hbuf;
 
     dec_sz = sizeof(dec_buf);
     s = lsqpack_enc_init(&enc, stderr, test->qhbt_table_size,
@@ -251,11 +277,13 @@ run_header_test (const struct qpack_header_block_test *test)
         header_sz = 0;
         while (1)
         {
-            lsxpack_header_set_ptr(&xhdr,
+            hbuf.off = 0;
+            s = header_set_ptr(&xhdr, &hbuf,
                     test->qhbt_headers[i].name,
                     strlen(test->qhbt_headers[i].name),
                     test->qhbt_headers[i].value,
                     strlen(test->qhbt_headers[i].value));
+            assert(s == 0);
             enc_st = lsqpack_enc_encode(&enc,
                     enc_buf + enc_off, &enc_sz,
                     header_buf + header_off, &header_sz,
@@ -453,6 +481,7 @@ run_header_cancellation_test(const struct qpack_header_block_test *test) {
     int s;
     enum lsqpack_enc_status enc_st;
     struct lsxpack_header xhdr;
+    struct header_buf hbuf;
 
     s = lsqpack_enc_init(&enc, stderr, 0, 0, test->qhbt_max_risked_streams, 
                          LSQPACK_ENC_OPT_IX_AGGR, NULL, NULL);
@@ -464,7 +493,8 @@ run_header_cancellation_test(const struct qpack_header_block_test *test) {
     header_sz = HEADER_BUF_SZ;
     enc_sz = 0;
 
-    lsxpack_header_set_ptr(&xhdr,
+    hbuf.off = 0;
+    header_set_ptr(&xhdr, &hbuf,
             test->qhbt_headers[0].name,
             strlen(test->qhbt_headers[0].name),
             test->qhbt_headers[0].value,
@@ -553,6 +583,7 @@ test_push_promise (void)
     size_t header_sz, enc_sz, dec_sz;
     enum lsqpack_enc_header_flags hflags;
     struct lsxpack_header xhdr;
+    struct header_buf hbuf;
 
     dec_sz = sizeof(dec_buf);
     s = lsqpack_enc_init(&enc, stderr, 0x1000, 0x1000, 100, 0, dec_buf, &dec_sz);
@@ -564,14 +595,15 @@ test_push_promise (void)
     assert(0 == s);
     enc_sz = sizeof(enc_buf);
     header_sz = sizeof(header_buf);
-    lsxpack_header_set_ptr(&xhdr, ":method", 7, "dude!", 5);
+    hbuf.off = 0;
+    header_set_ptr(&xhdr, &hbuf, ":method", 7, "dude!", 5);
     enc_st = lsqpack_enc_encode(&enc,
             enc_buf, &enc_sz, header_buf, &header_sz,
             &xhdr, 0);
     assert(LQES_OK == enc_st);
     enc_sz = sizeof(enc_buf);
     header_sz = sizeof(header_buf);
-    lsxpack_header_set_ptr(&xhdr, ":method", 7, "dude!", 5);
+    header_set_ptr(&xhdr, &hbuf, ":method", 7, "dude!", 5);
     enc_st = lsqpack_enc_encode(&enc,
             enc_buf, &enc_sz, header_buf, &header_sz,
             &xhdr, 0);
@@ -586,14 +618,14 @@ test_push_promise (void)
     assert(0 == s);
     enc_sz = sizeof(enc_buf);
     header_sz = sizeof(header_buf);
-    lsxpack_header_set_ptr(&xhdr, ":method", 7, "dude!", 5);
+    header_set_ptr(&xhdr, &hbuf, ":method", 7, "dude!", 5);
     enc_st = lsqpack_enc_encode(&enc,
             enc_buf, &enc_sz, header_buf, &header_sz,
             &xhdr, LQEF_NO_HIST_UPD|LQEF_NO_DYN);
     assert(LQES_OK == enc_st);
     enc_sz = sizeof(enc_buf);
     header_sz = sizeof(header_buf);
-    lsxpack_header_set_ptr(&xhdr, ":method", 7, "where is my car?", 16);
+    header_set_ptr(&xhdr, &hbuf, ":method", 7, "where is my car?", 16);
     enc_st = lsqpack_enc_encode(&enc,
             enc_buf, &enc_sz, header_buf, &header_sz,
             &xhdr, LQEF_NO_HIST_UPD|LQEF_NO_DYN);
@@ -607,7 +639,7 @@ test_push_promise (void)
     assert(0 == s);
     enc_sz = sizeof(enc_buf);
     header_sz = sizeof(header_buf);
-    lsxpack_header_set_ptr(&xhdr, ":method", 7, "where is my car?", 16);
+    header_set_ptr(&xhdr, &hbuf, ":method", 7, "where is my car?", 16);
     enc_st = lsqpack_enc_encode(&enc,
             enc_buf, &enc_sz, header_buf, &header_sz,
             &xhdr, 0);
@@ -914,6 +946,7 @@ test_enc_risked_streams_test (const char *test)
     unsigned char *end_cmd;
     int expect_failure;
     struct lsxpack_header xhdr;
+    struct header_buf hbuf;
 
     const struct {
         const char *name;
@@ -928,6 +961,7 @@ test_enc_risked_streams_test (const char *test)
 
     fprintf(stderr, "BEGIN TEST %s\n", test);
     lsqpack_enc_preinit(&enc, stderr);
+    hbuf.off = 0;
 
     while (1)
     {
@@ -964,7 +998,7 @@ test_enc_risked_streams_test (const char *test)
             arg = strtol(test, (char**)&test, 10);
             sz = sizeof(buf);
             /* We ignore the output */
-            lsxpack_header_set_ptr(&xhdr,
+            header_set_ptr(&xhdr, &hbuf,
                         headers[arg].name, headers[arg].name_len,
                         headers[arg].value, headers[arg].value_len);
             es = lsqpack_enc_encode(&enc, buf, &sz, buf, &sz, &xhdr, 0);
