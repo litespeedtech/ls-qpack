@@ -2888,8 +2888,15 @@ parse_header_data (struct lsqpack_dec *,
 float
 lsqpack_dec_ratio (const struct lsqpack_dec *dec)
 {
-    if (dec->qpd_bytes_in)
-        return (float) dec->qpd_bytes_in / (float) dec->qpd_bytes_out;
+    float ratio;
+
+    if (dec->qpd_bytes_out)
+    {
+        ratio = (float) dec->qpd_bytes_in / (float) dec->qpd_bytes_out;
+        D_DEBUG("bytes in: %u; bytes out: %u, ratio: %.3f",
+                            dec->qpd_bytes_out, dec->qpd_bytes_in, ratio);
+        return ratio;
+    }
     else
         return 0;
 }
