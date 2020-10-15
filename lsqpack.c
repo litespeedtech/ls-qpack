@@ -1272,6 +1272,7 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz,
             if (qenc_hinfo_at_risk(enc, hinfo))
                 *header_flags |= LSQECH_REF_AT_RISK;
         }
+        enc->qpe_bytes_out += dst - end + sz;
         return dst - end + sz;
     }
 
@@ -1290,6 +1291,7 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz,
         enc->qpe_flags &= ~LSQPACK_ENC_HEADER;
         if (header_flags)
             *header_flags = enc->qpe_cur_header.flags;
+        enc->qpe_bytes_out += 2;
         return 2;
     }
     else
@@ -3261,6 +3263,8 @@ header_out_write_value (struct lsqpack_dec *dec,
             xhdr->flags |= LSXPACK_NAMEVAL_HASH;
         }
         r = dec->qpd_dh_if->dhi_process_header(read_ctx->hbrc_hblock, xhdr);
+        if (r == 0)
+            dec->qpd_bytes_out += xhdr->name_len + xhdr->val_len;
         ++read_ctx->hbrc_header_count;
         memset(&read_ctx->hbrc_out, 0, sizeof(read_ctx->hbrc_out));
         if (r != 0)
@@ -4120,6 +4124,7 @@ qdec_try_writing_header_ack (struct lsqpack_dec *dec, uint64_t stream_id,
         if (p > dec_buf)
         {
             *dec_buf_sz = p - dec_buf;
+            dec->qpd_bytes_in += p - dec_buf;
             return 0;
         }
     }
@@ -4360,6 +4365,7 @@ lsqpack_dec_write_ici (struct lsqpack_dec *dec, unsigned char *buf, size_t sz)
         {
             D_DEBUG("wrote ICI: count=%u", count);
             dec->qpd_largest_known_id = dec->qpd_last_id;
+            dec->qpd_bytes_in += p - buf;
             return p - buf;
         }
         else
@@ -4418,6 +4424,7 @@ lsqpack_dec_cancel_stream (struct lsqpack_dec *dec, void *hblock,
         D_DEBUG("cancelled stream %"PRIu64"; generate instruction of %u bytes",
             read_ctx->hbrc_stream_id, (unsigned) (p - buf));
         destroy_header_block_read_ctx(dec, read_ctx);
+        dec->qpd_bytes_in += p - buf;
         return p - buf;
     }
     else
@@ -4450,6 +4457,7 @@ lsqpack_dec_cancel_stream_id (struct lsqpack_dec *dec, uint64_t stream_id,
     {
         D_DEBUG("generate Cancel Stream %"PRIu64" instruction of %u bytes",
             stream_id, (unsigned) (p - buf));
+        dec->qpd_bytes_in += p - buf;
         return p - buf;
     }
     else
