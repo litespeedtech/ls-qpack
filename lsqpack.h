@@ -678,7 +678,7 @@ struct lsqpack_dec
     unsigned                qpd_cur_capacity;
     unsigned                qpd_max_risked_streams;
     unsigned                qpd_max_entries;
-    /* Used to calculate estimated compression ratio.  Note that the `out'
+    /* Used to calculate estimated compression ratio.  Note that the `in'
      * part contains bytes sent on the decoder stream, as it also counts
      * toward the overhead.
      */
