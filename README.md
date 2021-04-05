@@ -53,7 +53,7 @@ Before the QPACK RFC is released, the three parts of the version are:
 - MINOR: set to the number of QPACK Internet-Draft the lirbary supports; and
 - PATCH: set to the patch number
 
-Once the RFC is released, MARJO will be set to 1 and the version will follow
+Once the RFC is released, MAJOR will be set to 1 and the version will follow
 the usual MAJOR.MINOR.PATCH pattern.
 
 ## API
