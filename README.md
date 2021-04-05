@@ -17,8 +17,7 @@ it before the final RFC is released.
 ## Functionality
 
 ls-qpack is a full-featured, tested, and fast QPACK library.  The QPACK encoder
-produces excellent compression results based on an innovative mnemonic technique
-(to be described in a future article).  It boasts the fastest Huffman
+produces excellent compression results based on an [innovative mnemonic technique](https://blog.litespeedtech.com/2021/04/05/qpack-mnemonic-technique/).  It boasts the fastest Huffman
 [encoder](https://blog.litespeedtech.com/2019/10/03/fast-huffman-encoder/) and
 [decoder](https://blog.litespeedtech.com/2019/09/16/fast-huffman-decoder/).
 
