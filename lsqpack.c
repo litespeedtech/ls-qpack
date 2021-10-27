@@ -3653,7 +3653,8 @@ parse_header_data (struct lsqpack_dec *dec,
             break;
         case DATA_STATE_READ_VAL_HUFFMAN:
             size = MIN((unsigned) (end - buf), DATA.left);
-            assert(size);
+            if (size == 0)
+                RETURN_ERROR();
             dst = get_dst(dec, read_ctx, &dst_size);
             hdr = lsqpack_huff_decode(buf, size, dst, dst_size,
                     &DATA.dec_huff_state, DATA.left == size);
@@ -3686,9 +3687,11 @@ parse_header_data (struct lsqpack_dec *dec,
             break;
         case DATA_STATE_READ_VAL_PLAIN:
             size = MIN((unsigned) (end - buf), DATA.left);
-            assert(size);
+            if (size == 0)
+                RETURN_ERROR();
             dst = get_dst(dec, read_ctx, &dst_size);
-            assert(size <= dst_size);
+            if (size > dst_size)
+                RETURN_ERROR();
             memcpy(dst, buf, size);
             if (0 != header_out_write_value(dec, read_ctx,
                                                 size, DATA.left == size))
@@ -3723,7 +3726,8 @@ parse_header_data (struct lsqpack_dec *dec,
             break;
         case DATA_STATE_READ_NAME_HUFFMAN:
             size = MIN((unsigned) (end - buf), DATA.left);
-            assert(size);
+            if (size == 0)
+                RETURN_ERROR();
             dst = get_dst(dec, read_ctx, &dst_size);
             hdr = lsqpack_huff_decode(buf, size, dst, dst_size,
                     &DATA.dec_huff_state, DATA.left == size);
@@ -3756,9 +3760,11 @@ parse_header_data (struct lsqpack_dec *dec,
             break;
         case DATA_STATE_READ_NAME_PLAIN:
             size = MIN((unsigned) (end - buf), DATA.left);
-            assert(size);
+            if (size == 0)
+                RETURN_ERROR();
             dst = get_dst(dec, read_ctx, &dst_size);
-            assert(size <= dst_size);
+            if (size > dst_size)
+                RETURN_ERROR();
             memcpy(dst, buf, size);
             if (0 != header_out_write_name(dec, read_ctx,
                                                 size, DATA.left == size))

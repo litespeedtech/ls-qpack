@@ -5,7 +5,7 @@
 /*
 MIT License
 
-Copyright (c) 2018 - 2020 LiteSpeed Technologies Inc
+Copyright (c) 2018 - 2021 LiteSpeed Technologies Inc
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -44,7 +44,7 @@ typedef SSIZE_T ssize_t;
 
 #define LSQPACK_MAJOR_VERSION 2
 #define LSQPACK_MINOR_VERSION 2
-#define LSQPACK_PATCH_VERSION 1
+#define LSQPACK_PATCH_VERSION 2
 
 /** Let's start with four billion for now */
 typedef unsigned lsqpack_abs_id_t;
