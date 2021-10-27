@@ -474,7 +474,8 @@ main (int argc, char **argv)
         }
         while (1)
         {
-            lsxpack_header_set_ptr(&xhdr, line, tab - line, tab + 1, end - tab - 1);
+            lsxpack_header_set_offset2(&xhdr, line, 0, tab - line,
+                                            tab + 1 - line, end - tab - 1);
             st = lsqpack_enc_encode(&encoder, enc_buf + enc_off, &enc_sz,
                         hea_buf + hea_off, &hea_sz, &xhdr, 0);
             switch (st)

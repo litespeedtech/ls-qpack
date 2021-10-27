@@ -43,8 +43,8 @@ typedef SSIZE_T ssize_t;
 #endif
 
 #define LSQPACK_MAJOR_VERSION 2
-#define LSQPACK_MINOR_VERSION 1
-#define LSQPACK_PATCH_VERSION 2
+#define LSQPACK_MINOR_VERSION 2
+#define LSQPACK_PATCH_VERSION 1
 
 /** Let's start with four billion for now */
 typedef unsigned lsqpack_abs_id_t;
@@ -765,7 +765,7 @@ struct lsqpack_dec
     unsigned                qpd_cur_capacity;
     unsigned                qpd_max_risked_streams;
     unsigned                qpd_max_entries;
-    /* Used to calculate estimated compression ratio.  Note that the `out'
+    /* Used to calculate estimated compression ratio.  Note that the `in'
      * part contains bytes sent on the decoder stream, as it also counts
      * toward the overhead.
      */

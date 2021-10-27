@@ -17,8 +17,7 @@ it before the final RFC is released.
 ## Functionality
 
 ls-qpack is a full-featured, tested, and fast QPACK library.  The QPACK encoder
-produces excellent compression results based on an innovative mnemonic technique
-(to be described in a future article).  It boasts the fastest Huffman
+produces excellent compression results based on an [innovative mnemonic technique](https://blog.litespeedtech.com/2021/04/05/qpack-mnemonic-technique/).  It boasts the fastest Huffman
 [encoder](https://blog.litespeedtech.com/2019/10/03/fast-huffman-encoder/) and
 [decoder](https://blog.litespeedtech.com/2019/09/16/fast-huffman-decoder/).
 
@@ -54,7 +53,7 @@ Before the QPACK RFC is released, the three parts of the version are:
 - MINOR: set to the number of QPACK Internet-Draft the lirbary supports; and
 - PATCH: set to the patch number
 
-Once the RFC is released, MARJO will be set to 1 and the version will follow
+Once the RFC is released, MAJOR will be set to 1 and the version will follow
 the usual MAJOR.MINOR.PATCH pattern.
 
 ## API
