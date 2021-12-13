@@ -7,10 +7,6 @@ function(lsqpack_add_executable TARGET)
 
     if(MSVC)
         target_include_directories(${TARGET} PRIVATE ../wincompat)
-        target_sources(${TARGET} PRIVATE 
-            ../wincompat/getopt.c 
-            ../wincompat/getopt1.c
-        )
     else()
         target_link_libraries(${TARGET} PRIVATE m)
     endif()
