@@ -5,6 +5,7 @@ function(lsqpack_add_test TARGET)
 
     if(MSVC)
         target_include_directories(test_${TARGET} PRIVATE ../wincompat)
+        target_link_libraries(test_${TARGET} ${GETOPT_LIB})
     else()
         target_link_libraries(test_${TARGET} m)
     endif()
