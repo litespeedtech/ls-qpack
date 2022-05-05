@@ -350,7 +350,8 @@ enc_free_hinfo (struct lsqpack_enc *enc, struct lsqpack_header_info *hinfo)
 static int
 enc_use_dynamic_table (const struct lsqpack_enc *enc)
 {
-    return enc->qpe_cur_header.hinfo != NULL
+    return enc->qpe_max_entries > 0
+        && enc->qpe_cur_header.hinfo != NULL
         && enc->qpe_cur_header.hinfo->qhi_bytes_inserted
                                                 < enc->qpe_cur_max_capacity / 2;
 }
