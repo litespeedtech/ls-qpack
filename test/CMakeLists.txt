@@ -40,7 +40,7 @@ endif()
 find_package(Perl)
 
 if(PERL_FOUND)
-    message(STATUS "Found Perl interpreter: ${PERL}")
+    message(STATUS "Found Perl interpreter: ${PERL_EXECUTABLE}")
     file(GLOB QIFS qifs/*.qif)
     
     foreach(QIF ${QIFS})
@@ -54,7 +54,7 @@ if(PERL_FOUND)
                         
                         add_test(
                             NAME ${TEST_NAME}
-                            COMMAND ${PERL} run-qif.pl --table-size ${TABLE_SIZE} --risked-streams ${RISKED_STREAMS} --immed-ack ${IMMEDIATE_ACK} --aggressive ${AGGRESSIVE} ${QIF}
+                            COMMAND ${PERL_EXECUTABLE} run-qif.pl --table-size ${TABLE_SIZE} --risked-streams ${RISKED_STREAMS} --immed-ack ${IMMEDIATE_ACK} --aggressive ${AGGRESSIVE} ${QIF}
                             WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/test
                         )
                         
