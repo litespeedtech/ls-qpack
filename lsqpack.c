@@ -4073,15 +4073,6 @@ qdec_insert_header_block (struct lsqpack_dec *dec,
 }
 
 
-static void
-qdec_remove_header_block (struct lsqpack_dec *dec,
-                        struct header_block_read_ctx *read_ctx)
-{
-    TAILQ_REMOVE(&dec->qpd_hbrcs, read_ctx, hbrc_next_all);
-    read_ctx->hbrc_flags &= ~HBRC_ON_LIST;
-}
-
-
 static int
 stash_blocked_header (struct lsqpack_dec *dec,
                         struct header_block_read_ctx *read_ctx)
@@ -4230,8 +4221,7 @@ qdec_header_process (struct lsqpack_dec *dec,
 
     if (read_ctx->hbrc_flags & HBRC_ON_LIST)
     {
-        qdec_remove_header_block(dec, read_ctx);
-        free(read_ctx);
+        destroy_header_block_read_ctx(dec, read_ctx);
     }
 
     return st;
