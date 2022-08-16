@@ -43,7 +43,7 @@ typedef SSIZE_T ssize_t;
 #endif
 
 #define LSQPACK_MAJOR_VERSION 2
-#define LSQPACK_MINOR_VERSION 3
+#define LSQPACK_MINOR_VERSION 4
 #define LSQPACK_PATCH_VERSION 0
 
 /** Let's start with four billion for now */
