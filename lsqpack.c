@@ -4308,7 +4308,19 @@ qdec_remove_overflow_entries (struct lsqpack_dec *dec)
 static void
 qdec_update_max_capacity (struct lsqpack_dec *dec, unsigned new_capacity)
 {
+    unsigned old_max_entries;
     dec->qpd_cur_max_capacity = new_capacity;
+    old_max_entries = dec->qpd_max_entries;
+    dec->qpd_max_entries = dec->qpd_cur_max_capacity / DYNAMIC_ENTRY_OVERHEAD;
+    if (old_max_entries != dec->qpd_max_entries)
+    {
+        if (dec->qpd_last_id == dec->qpd_largest_known_id
+            && dec->qpd_last_id == old_max_entries * 2 - 1)
+        {
+            dec->qpd_last_id = dec->qpd_max_entries * 2 - 1;
+            dec->qpd_largest_known_id = dec->qpd_max_entries * 2 - 1;
+        }
+    }
     qdec_remove_overflow_entries(dec);
 }
 
