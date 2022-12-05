@@ -44,6 +44,7 @@ for wrapping into a library for a higher-level language.  As of this writing, we
 know of the following wrappers:
 - Go: [ls-qpack-go](https://github.com/mpiraux/ls-qpack-go)
 - Python: [pylsqpack](https://github.com/aiortc/pylsqpack)
+- Rust: [ls-qpack-rs](https://github.com/BiagioFesta/ls-qpack-rs)
 - TypeScript: [quicker](https://github.com/rmarx/quicker/tree/draft-20/lib/ls-qpack)
 
 ## Versioning
