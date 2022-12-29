@@ -338,7 +338,7 @@ enc_free_hinfo (struct lsqpack_enc *enc, struct lsqpack_header_info *hinfo)
     STAILQ_FOREACH(hiarr, &enc->qpe_hinfo_arrs, hia_next)
         if (hinfo >= hiarr->hia_hinfos && hinfo < &hiarr->hia_hinfos[64])
         {
-            slot = hinfo - hiarr->hia_hinfos;
+            slot = (unsigned)(hinfo - hiarr->hia_hinfos);
             hiarr->hia_slots &= ~(1ULL << slot);
             TAILQ_REMOVE(&enc->qpe_all_hinfos, &hiarr->hia_hinfos[slot], qhi_next_all);
             return;
@@ -821,7 +821,7 @@ lsqpack_enc_enc_str (unsigned prefix_bits, unsigned char *const dst,
             lsqpack_enc_int_nocheck(dst, enc_size_bytes, prefix_bits);
             p = qenc_huffman_enc(str, str + str_len, dst + len_size);
             assert((unsigned) (p - dst) == len_size + enc_size_bytes);
-            return p - dst;
+            return (int)(p - dst);
         }
         else
             return -1;
@@ -898,9 +898,9 @@ static void
 update_ema (float *val, unsigned new)
 {
     if (*val)
-        *val = (new - *val) * 0.4 + *val;
+        *val = (float)((new - *val) * 0.4 + *val);
     else
-        *val = new;
+        *val = (float)new;
 }
 
 
@@ -1273,7 +1273,7 @@ lsqpack_enc_end_header (struct lsqpack_enc *enc, unsigned char *buf, size_t sz,
             if (qenc_hinfo_at_risk(enc, hinfo))
                 *header_flags |= LSQECH_REF_AT_RISK;
         }
-        enc->qpe_bytes_out += dst - end + sz;
+        enc->qpe_bytes_out += (unsigned)(dst - end + sz);
         return dst - end + sz;
     }
 
@@ -1980,7 +1980,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         dst += r;
         enc_sz = dst - enc_buf;
         break;
-    default:
+    case EEA_NONE: default:
         assert(EEA_NONE == prog.ep_enc_action);
         enc_sz = 0;
         break;
@@ -2066,7 +2066,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         dst += (unsigned) r;
         hea_sz = dst - hea_buf;
         break;
-    default:
+    case EHA_LIT_WITH_NAME_STAT: default:
         assert(prog.ep_hea_action == EHA_LIT_WITH_NAME_STAT);
         *dst = 0x40
                | (((flags & LQEF_NEVER_INDEX) > 0) << 5)
@@ -2108,7 +2108,7 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
                                                             new_entry->ete_id);
         }
         break;
-    default:
+    case ETA_NOOP: default:
         assert(prog.ep_tab_action == ETA_NOOP);
         break;
     }
@@ -2139,11 +2139,11 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     }
 
     enc->qpe_bytes_in += name_len + value_len;
-    enc->qpe_bytes_out += enc_sz + hea_sz;
+    enc->qpe_bytes_out += (unsigned)(enc_sz + hea_sz);
     if (enc->qpe_bytes_out > (1u << (sizeof(enc->qpe_bytes_out) * 8 - 1)))
     {
-        enc->qpe_bytes_in = (float) enc->qpe_bytes_in
-                                    / (float) enc->qpe_bytes_out * 1000;
+        enc->qpe_bytes_in = (int)((float) enc->qpe_bytes_in
+                                    / (float) enc->qpe_bytes_out * 1000);
         enc->qpe_bytes_out = 1000;
         E_DEBUG("reset bytes in/out counters, ratio: %.3f",
                                                     lsqpack_enc_ratio(enc));
@@ -2371,7 +2371,7 @@ lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
         }
         else
         {
-            nread = (state->resume ? state->nread : 0) + (src - orig_src);
+            nread = (state->resume ? state->nread : 0) + (unsigned)(src - orig_src);
             if (nread < LSQPACK_UINT64_ENC_SZ)
             {
                 state->val = val;
@@ -2476,7 +2476,7 @@ lsqpack_enc_decoder_in (struct lsqpack_enc *enc,
             break;
         }
     }
-    enc->qpe_bytes_out += buf_sz;
+    enc->qpe_bytes_out += (unsigned)buf_sz;
 
     return 0;
 }
@@ -2983,12 +2983,12 @@ header_out_static_entry (struct lsqpack_dec *dec,
     if (!xhdr)
         return -1;
 
-    xhdr->dec_overhead = http1x;
-    xhdr->qpack_index = idx;
+    xhdr->dec_overhead = (uint8_t)http1x;
+    xhdr->qpack_index = (uint8_t)idx;
     xhdr->flags |= LSXPACK_VAL_MATCHED | LSXPACK_QPACK_IDX
                 | LSXPACK_NAME_HASH | LSXPACK_NAMEVAL_HASH;
-    xhdr->name_len = static_table[ idx ].name_len;
-    xhdr->val_len = static_table[ idx ].val_len;
+    xhdr->name_len = (lsxpack_strlen_t)static_table[ idx ].name_len;
+    xhdr->val_len = (lsxpack_strlen_t)(static_table[ idx ].val_len);
     xhdr->name_hash = name_hashes[ idx ];
     xhdr->nameval_hash = nameval_hashes[ idx ];
     dst = xhdr->buf + xhdr->name_offset;
@@ -2999,7 +2999,7 @@ header_out_static_entry (struct lsqpack_dec *dec,
         memcpy(dst, ": ", 2);
         dst += 2;
     }
-    xhdr->val_offset = dst - xhdr->buf;
+    xhdr->val_offset = (lsxpack_strlen_t)(dst - xhdr->buf);
     memcpy(dst, static_table[ idx ].val, static_table[ idx ].val_len);
     dst += static_table[ idx ].val_len;
     if (http1x)
@@ -3047,11 +3047,11 @@ header_out_dynamic_entry (struct lsqpack_dec *dec,
     if (entry->dte_flags & DTEF_NAME_IDX)
     {
         xhdr->flags |= LSXPACK_QPACK_IDX;
-        xhdr->qpack_index = entry->dte_name_idx;
+        xhdr->qpack_index = (uint8_t)entry->dte_name_idx;
     }
-    xhdr->dec_overhead = http1x;
-    xhdr->name_len = entry->dte_name_len;
-    xhdr->val_len = entry->dte_val_len;
+    xhdr->dec_overhead = (uint8_t)http1x;
+    xhdr->name_len = (lsxpack_strlen_t)entry->dte_name_len;
+    xhdr->val_len = (lsxpack_strlen_t)entry->dte_val_len;
     dst = xhdr->buf + xhdr->name_offset;
     memcpy(dst, DTE_NAME(entry), entry->dte_name_len);
     dst += entry->dte_name_len;
@@ -3060,7 +3060,7 @@ header_out_dynamic_entry (struct lsqpack_dec *dec,
         memcpy(dst, ": ", 2);
         dst += 2;
     }
-    xhdr->val_offset = dst - xhdr->buf;
+    xhdr->val_offset = (lsxpack_strlen_t)(dst - xhdr->buf);
     memcpy(dst, DTE_VALUE(entry), entry->dte_val_len);
     dst += entry->dte_val_len;
     if (http1x)
@@ -3092,13 +3092,13 @@ header_out_begin_static_nameref (struct lsqpack_dec *dec,
     if (!xhdr)
         return -1;
 
-    xhdr->dec_overhead = http1x;
-    xhdr->qpack_index = idx;
+    xhdr->dec_overhead = (uint8_t)http1x;
+    xhdr->qpack_index = (uint8_t)idx;
     xhdr->flags |= LSXPACK_QPACK_IDX | LSXPACK_NAME_HASH;
     xhdr->name_hash = name_hashes[ idx ];
     if (is_never)
         xhdr->flags |= LSXPACK_NEVER_INDEX;
-    xhdr->name_len = static_table[ idx ].name_len;
+    xhdr->name_len = (lsxpack_strlen_t)(static_table[ idx ].name_len);
     dst = xhdr->buf + xhdr->name_offset;
     memcpy(dst, static_table[ idx ].name, static_table[ idx ].name_len);
     dst += static_table[ idx ].name_len;
@@ -3107,7 +3107,7 @@ header_out_begin_static_nameref (struct lsqpack_dec *dec,
         memcpy(dst, ": ", 2);
         dst += 2;
     }
-    xhdr->val_offset = dst - xhdr->buf;
+    xhdr->val_offset = (lsxpack_strlen_t)(dst - xhdr->buf);
     read_ctx->hbrc_out.state = XOUT_VALUE;
     read_ctx->hbrc_out.off = 0;
     return 0;
@@ -3132,7 +3132,7 @@ header_out_begin_dynamic_nameref (struct lsqpack_dec *dec,
     if (!xhdr)
         return -1;
 
-    xhdr->dec_overhead = http1x;
+    xhdr->dec_overhead = (uint8_t)http1x;
     if (is_never)
         xhdr->flags |= LSXPACK_NEVER_INDEX;
     qdec_maybe_update_entry_hashes(dec, entry);
@@ -3144,9 +3144,9 @@ header_out_begin_dynamic_nameref (struct lsqpack_dec *dec,
     if (entry->dte_flags & DTEF_NAME_IDX)
     {
         xhdr->flags |= LSXPACK_QPACK_IDX;
-        xhdr->qpack_index = entry->dte_name_idx;
+        xhdr->qpack_index = (uint8_t)entry->dte_name_idx;
     }
-    xhdr->name_len = entry->dte_name_len;
+    xhdr->name_len = (lsxpack_strlen_t)entry->dte_name_len;
     dst = xhdr->buf + xhdr->name_offset;
     memcpy(dst, DTE_NAME(entry), entry->dte_name_len);
     dst += entry->dte_name_len;
@@ -3155,7 +3155,7 @@ header_out_begin_dynamic_nameref (struct lsqpack_dec *dec,
         memcpy(dst, ": ", 2);
         dst += 2;
     }
-    xhdr->val_offset = dst - xhdr->buf;
+    xhdr->val_offset = (lsxpack_strlen_t)(dst - xhdr->buf);
     read_ctx->hbrc_out.state = XOUT_VALUE;
     read_ctx->hbrc_out.off = 0;
     return 0;
@@ -3178,7 +3178,7 @@ header_out_begin_literal (struct lsqpack_dec *dec,
     if (!xhdr)
         return -1;
 
-    xhdr->dec_overhead = http1x;
+    xhdr->dec_overhead = (uint8_t)http1x;
     if (is_never)
         xhdr->flags |= LSXPACK_NEVER_INDEX;
     read_ctx->hbrc_out.state = XOUT_NAME;
@@ -3193,7 +3193,7 @@ header_out_write_name (struct lsqpack_dec *dec,
 {
     struct lsxpack_header *xhdr;    /* Shorthand */
 
-    read_ctx->hbrc_out.off += nwritten;
+    read_ctx->hbrc_out.off += (unsigned)nwritten;
 
     if (done)
     {
@@ -3210,11 +3210,11 @@ header_out_write_name (struct lsqpack_dec *dec,
             }
             memcpy(xhdr->buf + xhdr->name_offset + read_ctx->hbrc_out.off,
                                                                     ": ", 2);
-            xhdr->val_offset = xhdr->name_offset + read_ctx->hbrc_out.off + 2;
+            xhdr->val_offset = (lsxpack_strlen_t)(xhdr->name_offset + read_ctx->hbrc_out.off + 2);
         }
         else
-            xhdr->val_offset = xhdr->name_offset + read_ctx->hbrc_out.off;
-        xhdr->name_len = read_ctx->hbrc_out.off;
+            xhdr->val_offset = (lsxpack_strlen_t)(xhdr->name_offset + read_ctx->hbrc_out.off);
+        xhdr->name_len = (lsxpack_strlen_t)read_ctx->hbrc_out.off;
         read_ctx->hbrc_out.state = XOUT_VALUE;
         read_ctx->hbrc_out.off = 0;
         if (dec->qpd_opts & (LSQPACK_DEC_OPT_HASH_NAME
@@ -3237,7 +3237,7 @@ header_out_write_value (struct lsqpack_dec *dec,
     struct lsxpack_header *xhdr;    /* Shorthand */
     int r;
 
-    read_ctx->hbrc_out.off += nwritten;
+    read_ctx->hbrc_out.off += (unsigned)nwritten;
 
     if (done)
     {
@@ -3255,7 +3255,7 @@ header_out_write_value (struct lsqpack_dec *dec,
             memcpy(xhdr->buf + xhdr->val_offset + read_ctx->hbrc_out.off,
                                                                 "\r\n", 2);
         }
-        xhdr->val_len = read_ctx->hbrc_out.off;
+        xhdr->val_len = (lsxpack_strlen_t)read_ctx->hbrc_out.off;
         if (dec->qpd_opts & LSQPACK_DEC_OPT_HASH_NAME)
         {
             assert(xhdr->flags & LSXPACK_NAME_HASH);
@@ -3422,8 +3422,8 @@ lsqpack_huff_decode_full (const unsigned char *src, int src_len,
                 state->resume = 2;
                 return (const struct huff_decode_retval) {
                                 .status = HUFF_DEC_END_DST,
-                                .n_dst  = dst_len,
-                                .n_src  = p_src - src,
+                                .n_dst  = (unsigned)dst_len,
+                                .n_src  = (unsigned)(p_src - src),
                 };
             }
     case 2:
@@ -3436,8 +3436,8 @@ lsqpack_huff_decode_full (const unsigned char *src, int src_len,
                 state->resume = 3;
                 return (struct huff_decode_retval) {
                                 .status = HUFF_DEC_END_DST,
-                                .n_dst  = dst_len,
-                                .n_src  = p_src - src,
+                                .n_dst  = (unsigned)dst_len,
+                                .n_src  = (unsigned)(p_src - src),
                 };
             }
     case 3:
@@ -3451,16 +3451,16 @@ lsqpack_huff_decode_full (const unsigned char *src, int src_len,
     if (final)
         return (struct huff_decode_retval) {
                     .status = state->status.eos ? HUFF_DEC_OK : HUFF_DEC_ERROR,
-                    .n_dst  = p_dst - dst,
-                    .n_src  = p_src - src,
+                    .n_dst  = (unsigned)(p_dst - dst),
+                    .n_src  = (unsigned)(p_src - src),
         };
     else
     {
         state->resume = 1;
         return (struct huff_decode_retval) {
                     .status = HUFF_DEC_END_SRC,
-                    .n_dst  = p_dst - dst,
-                    .n_src  = p_src - src,
+                    .n_dst  = (unsigned)(p_dst - dst),
+                    .n_src  = (unsigned)(p_src - src),
         };
     }
 }
@@ -3657,7 +3657,7 @@ parse_header_data (struct lsqpack_dec *dec,
             if (size == 0)
                 RETURN_ERROR();
             dst = get_dst(dec, read_ctx, &dst_size);
-            hdr = lsqpack_huff_decode(buf, size, dst, dst_size,
+            hdr = lsqpack_huff_decode(buf, (int)size, dst, (int)dst_size,
                     &DATA.dec_huff_state, DATA.left == size);
             buf += hdr.n_src;
             DATA.left -= hdr.n_src;
@@ -3682,7 +3682,7 @@ parse_header_data (struct lsqpack_dec *dec,
                 if (0 != header_out_grow_buf(dec, read_ctx))
                     RETURN_ERROR();
                 break;
-            default:
+            case HUFF_DEC_ERROR: default:
                 RETURN_ERROR();
             }
             break;
@@ -3697,7 +3697,7 @@ parse_header_data (struct lsqpack_dec *dec,
             if (0 != header_out_write_value(dec, read_ctx,
                                                 size, DATA.left == size))
                 RETURN_ERROR();
-            DATA.left -= size;
+            DATA.left -= (unsigned)size;
             buf += size;
             if (DATA.left == 0)
                 DATA.state = DATA_STATE_NEXT_INSTRUCTION;
@@ -3730,7 +3730,7 @@ parse_header_data (struct lsqpack_dec *dec,
             if (size == 0)
                 RETURN_ERROR();
             dst = get_dst(dec, read_ctx, &dst_size);
-            hdr = lsqpack_huff_decode(buf, size, dst, dst_size,
+            hdr = lsqpack_huff_decode(buf, (int)size, dst, (int)dst_size,
                     &DATA.dec_huff_state, DATA.left == size);
             buf += hdr.n_src;
             DATA.left -= hdr.n_src;
@@ -3755,7 +3755,7 @@ parse_header_data (struct lsqpack_dec *dec,
                 if (0 != header_out_grow_buf(dec, read_ctx))
                     RETURN_ERROR();
                 break;
-            default:
+            case HUFF_DEC_ERROR: default:
                 RETURN_ERROR();
             }
             break;
@@ -3770,7 +3770,7 @@ parse_header_data (struct lsqpack_dec *dec,
             if (0 != header_out_write_name(dec, read_ctx,
                                                 size, DATA.left == size))
                 RETURN_ERROR();
-            DATA.left -= size;
+            DATA.left -= (unsigned)size;
             buf += size;
             if (DATA.left == 0)
                 DATA.state = DATA_STATE_BEGIN_READ_VAL_LEN;
@@ -3815,6 +3815,8 @@ parse_header_data (struct lsqpack_dec *dec,
             else
                 RETURN_ERROR();
             break;
+        case DATA_STATE_BEGIN_READ_LFPBNR_VAL_LEN: /* fall through */
+        case DATA_STATE_READ_LFPBNR_VAL_LEN: /* fall through */
         default:
             assert(0);
             RETURN_ERROR();
@@ -4122,7 +4124,7 @@ qdec_try_writing_header_ack (struct lsqpack_dec *dec, uint64_t stream_id,
         if (p > dec_buf)
         {
             *dec_buf_sz = p - dec_buf;
-            dec->qpd_bytes_in += p - dec_buf;
+            dec->qpd_bytes_in += (unsigned)(p - dec_buf);
             return 0;
         }
     }
@@ -4173,11 +4175,11 @@ qdec_header_process (struct lsqpack_dec *dec,
         else if (dec_buf_sz)
             *dec_buf_sz = 0;
         *buf = *buf + read_ctx->hbrc_buf.off;
-        dec->qpd_bytes_in += read_ctx->hbrc_orig_size;
+        dec->qpd_bytes_in += (unsigned)read_ctx->hbrc_orig_size;
         if (dec->qpd_bytes_out > (1u << (sizeof(dec->qpd_bytes_out) * 8 - 1)))
         {
-            dec->qpd_bytes_in = (float) dec->qpd_bytes_in
-                                        / (float) dec->qpd_bytes_out * 1000;
+            dec->qpd_bytes_in = (unsigned)((float) dec->qpd_bytes_in
+                                        / (float) dec->qpd_bytes_out * 1000);
             dec->qpd_bytes_out = 1000;
             D_DEBUG("reset bytes in/out counters, ratio: %.3f",
                                                         lsqpack_dec_ratio(dec));
@@ -4374,7 +4376,7 @@ lsqpack_dec_write_ici (struct lsqpack_dec *dec, unsigned char *buf, size_t sz)
         {
             D_DEBUG("wrote ICI: count=%u", count);
             dec->qpd_largest_known_id = dec->qpd_last_id;
-            dec->qpd_bytes_in += p - buf;
+            dec->qpd_bytes_in += (unsigned)(p - buf);
             return p - buf;
         }
         else
@@ -4433,7 +4435,7 @@ lsqpack_dec_cancel_stream (struct lsqpack_dec *dec, void *hblock,
         D_DEBUG("cancelled stream %"PRIu64"; generate instruction of %u bytes",
             read_ctx->hbrc_stream_id, (unsigned) (p - buf));
         destroy_header_block_read_ctx(dec, read_ctx);
-        dec->qpd_bytes_in += p - buf;
+        dec->qpd_bytes_in += (unsigned)(p - buf);
         return p - buf;
     }
     else
@@ -4466,7 +4468,7 @@ lsqpack_dec_cancel_stream_id (struct lsqpack_dec *dec, uint64_t stream_id,
     {
         D_DEBUG("generate Cancel Stream %"PRIu64" instruction of %u bytes",
             stream_id, (unsigned) (p - buf));
-        dec->qpd_bytes_in += p - buf;
+        dec->qpd_bytes_in += (unsigned)(p - buf);
         return p - buf;
     }
     else
@@ -4512,7 +4514,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
     int r;
 
     D_DEBUG("got %zu bytes of encoder stream", buf_sz);
-    dec->qpd_bytes_in += buf_sz;
+    dec->qpd_bytes_in += (unsigned)buf_sz;
 
 #define WINR dec->qpd_enc_state.ctx_u.with_namref
 #define WONR dec->qpd_enc_state.ctx_u.wo_namref
@@ -4657,7 +4659,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             break;
         case DEI_WINR_READ_VALUE_HUFFMAN:
             size = MIN((unsigned) (end - buf), WINR.val_len - WINR.nread);
-            hdr = lsqpack_huff_decode(buf, size,
+            hdr = lsqpack_huff_decode(buf, (int)size,
                     (unsigned char *) DTE_VALUE(WINR.entry) + WINR.val_off,
                     WINR.alloced_val_len - WINR.val_off,
                     &WINR.dec_huff_state, WINR.nread + size == WINR.val_len);
@@ -4699,7 +4701,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 WINR.nread += hdr.n_src;
                 WINR.val_off += hdr.n_dst;
                 break;
-            default:
+            case HUFF_DEC_ERROR: default:
                 return -1;
             }
             break;
@@ -4707,7 +4709,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             assert(WINR.alloced_val_len >= WINR.val_len);
             size = MIN((unsigned) (end - buf), WINR.val_len - WINR.val_off);
             memcpy(DTE_VALUE(WINR.entry) + WINR.val_off, buf, size);
-            WINR.val_off += size;
+            WINR.val_off += (unsigned)size;
             buf += size;
             if (WINR.val_off == WINR.val_len)
             {
@@ -4767,9 +4769,9 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 return -1;
         case DEI_WONR_READ_NAME_HUFFMAN:
             size = MIN((unsigned) (end - buf), WONR.str_len - WONR.nread);
-            hdr = lsqpack_huff_decode(buf, size,
+            hdr = lsqpack_huff_decode(buf, (int)size,
                     (unsigned char *) DTE_NAME(WONR.entry) + WONR.str_off,
-                    WONR.alloced_len - WONR.str_off,
+                    (int)(WONR.alloced_len - WONR.str_off),
                     &WONR.dec_huff_state, WONR.nread + size == WONR.str_len);
             switch (hdr.status)
             {
@@ -4794,7 +4796,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 WONR.nread += hdr.n_src;
                 WONR.str_off += hdr.n_dst;
                 break;
-            default:
+            case HUFF_DEC_ERROR: default:
                 return -1;
             }
             break;
@@ -4802,7 +4804,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             assert(WONR.alloced_len >= WONR.str_len);
             size = MIN((unsigned) (end - buf), WONR.str_len - WONR.str_off);
             memcpy(DTE_NAME(WONR.entry) + WONR.str_off, buf, size);
-            WONR.str_off += size;
+            WONR.str_off += (unsigned)size;
             buf += size;
             if (WONR.str_off == WONR.str_len)
             {
@@ -4849,7 +4851,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             break;
         case DEI_WONR_READ_VALUE_HUFFMAN:
             size = MIN((unsigned) (end - buf), WONR.str_len - WONR.nread);
-            hdr = lsqpack_huff_decode(buf, size,
+            hdr = lsqpack_huff_decode(buf, (int)size,
                     (unsigned char *) DTE_VALUE(WONR.entry) + WONR.str_off,
                     WONR.alloced_len - WONR.entry->dte_name_len - WONR.str_off,
                     &WONR.dec_huff_state, WONR.nread + size == WONR.str_len);
@@ -4886,7 +4888,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                 WONR.nread += hdr.n_src;
                 WONR.str_off += hdr.n_dst;
                 break;
-            default:
+            case HUFF_DEC_ERROR: default:
                 return -1;
             }
             break;
@@ -4903,7 +4905,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             }
             size = MIN((unsigned) (end - buf), WONR.str_len - WONR.str_off);
             memcpy(DTE_VALUE(WONR.entry) + WONR.str_off, buf, size);
-            WONR.str_off += size;
+            WONR.str_off += (unsigned)size;
             buf += size;
             if (WONR.str_off == WONR.str_len)
             {
@@ -5064,15 +5066,15 @@ qenc_huffman_enc (const unsigned char *src, const unsigned char *const src_end,
             bits_used = henc->lens - (sizeof(bits) * 8 - bits_used);
             bits |= henc->code >> bits_used;
 #if UINTPTR_MAX == 18446744073709551615ull
-            *dst++ = bits >> 56;
-            *dst++ = bits >> 48;
-            *dst++ = bits >> 40;
-            *dst++ = bits >> 32;
+            *dst++ = (unsigned char)(bits >> 56);
+            *dst++ = (unsigned char)(bits >> 48);
+            *dst++ = (unsigned char)(bits >> 40);
+            *dst++ = (unsigned char)(bits >> 32);
 #endif
-            *dst++ = bits >> 24;
-            *dst++ = bits >> 16;
-            *dst++ = bits >> 8;
-            *dst++ = bits;
+            *dst++ = (unsigned char)(bits >> 24);
+            *dst++ = (unsigned char)(bits >> 16);
+            *dst++ = (unsigned char)(bits >> 8);
+            *dst++ = (unsigned char)bits;
             bits = henc->code;   /* OK not to clear high bits */
         }
         else
@@ -5099,15 +5101,15 @@ qenc_huffman_enc (const unsigned char *src, const unsigned char *const src_end,
             bits_used = cur_enc_code.bits - (sizeof(bits) * 8 - bits_used);
             bits |= cur_enc_code.code >> bits_used;
 #if UINTPTR_MAX == 18446744073709551615ull
-            *dst++ = bits >> 56;
-            *dst++ = bits >> 48;
-            *dst++ = bits >> 40;
-            *dst++ = bits >> 32;
+            *dst++ = (unsigned char)(bits >> 56);
+            *dst++ = (unsigned char)(bits >> 48);
+            *dst++ = (unsigned char)(bits >> 40);
+            *dst++ = (unsigned char)(bits >> 32);
 #endif
-            *dst++ = bits >> 24;
-            *dst++ = bits >> 16;
-            *dst++ = bits >> 8;
-            *dst++ = bits;
+            *dst++ = (unsigned char)(bits >> 24);
+            *dst++ = (unsigned char)(bits >> 16);
+            *dst++ = (unsigned char)(bits >> 8);
+            *dst++ = (unsigned char)bits;
             bits = cur_enc_code.code;   /* OK not to clear high bits */
         }
     }
@@ -5120,15 +5122,15 @@ qenc_huffman_enc (const unsigned char *src, const unsigned char *const src_end,
         switch (adj >> 3)
         {                               /* Write out */
 #if UINTPTR_MAX == 18446744073709551615ull
-        case 8: *dst++ = bits >> 56;
-        case 7: *dst++ = bits >> 48;
-        case 6: *dst++ = bits >> 40;
-        case 5: *dst++ = bits >> 32;
+        case 8: *dst++ = (unsigned char)(bits >> 56);
+        case 7: *dst++ = (unsigned char)(bits >> 48);
+        case 6: *dst++ = (unsigned char)(bits >> 40);
+        case 5: *dst++ = (unsigned char)(bits >> 32);
 #endif
-        case 4: *dst++ = bits >> 24;
-        case 3: *dst++ = bits >> 16;
-        case 2: *dst++ = bits >> 8;
-        default: *dst++ = bits;
+        case 4: *dst++ = (unsigned char)(bits >> 24);
+        case 3: *dst++ = (unsigned char)(bits >> 16);
+        case 2: *dst++ = (unsigned char)(bits >> 8);
+        default: *dst++ = (unsigned char)bits;
         }
     }
 #if __GNUC__
@@ -5258,7 +5260,7 @@ huff_decode_fast (const unsigned char *src, int src_len,
             /* Fast path: don't check destination bounds */
             do
             {
-                idx = buf >> (avail_bits - 16);
+                idx = (uint16_t)(buf >> (avail_bits - 16));
                 hdec = hdecs[idx];
                 dst[0] = hdec.out[0];
                 dst[1] = hdec.out[1];
@@ -5274,7 +5276,7 @@ huff_decode_fast (const unsigned char *src, int src_len,
         else
             while (avail_bits >= 16)
             {
-                idx = buf >> (avail_bits - 16);
+                idx = (uint16_t)(buf >> (avail_bits - 16));
                 hdec = hdecs[idx];
                 len = hdec.lens & 3;
                 if (len && dst + len <= dst_end)
@@ -5305,7 +5307,7 @@ huff_decode_fast (const unsigned char *src, int src_len,
 
     if (avail_bits >= SHORTEST_CODE)
     {
-        idx = buf << (16 - avail_bits);
+        idx = (uint16_t)(buf << (16 - avail_bits));
         idx |= (1 << (16 - avail_bits)) - 1;    /* EOF */
         if (idx == 0xFFFF && avail_bits < 8)
             goto end;
@@ -5314,7 +5316,7 @@ huff_decode_fast (const unsigned char *src, int src_len,
          */
         hdec = hdecs[idx];
         len = hdec.lens & 3;
-        if ((hdec.lens >> 2) > avail_bits)
+        if ((unsigned)(hdec.lens >> 2) > avail_bits)
             return (struct huff_decode_retval) {
                 .status = HUFF_DEC_ERROR,
                 .n_dst  = 0,
@@ -5366,8 +5368,8 @@ huff_decode_fast (const unsigned char *src, int src_len,
   end:
     return (struct huff_decode_retval) {
         .status = HUFF_DEC_OK,
-        .n_dst  = dst - orig_dst,
-        .n_src  = src_len - (src_end - src),
+        .n_dst  = (unsigned)(dst - orig_dst),
+        .n_src  = src_len - (int)(src_end - src),
     };
 
   dst_ended:
@@ -5380,8 +5382,8 @@ huff_decode_fast (const unsigned char *src, int src_len,
     src -= avail_bits >> 3;
     return (struct huff_decode_retval) {
         .status = HUFF_DEC_END_DST,
-        .n_dst  = dst_len - (dst_end - dst),
-        .n_src  = src_len - (src_end - src),
+        .n_dst  = dst_len - (int)(dst_end - dst),
+        .n_src  = src_len - (int)(src_end - src),
     };
 
   slow_path:
@@ -5390,12 +5392,12 @@ huff_decode_fast (const unsigned char *src, int src_len,
         avail_bits += encode_table[ *--dst ].bits;
     assert((avail_bits & 7) == 0);
     src -= avail_bits >> 3;
-    rv = lsqpack_huff_decode_full(src, src_end - src, dst, dst_end - dst,
-                                                                state, final);
+    rv = lsqpack_huff_decode_full(src, (int)(src_end - src), dst,
+                                  (int)(dst_end - dst), state, final);
     if (rv.status == HUFF_DEC_OK || rv.status == HUFF_DEC_END_DST)
     {
-        rv.n_dst += dst_len - (dst_end - dst);
-        rv.n_src += src_len - (src_end - src);
+        rv.n_dst += dst_len - (int)(dst_end - dst);
+        rv.n_src += src_len - (int)(src_end - src);
     }
     return rv;
 }

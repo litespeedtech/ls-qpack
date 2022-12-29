@@ -38,6 +38,7 @@ if(MSVC)
         #   https://stackoverflow.com/questions/1064930/struct-initializer-typedef-with-visual-studio
         /wd4204 # non-constant aggregate initializer
         /wd4255 # no function prototype (getopt)
+        /wd4334 # result of 32-bit shift implicitly converted to 64 bits
         /wd4820 # padding
         /wd4668 # undefined macro
         /wd4710 # not inlined by default
