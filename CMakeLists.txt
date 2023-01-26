@@ -43,6 +43,8 @@ if(MSVC)
         /wd4668 # undefined macro
         /wd4710 # not inlined by default
         /wd4996 # unsafe function
+        /wd4061 # enum is not explicitly handled by a case
+        /wd5045 # Compiler will insert Spectre mitigation for memory load
     )
 else()
     target_compile_options(ls-qpack PRIVATE

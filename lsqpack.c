@@ -4214,7 +4214,7 @@ qdec_header_process (struct lsqpack_dec *dec,
             D_DEBUG("header block for stream %"PRIu64" is blocked",
                                                     read_ctx->hbrc_stream_id);
         return st;
-    default:
+    case LQRHS_ERROR: default:
         assert(st == LQRHS_ERROR);
         D_DEBUG("header block for stream %"PRIu64" has had an error",
                                                     read_ctx->hbrc_stream_id);
