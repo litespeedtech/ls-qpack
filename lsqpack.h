@@ -340,13 +340,8 @@ lsqpack_dec_init (struct lsqpack_dec *, void *logger_ctx,
 enum lsqpack_read_header_status
 {
     /**
-     * The header list has been placed in `hlist' and `buf' has been advanced.
-     * This header should be released using
-     * @ref lsqpack_dec_destroy_header_list() after the caller is done with it.
-     *
-     * Note that the header list in `hlist' has an unlimited lifetime.  Even
-     * destroying it after @ref lsqpack_dec_cleanup() is called is OK and
-     * will not leak memory.
+     * The decoder decodes the header and placed it in `buf'.
+     * It is caller's responsibility to manage provided `buf'.
      */
     LQRHS_DONE,
     /**

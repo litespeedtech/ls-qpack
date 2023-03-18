@@ -407,7 +407,6 @@ main (int argc, char **argv)
     unsigned lineno;
     char *line, *end;
     enum lsqpack_read_header_status rhs;
-    struct lsqpack_header_list *hlist;
     int do_swap = 1;
     char command[0x100];
     char line_buf[0x100];
