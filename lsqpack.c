@@ -1163,6 +1163,11 @@ qenc_remove_from_risked_list (struct lsqpack_enc *enc,
                                             struct lsqpack_header_info *hinfo)
 {
     struct lsqpack_header_info *prev;
+    if (TAILQ_EMPTY(&enc->qpe_risked_hinfos))
+    {
+        assert(enc->qpe_cur_streams_at_risk == 0);
+        return;
+    }
     TAILQ_REMOVE(&enc->qpe_risked_hinfos, hinfo, qhi_next_risked);
     if (hinfo->qhi_same_stream_id == hinfo)
     {
