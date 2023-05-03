@@ -46,6 +46,7 @@ know of the following wrappers:
 - Python: [pylsqpack](https://github.com/aiortc/pylsqpack)
 - Rust: [ls-qpack-rs](https://github.com/BiagioFesta/ls-qpack-rs)
 - TypeScript: [quicker](https://github.com/rmarx/quicker/tree/draft-20/lib/ls-qpack)
+- Ruby: [lsqpack-ruby](https://github.com/unasuke/lsqpack-ruby)
 
 ## Versioning
 
