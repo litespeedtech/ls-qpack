@@ -99,11 +99,11 @@ lsxpack_header_set_offset(lsxpack_header_t *hdr, const char *buf,
 {
     memset(hdr, 0, sizeof(*hdr));
     hdr->buf = (char *)buf;
-    hdr->name_offset = (lsxpack_strlen_t)name_offset;
+    hdr->name_offset = (lsxpack_offset_t)name_offset;
     assert(name_len <= LSXPACK_MAX_STRLEN);
     hdr->name_len = (lsxpack_strlen_t)name_len;
     assert(name_offset + name_len + 2 <= LSXPACK_MAX_STRLEN);
-    hdr->val_offset = (lsxpack_strlen_t)(name_offset + name_len + 2);
+    hdr->val_offset = (lsxpack_offset_t)(name_offset + name_len + 2);
     assert(val_len <= LSXPACK_MAX_STRLEN);
     hdr->val_len = (lsxpack_strlen_t)val_len;
 }
@@ -116,11 +116,11 @@ lsxpack_header_set_offset2(lsxpack_header_t *hdr, const char *buf,
 {
     memset(hdr, 0, sizeof(*hdr));
     hdr->buf = (char *)buf;
-    hdr->name_offset = (lsxpack_strlen_t)name_offset;
+    hdr->name_offset = (lsxpack_offset_t)name_offset;
     assert(name_len <= LSXPACK_MAX_STRLEN);
     hdr->name_len = (lsxpack_strlen_t)name_len;
     assert(val_offset <= LSXPACK_MAX_STRLEN);
-    hdr->val_offset = (lsxpack_strlen_t)val_offset;
+    hdr->val_offset = (lsxpack_offset_t)val_offset;
     assert(val_len <= LSXPACK_MAX_STRLEN);
     hdr->val_len = (lsxpack_strlen_t)val_len;
 }
@@ -133,7 +133,7 @@ lsxpack_header_prepare_decode(lsxpack_header_t *hdr,
     memset(hdr, 0, sizeof(*hdr));
     hdr->buf = out;
     assert(offset <= LSXPACK_MAX_STRLEN);
-    hdr->name_offset = (lsxpack_strlen_t)offset;
+    hdr->name_offset = (lsxpack_offset_t)offset;
     if (len > LSXPACK_MAX_STRLEN)
         hdr->val_len = LSXPACK_MAX_STRLEN;
     else
