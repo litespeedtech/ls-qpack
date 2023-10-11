@@ -25,7 +25,7 @@ if(LSQPACK_XXH)
     target_sources(ls-qpack PRIVATE deps/xxhash/xxhash.c)
 endif()
 
-if(MSVC)
+if(WIN32)
     target_include_directories(ls-qpack PUBLIC wincompat)
 endif()
 
@@ -104,6 +104,6 @@ endif()
 
 install(TARGETS ls-qpack)
 install(FILES lsqpack.h lsxpack_header.h DESTINATION include)
-if(MSVC)
+if(WIN32)
     install(DIRECTORY wincompat/sys DESTINATION include)
 endif()
