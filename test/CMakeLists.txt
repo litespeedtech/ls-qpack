@@ -3,7 +3,7 @@ function(lsqpack_add_test TARGET)
     target_sources(test_${TARGET} PRIVATE test_${TARGET}.c)
     target_link_libraries(test_${TARGET} ls-qpack)
 
-    if(MSVC)
+    if(WIN32)
         target_include_directories(test_${TARGET} PRIVATE ../wincompat)
         target_link_libraries(test_${TARGET} ${GETOPT_LIB})
     else()
