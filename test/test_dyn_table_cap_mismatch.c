@@ -31,14 +31,19 @@ int main(int argc, const char * argv[]) {
     lsqpack_dec_init(&qpackDecoder, stderr, 16384, 100, &callbacks, (enum lsqpack_dec_opts)0);
 
     FILE *encoder_stream = fopen("testdata/encoder_stream", "r");
+    FILE *response = fopen("testdata/response", "r");
     uint8_t buffer[16384];
     size_t size = 0;
+    if (!encoder_stream)
+    {
+        encoder_stream = fopen("../../test/testdata/encoder_stream", "r");
+        response = fopen("../../test/testdata/response", "r");
+    }
     while ((size = fread(buffer, 1, sizeof(buffer), encoder_stream)) > 0) {
         lsqpack_dec_enc_in(&qpackDecoder, buffer, size);
     }
     fclose(encoder_stream);
 
-    FILE *response = fopen("testdata/response", "r");
     size = fread(buffer, 1, sizeof(buffer), response);
     uint8_t decoderBuffer[LSQPACK_LONGEST_HEADER_ACK];
     size_t decoderBufferSize = sizeof(decoderBuffer);
