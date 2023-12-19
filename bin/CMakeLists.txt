@@ -5,7 +5,7 @@ function(lsqpack_add_executable TARGET)
     target_sources(${TARGET} PRIVATE ${TARGET}.c ../deps/xxhash/xxhash.c)
     target_include_directories(${TARGET} PRIVATE ../deps/xxhash)
 
-    if(MSVC)
+    if(WIN32)
         target_include_directories(${TARGET} PRIVATE ../wincompat)
         target_link_libraries(${TARGET} PRIVATE ${GETOPT_LIB})
     else()
