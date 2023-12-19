@@ -19,6 +19,7 @@ lsqpack_add_test(huff_dec)
 lsqpack_add_test(read_enc_stream)
 lsqpack_add_test(qpack)
 lsqpack_add_test(circ_list)
+lsqpack_add_test(dec_crash_case)
 lsqpack_add_test(dyn_table_cap_mismatch)
 
 if(MSVC)
