@@ -60,6 +60,8 @@ SOFTWARE.
 #    else
 #      define deliberate_fallthrough
 #    endif
+#  else
+#    define deliberate_fallthrough
 #  endif
 #endif
 
