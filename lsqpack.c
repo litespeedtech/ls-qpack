@@ -53,6 +53,18 @@ SOFTWARE.
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
+#ifndef deliberate_fallthrough
+#  if defined __has_attribute
+#    if __has_attribute (fallthrough)
+#      define deliberate_fallthrough __attribute__ ((fallthrough))
+#    else
+#      define deliberate_fallthrough
+#    endif
+#  else
+#    define deliberate_fallthrough
+#  endif
+#endif
+
 static unsigned char *
 qenc_huffman_enc (const unsigned char *, const unsigned char *const, unsigned char *);
 
@@ -2460,7 +2472,7 @@ lsqpack_enc_decoder_in (struct lsqpack_enc *enc,
                 prefix_bits = 6;
                 enc->qpe_dec_stream_state.handler = enc_proc_stream_cancel;
             }
-            /* fall through */
+            deliberate_fallthrough;
         case 1:
             r = lsqpack_dec_int(&buf, end, prefix_bits, &val,
                                 &enc->qpe_dec_stream_state.dec_int_state);
@@ -3627,7 +3639,7 @@ parse_header_data (struct lsqpack_dec *dec,
             prefix_bits = 7;
             DATA.dec_int_state.resume = 0;
             DATA.state = DATA_STATE_READ_VAL_LEN;
-            /* Fall-through */
+            deliberate_fallthrough;
         case DATA_STATE_READ_VAL_LEN:
             r = lsqpack_dec_int24(&buf, end, prefix_bits, &DATA.left,
                                                         &DATA.dec_int_state);
@@ -3823,8 +3835,8 @@ parse_header_data (struct lsqpack_dec *dec,
             else
                 RETURN_ERROR();
             break;
-        case DATA_STATE_BEGIN_READ_LFPBNR_VAL_LEN: /* fall through */
-        case DATA_STATE_READ_LFPBNR_VAL_LEN: /* fall through */
+        case DATA_STATE_BEGIN_READ_LFPBNR_VAL_LEN:
+        case DATA_STATE_READ_LFPBNR_VAL_LEN:
         default:
             assert(0);
             RETURN_ERROR();
@@ -3908,7 +3920,7 @@ parse_header_prefix (struct lsqpack_dec *dec,
             DELB.dec_int_state.resume = 0;
             read_ctx->hbrc_parse_ctx_u.prefix.state =
                                             PREFIX_STATE_READ_LARGEST_REF;
-            /* Fall-through */
+            deliberate_fallthrough;
         case PREFIX_STATE_READ_LARGEST_REF:
             r = lsqpack_dec_int(&buf, end, prefix_bits, &RIC.value,
                                                         &RIC.dec_int_state);
@@ -3952,7 +3964,7 @@ parse_header_prefix (struct lsqpack_dec *dec,
             prefix_bits = 7;
             read_ctx->hbrc_parse_ctx_u.prefix.state =
                                             PREFIX_STATE_READ_DELTA_BASE_IDX;
-            /* Fall-through */
+            deliberate_fallthrough;
         case PREFIX_STATE_READ_DELTA_BASE_IDX:
             r = lsqpack_dec_int(&buf, end, prefix_bits, &DELB.value,
                                                         &DELB.dec_int_state);
@@ -4825,7 +4837,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             WONR.dec_int_state.resume = 0;
             dec->qpd_enc_state.resume = DEI_WONR_READ_VAL_LEN;
             prefix_bits = 7;
-            /* fall-through */
+            deliberate_fallthrough;
         case DEI_WONR_READ_VAL_LEN:
             r = lsqpack_dec_int24(&buf, end, prefix_bits, &WONR.str_len,
                                                         &WONR.dec_int_state);
@@ -5130,14 +5142,14 @@ qenc_huffman_enc (const unsigned char *src, const unsigned char *const src_end,
         switch (adj >> 3)
         {                               /* Write out */
 #if UINTPTR_MAX == 18446744073709551615ull
-        case 8: *dst++ = (unsigned char)(bits >> 56);
-        case 7: *dst++ = (unsigned char)(bits >> 48);
-        case 6: *dst++ = (unsigned char)(bits >> 40);
-        case 5: *dst++ = (unsigned char)(bits >> 32);
+        case 8: *dst++ = (unsigned char)(bits >> 56); deliberate_fallthrough;
+        case 7: *dst++ = (unsigned char)(bits >> 48); deliberate_fallthrough;
+        case 6: *dst++ = (unsigned char)(bits >> 40); deliberate_fallthrough;
+        case 5: *dst++ = (unsigned char)(bits >> 32); deliberate_fallthrough;
 #endif
-        case 4: *dst++ = (unsigned char)(bits >> 24);
-        case 3: *dst++ = (unsigned char)(bits >> 16);
-        case 2: *dst++ = (unsigned char)(bits >> 8);
+        case 4: *dst++ = (unsigned char)(bits >> 24); deliberate_fallthrough;
+        case 3: *dst++ = (unsigned char)(bits >> 16); deliberate_fallthrough;
+        case 2: *dst++ = (unsigned char)(bits >> 8);  deliberate_fallthrough;
         default: *dst++ = (unsigned char)bits;
         }
     }
@@ -5228,9 +5240,11 @@ huff_decode_fast (const unsigned char *src, int src_len,
             case 8:
                 buf <<= 8;
                 buf |= (uintptr_t) *src++;
+                deliberate_fallthrough;
             case 7:
                 buf <<= 8;
                 buf |= (uintptr_t) *src++;
+                deliberate_fallthrough;
             default:
                 buf <<= 48;
                 buf |= (uintptr_t) *src++ << 40;
@@ -5241,9 +5255,11 @@ huff_decode_fast (const unsigned char *src, int src_len,
             case 4:
                 buf <<= 8;
                 buf |= (uintptr_t) *src++;
+                deliberate_fallthrough;
             case 3:
                 buf <<= 8;
                 buf |= (uintptr_t) *src++;
+                deliberate_fallthrough;
             default:
                 buf <<= 16;
 #endif
