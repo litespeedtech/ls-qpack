@@ -53,6 +53,16 @@ SOFTWARE.
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
+#ifndef FALL_THROUGH
+#  if defined __has_attribute
+#    if __has_attribute (fallthrough)
+#      define FALL_THROUGH __attribute__ ((fallthrough))
+#    else
+#      define FALL_THROUGH
+#    endif
+#  endif
+#endif
+
 static unsigned char *
 qenc_huffman_enc (const unsigned char *, const unsigned char *const, unsigned char *);
 
@@ -2460,7 +2470,7 @@ lsqpack_enc_decoder_in (struct lsqpack_enc *enc,
                 prefix_bits = 6;
                 enc->qpe_dec_stream_state.handler = enc_proc_stream_cancel;
             }
-            /* fall through */
+            FALL_THROUGH;
         case 1:
             r = lsqpack_dec_int(&buf, end, prefix_bits, &val,
                                 &enc->qpe_dec_stream_state.dec_int_state);
@@ -3419,7 +3429,7 @@ lsqpack_huff_decode_full (const unsigned char *src, int src_len,
     case 0:
         state->status.state = 0;
         state->status.eos   = 1;
-        /* fall through */
+        FALL_THROUGH;
     case 1:
         while (p_src != src_end)
         {
@@ -3432,7 +3442,7 @@ lsqpack_huff_decode_full (const unsigned char *src, int src_len,
                                 .n_src  = (unsigned)(p_src - src),
                 };
             }
-        /* fall through */
+        FALL_THROUGH;
     case 2:
             if ((p_dst = qdec_huff_dec4bits(*p_src >> 4, p_dst, &state->status))
                     == NULL)
@@ -3447,7 +3457,7 @@ lsqpack_huff_decode_full (const unsigned char *src, int src_len,
                                 .n_src  = (unsigned)(p_src - src),
                 };
             }
-        /* fall through */
+        FALL_THROUGH;
     case 3:
             if ((p_dst = qdec_huff_dec4bits(*p_src & 0xf, p_dst, &state->status))
                     == NULL)
@@ -3627,7 +3637,7 @@ parse_header_data (struct lsqpack_dec *dec,
             prefix_bits = 7;
             DATA.dec_int_state.resume = 0;
             DATA.state = DATA_STATE_READ_VAL_LEN;
-            /* Fall-through */
+            FALL_THROUGH;
         case DATA_STATE_READ_VAL_LEN:
             r = lsqpack_dec_int24(&buf, end, prefix_bits, &DATA.left,
                                                         &DATA.dec_int_state);
@@ -3823,8 +3833,8 @@ parse_header_data (struct lsqpack_dec *dec,
             else
                 RETURN_ERROR();
             break;
-        case DATA_STATE_BEGIN_READ_LFPBNR_VAL_LEN: /* fall through */
-        case DATA_STATE_READ_LFPBNR_VAL_LEN: /* fall through */
+        case DATA_STATE_BEGIN_READ_LFPBNR_VAL_LEN: FALL_THROUGH;
+        case DATA_STATE_READ_LFPBNR_VAL_LEN: FALL_THROUGH;
         default:
             assert(0);
             RETURN_ERROR();
@@ -3908,7 +3918,7 @@ parse_header_prefix (struct lsqpack_dec *dec,
             DELB.dec_int_state.resume = 0;
             read_ctx->hbrc_parse_ctx_u.prefix.state =
                                             PREFIX_STATE_READ_LARGEST_REF;
-            /* Fall-through */
+            FALL_THROUGH;
         case PREFIX_STATE_READ_LARGEST_REF:
             r = lsqpack_dec_int(&buf, end, prefix_bits, &RIC.value,
                                                         &RIC.dec_int_state);
@@ -3952,7 +3962,7 @@ parse_header_prefix (struct lsqpack_dec *dec,
             prefix_bits = 7;
             read_ctx->hbrc_parse_ctx_u.prefix.state =
                                             PREFIX_STATE_READ_DELTA_BASE_IDX;
-            /* Fall-through */
+            FALL_THROUGH;
         case PREFIX_STATE_READ_DELTA_BASE_IDX:
             r = lsqpack_dec_int(&buf, end, prefix_bits, &DELB.value,
                                                         &DELB.dec_int_state);
@@ -4600,7 +4610,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             WINR.dec_int_state.resume = 0;
             dec->qpd_enc_state.resume = DEI_WINR_READ_VAL_LEN;
             prefix_bits = 7;
-            /* fall-through */
+            FALL_THROUGH;
         case DEI_WINR_READ_VAL_LEN:
             r = lsqpack_dec_int24(&buf, end, prefix_bits, &WINR.val_len,
                                                         &WINR.dec_int_state);
@@ -4825,7 +4835,7 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
             WONR.dec_int_state.resume = 0;
             dec->qpd_enc_state.resume = DEI_WONR_READ_VAL_LEN;
             prefix_bits = 7;
-            /* fall-through */
+            FALL_THROUGH;
         case DEI_WONR_READ_VAL_LEN:
             r = lsqpack_dec_int24(&buf, end, prefix_bits, &WONR.str_len,
                                                         &WONR.dec_int_state);
