@@ -39,7 +39,7 @@ else()
 	set(LSQPACK_DEPENDS "libxxhash")
 endif()
 
-if(MSVC)
+if(WIN32)
     target_include_directories(ls-qpack PUBLIC wincompat)
 endif()
 
@@ -130,7 +130,7 @@ install(FILES
         ${CMAKE_CURRENT_BINARY_DIR}/bin/interop-encode
         DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-if(MSVC)
+if(WIN32)
     install(DIRECTORY wincompat/sys DESTINATION include)
 else()
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/lsqpack.pc"

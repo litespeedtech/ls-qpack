@@ -1,5 +1,5 @@
 freebsd_instance:
-    image: freebsd-12-1-release-amd64
+    image: freebsd-13-3-release-amd64
 
 task:
     install_script: pkg install -y cmake bash perl5 p5-PkgConfig-LibPkgConf devel/xxhash

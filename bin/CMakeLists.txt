@@ -10,7 +10,7 @@ function(lsqpack_add_executable TARGET)
         target_link_libraries(${TARGET} PUBLIC PkgConfig::XXH)
     endif()
 
-    if(MSVC)
+    if(WIN32)
         target_include_directories(${TARGET} PRIVATE ../wincompat)
         target_link_libraries(${TARGET} PRIVATE ${GETOPT_LIB})
     else()
