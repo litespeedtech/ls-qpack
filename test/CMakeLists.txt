@@ -1,9 +1,13 @@
 function(lsqpack_add_test TARGET)
     add_executable(test_${TARGET} "")
     target_sources(test_${TARGET} PRIVATE test_${TARGET}.c)
-    target_link_libraries(test_${TARGET} ls-qpack)
-
+    if(LSQPACK_XXH OR MSVC)
+        target_link_libraries(test_${TARGET} ls-qpack)
+    else()
+        target_link_libraries(test_${TARGET} ls-qpack PkgConfig::XXH)
+    endif()
     if(WIN32)
+
         target_include_directories(test_${TARGET} PRIVATE ../wincompat)
         target_link_libraries(test_${TARGET} ${GETOPT_LIB})
     else()

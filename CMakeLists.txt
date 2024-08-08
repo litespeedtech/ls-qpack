@@ -9,20 +9,34 @@
 #   LDFLAGS
 
 cmake_minimum_required(VERSION 3.1)
-project(ls-qpack LANGUAGES C)
+project(ls-qpack 
+	LANGUAGES C
+        HOMEPAGE_URL "https://github.com/litespeedtech/ls-qpack"
+        DESCRIPTION "QPACK compression library for use with HTTP/3" 
+        VERSION 2.5.3)
 
 option(LSQPACK_TESTS "Build tests")
 option(LSQPACK_BIN "Build binaries" ON)
 option(LSQPACK_XXH "Include XXH" ON)
+option(BUILD_SHARED_LIBS OFF)
 
 # Use `cmake -DBUILD_SHARED_LIBS=OFF` to build a static library.
 add_library(ls-qpack "")
+set_target_properties(ls-qpack PROPERTIES
+	VERSION ${PROJECT_VERSION}
+	SOVERSION ${PROJECT_VERSION_MAJOR})
 target_include_directories(ls-qpack PUBLIC .)
 target_sources(ls-qpack PRIVATE lsqpack.c)
 
-target_include_directories(ls-qpack PRIVATE deps/xxhash/)
-if(LSQPACK_XXH)
+if(LSQPACK_XXH OR MSVC)
+    target_include_directories(ls-qpack PRIVATE deps/xxhash/)
     target_sources(ls-qpack PRIVATE deps/xxhash/xxhash.c)
+    set(LSQPACK_DEPENDS "")
+else()
+	find_package(PkgConfig REQUIRED)
+	pkg_check_modules(XXH REQUIRED IMPORTED_TARGET libxxhash)
+	target_link_libraries(ls-qpack PUBLIC PkgConfig::XXH)
+	set(LSQPACK_DEPENDS "libxxhash")
 endif()
 
 if(WIN32)
@@ -102,8 +116,23 @@ if(LSQPACK_BIN)
     add_subdirectory(bin)
 endif()
 
-install(TARGETS ls-qpack)
-install(FILES lsqpack.h lsxpack_header.h DESTINATION include)
+include(GNUInstallDirs)
+configure_file(lsqpack.pc.in lsqpack.pc @ONLY)
+
+install(TARGETS ls-qpack
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(FILES lsqpack.h lsxpack_header.h
+	DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/bin/encode-int
+        ${CMAKE_CURRENT_BINARY_DIR}/bin/fuzz-decode
+        ${CMAKE_CURRENT_BINARY_DIR}/bin/interop-decode
+        ${CMAKE_CURRENT_BINARY_DIR}/bin/interop-encode
+        DESTINATION ${CMAKE_INSTALL_BINDIR})
+
 if(WIN32)
     install(DIRECTORY wincompat/sys DESTINATION include)
+else()
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/lsqpack.pc"
+	    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 endif()
