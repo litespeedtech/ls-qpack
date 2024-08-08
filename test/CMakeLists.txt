@@ -1,13 +1,13 @@
 function(lsqpack_add_test TARGET)
     add_executable(test_${TARGET} "")
     target_sources(test_${TARGET} PRIVATE test_${TARGET}.c)
-    if(LSQPACK_XXH OR MSVC)
+    if(LSQPACK_XXH OR WIN32)
         target_link_libraries(test_${TARGET} ls-qpack)
     else()
         target_link_libraries(test_${TARGET} ls-qpack PkgConfig::XXH)
     endif()
-    if(WIN32)
 
+    if(WIN32)
         target_include_directories(test_${TARGET} PRIVATE ../wincompat)
         target_link_libraries(test_${TARGET} ${GETOPT_LIB})
     else()
@@ -26,7 +26,7 @@ lsqpack_add_test(circ_list)
 lsqpack_add_test(dec_crash_case)
 lsqpack_add_test(dyn_table_cap_mismatch)
 
-if(MSVC)
+if(WIN32)
     message(WARNING "Scenario tests are disabled on Windows (TODO)")
 else()
     file(GLOB SCENARIOS scenarios/*.sce)
@@ -64,7 +64,7 @@ if(PERL_FOUND)
                             WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/test
                         )
                         
-                        if(NOT MSVC)
+                        if(NOT WIN32)
                             set_tests_properties(${TEST_NAME} PROPERTIES
                                 ENVIRONMENT "PATH=$ENV{PATH}:${PROJECT_BINARY_DIR}/bin:${PROJECT_SOURCE_DIR}/tools"
                             )
