@@ -25,7 +25,10 @@ add_library(ls-qpack "")
 set_target_properties(ls-qpack PROPERTIES
 	VERSION ${PROJECT_VERSION}
 	SOVERSION ${PROJECT_VERSION_MAJOR})
-target_include_directories(ls-qpack PUBLIC .)
+target_include_directories(ls-qpack PUBLIC 
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
 target_sources(ls-qpack PRIVATE lsqpack.c)
 
 if(LSQPACK_XXH)
@@ -40,7 +43,10 @@ else()
 endif()
 
 if(WIN32)
-    target_include_directories(ls-qpack PUBLIC wincompat)
+    target_include_directories(ls-qpack PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/wincompat>
+        $<INSTALL_INTERFACE:include>
+    )
 endif()
 
 if(WIN32)
@@ -119,8 +125,13 @@ endif()
 include(GNUInstallDirs)
 configure_file(lsqpack.pc.in lsqpack.pc @ONLY)
 
-install(TARGETS ls-qpack
+install(TARGETS ls-qpack EXPORT ls-qpack-config
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(
+    EXPORT ls-qpack-config
+    NAMESPACE ls-qpack::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ls-qpack
+)
 install(FILES lsqpack.h lsxpack_header.h
 	DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES
