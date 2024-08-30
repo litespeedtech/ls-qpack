@@ -28,7 +28,7 @@ set_target_properties(ls-qpack PROPERTIES
 target_include_directories(ls-qpack PUBLIC .)
 target_sources(ls-qpack PRIVATE lsqpack.c)
 
-if(LSQPACK_XXH OR WIN32)
+if(LSQPACK_XXH)
     target_include_directories(ls-qpack PRIVATE deps/xxhash/)
     target_sources(ls-qpack PRIVATE deps/xxhash/xxhash.c)
     set(LSQPACK_DEPENDS "")
