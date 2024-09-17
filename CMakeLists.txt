@@ -134,12 +134,15 @@ install(
 )
 install(FILES lsqpack.h lsxpack_header.h
 	DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES
-        ${CMAKE_CURRENT_BINARY_DIR}/bin/encode-int
-        ${CMAKE_CURRENT_BINARY_DIR}/bin/fuzz-decode
-        ${CMAKE_CURRENT_BINARY_DIR}/bin/interop-decode
-        ${CMAKE_CURRENT_BINARY_DIR}/bin/interop-encode
-        DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+if(LSQPACK_BIN)
+    install(FILES
+          ${CMAKE_CURRENT_BINARY_DIR}/bin/encode-int
+          ${CMAKE_CURRENT_BINARY_DIR}/bin/fuzz-decode
+          ${CMAKE_CURRENT_BINARY_DIR}/bin/interop-decode
+          ${CMAKE_CURRENT_BINARY_DIR}/bin/interop-encode
+          DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
 
 if(WIN32)
     install(DIRECTORY wincompat/sys DESTINATION include)
