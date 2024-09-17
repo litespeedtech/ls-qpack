@@ -53,11 +53,13 @@ SOFTWARE.
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
+#ifdef _MSC_VER
+#  define FALL_THROUGH
+#endif
+
 #ifndef FALL_THROUGH
-#  ifndef _MSC_VER
-#    if defined __has_attribute && __has_attribute (fallthrough)
-#      define FALL_THROUGH __attribute__ ((fallthrough))
-#    endif
+#  if defined __has_attribute && __has_attribute (fallthrough)
+#    define FALL_THROUGH __attribute__ ((fallthrough))
 #  else
 #    define FALL_THROUGH
 #  endif
