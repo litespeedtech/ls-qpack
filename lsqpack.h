@@ -29,10 +29,6 @@ SOFTWARE.
 #ifndef LSQPACK_H
 #define LSQPACK_H 1
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -40,6 +36,10 @@ extern "C" {
 #if defined(_MSC_VER)
 #include <BaseTsd.h>
 typedef SSIZE_T ssize_t;
+#endif
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 #define LSQPACK_MAJOR_VERSION 2
@@ -616,12 +616,20 @@ enum lsqpack_tnv
     LSQPACK_TNV_X_FRAME_OPTIONS_SAMEORIGIN = 98, /* "x-frame-options" "sameorigin" */
 };
 
+#ifdef __cplusplus
+}
+#endif
+
 
 /*
  * Internals follow.  The internals are subject to change without notice.
  */
 
 #include <sys/queue.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* It takes 11 bytes to encode UINT64_MAX as HPACK integer */
 #define LSQPACK_UINT64_ENC_SZ 11u
