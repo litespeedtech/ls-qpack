@@ -3318,7 +3318,7 @@ header_out_grow_buf (struct lsqpack_dec *dec,
         size = 2;
     need = read_ctx->hbrc_out.xhdr->val_len + size / 2;
     if (need > LSXPACK_MAX_STRLEN)
-        need = LSXPACK_MAX_STRLEN;
+        return -1;
     read_ctx->hbrc_out.xhdr = dec->qpd_dh_if->dhi_prepare_decode(
                         read_ctx->hbrc_hblock, read_ctx->hbrc_out.xhdr, need);
     if (!read_ctx->hbrc_out.xhdr)
