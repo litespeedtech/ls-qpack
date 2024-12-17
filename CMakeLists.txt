@@ -49,7 +49,7 @@ if(WIN32)
     )
 endif()
 
-if(WIN32)
+if(MSVC)
     target_compile_options(ls-qpack PRIVATE
         /Wall
         /wd4100 # unreffed parameter
