@@ -7,7 +7,7 @@ function(lsqpack_add_executable TARGET)
         target_include_directories(${TARGET} PRIVATE ../deps/xxhash)
     else()
         target_sources(${TARGET} PRIVATE ${TARGET}.c)
-        target_link_libraries(${TARGET} PUBLIC PkgConfig::XXH)
+        target_link_libraries(${TARGET} PUBLIC xxHash::xxhash)
     endif()
 
     if(WIN32)
