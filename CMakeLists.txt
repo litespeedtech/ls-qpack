@@ -125,6 +125,8 @@ endif()
 
 include(GNUInstallDirs)
 configure_file(lsqpack.pc.in lsqpack.pc @ONLY)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/lsqpack.pc"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
 install(TARGETS ls-qpack EXPORT ls-qpack-config
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
@@ -147,7 +149,4 @@ endif()
 
 if(WIN32)
     install(DIRECTORY wincompat/sys DESTINATION include)
-else()
-    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/lsqpack.pc"
-	    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 endif()
