@@ -22,6 +22,7 @@ option(BUILD_SHARED_LIBS OFF)
 
 # Use `cmake -DBUILD_SHARED_LIBS=OFF` to build a static library.
 add_library(ls-qpack "")
+add_library(ls-qpack::ls-qpack ALIAS ls-qpack)
 set_target_properties(ls-qpack PROPERTIES
 	VERSION ${PROJECT_VERSION}
 	SOVERSION ${PROJECT_VERSION_MAJOR})
