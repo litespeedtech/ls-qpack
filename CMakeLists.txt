@@ -43,14 +43,14 @@ else()
 	set(LSQPACK_DEPENDS "libxxhash")
 endif()
 
-if(WIN32)
+if(WIN32 OR EMSCRIPTEN)
     target_include_directories(ls-qpack PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/wincompat>
         $<INSTALL_INTERFACE:include>
     )
 endif()
 
-if(WIN32)
+if(MSVC)
     target_compile_options(ls-qpack PRIVATE
         /Wall
         /wd4100 # unreffed parameter
@@ -147,6 +147,6 @@ if(LSQPACK_BIN)
           DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
-if(WIN32)
+if(WIN32 OR EMSCRIPTEN)
     install(DIRECTORY wincompat/sys DESTINATION include)
 endif()
