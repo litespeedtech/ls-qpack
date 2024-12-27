@@ -1710,6 +1710,8 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
      */
     update_hist = enc->qpe_hist_els != NULL && !(flags & LQEF_NO_HIST_UPD);
 
+    seen_nameval = -1;
+
   restart:
     /* Look for a full match in the dynamic table */
     if (use_dyn_table)
@@ -1841,7 +1843,6 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
         goto execute_program;
     }
 
-    seen_nameval = -1;
     /* Look for name-only match in the dynamic table */
     /* TODO We may want to duplicate a dynamic entry whose name matches.
      * In that case, we'd follow similar logic as above: select candidates
@@ -1866,7 +1867,8 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
             {
                 id = entry->ete_id;
                 if (index && enough_room && risk
-                                && qenc_hist_seen(enc, HE_NAMEVAL, nameval_hash))
+                    && (seen_nameval < 0 ? (seen_nameval
+                        = qenc_hist_seen(enc, HE_NAMEVAL, nameval_hash)) : seen_nameval))
                     prog = (struct encode_program) { EEA_INS_NAMEREF_DYNAMIC,
                                 EHA_INDEXED_NEW, ETA_NEW,
                                 EPF_REF_NEW|EPF_REF_FOUND, };
