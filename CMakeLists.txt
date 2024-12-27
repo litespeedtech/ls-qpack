@@ -37,10 +37,14 @@ if(LSQPACK_XXH)
     target_sources(ls-qpack PRIVATE deps/xxhash/xxhash.c)
     set(LSQPACK_DEPENDS "")
 else()
-	find_package(PkgConfig REQUIRED)
-	pkg_check_modules(XXH REQUIRED IMPORTED_TARGET libxxhash)
-	target_link_libraries(ls-qpack PUBLIC PkgConfig::XXH)
-	set(LSQPACK_DEPENDS "libxxhash")
+    find_package(xxHash CONFIG)
+    if(NOT xxHash_FOUND)
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(LS_QPACK_XXH REQUIRED IMPORTED_TARGET libxxhash GLOBAL)
+        add_library(xxHash::xxhash ALIAS PkgConfig::LS_QPACK_XXH)
+    endif()
+    target_link_libraries(ls-qpack PRIVATE xxHash::xxhash)
+    set(LSQPACK_DEPENDS "libxxhash")
 endif()
 
 if(WIN32 OR EMSCRIPTEN)
@@ -128,10 +132,14 @@ configure_file(lsqpack.pc.in lsqpack.pc @ONLY)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/lsqpack.pc"
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
+configure_file(ls-qpack-config.cmake.in ls-qpack-config.cmake @ONLY)
 install(TARGETS ls-qpack EXPORT ls-qpack-config
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/ls-qpack-config.cmake"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ls-qpack)
 install(
     EXPORT ls-qpack-config
+    FILE ls-qpack-targets.cmake
     NAMESPACE ls-qpack::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ls-qpack
 )
