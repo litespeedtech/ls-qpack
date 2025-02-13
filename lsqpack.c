@@ -1641,6 +1641,8 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
     if (hea_buf == hea_buf_end)
         return LQES_NOBUF_HEAD;
 
+    seen_nameval = -1;
+
     if (xhdr->flags & LSXPACK_NEVER_INDEX)
         flags |= LQEF_NEVER_INDEX;
 
@@ -1709,8 +1711,6 @@ lsqpack_enc_encode (struct lsqpack_enc *enc,
      * know the function will return success.
      */
     update_hist = enc->qpe_hist_els != NULL && !(flags & LQEF_NO_HIST_UPD);
-
-    seen_nameval = -1;
 
   restart:
     /* Look for a full match in the dynamic table */
