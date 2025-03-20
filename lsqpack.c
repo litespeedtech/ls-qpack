@@ -41,6 +41,7 @@ SOFTWARE.
 
 #ifndef WIN32
 #include <endian.h>
+#endif
 
 #include "lsqpack.h"
 #include "lsxpack_header.h"
