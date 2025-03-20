@@ -37,8 +37,10 @@ SOFTWARE.
 #include <string.h>
 #include <sys/queue.h>
 #include <sys/types.h>
-#include <endian.h>
 #include <inttypes.h>
+
+#ifndef WIN32
+#include <endian.h>
 
 #include "lsqpack.h"
 #include "lsxpack_header.h"
