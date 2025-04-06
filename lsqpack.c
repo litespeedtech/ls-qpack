@@ -39,8 +39,25 @@ SOFTWARE.
 #include <sys/types.h>
 #include <inttypes.h>
 
-#ifndef WIN32
+
+#if defined(__linux__)
 #include <endian.h>
+
+#elif defined(__APPLE__)
+
+#include <machine/endian.h>
+#define __BIG_ENDIAN BIG_ENDIAN
+#define __LITTLE_ENDIAN LITTLE_ENDIAN
+#define __BYTE_ORDER BYTE_ORDER
+
+#elif (defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+
+#include <sys/endian.h>
+#define __BIG_ENDIAN BIG_ENDIAN
+#define __LITTLE_ENDIAN LITTLE_ENDIAN
+#define __BYTE_ORDER BYTE_ORDER
+
+#elif WIN32
 #endif
 
 #include "lsqpack.h"
