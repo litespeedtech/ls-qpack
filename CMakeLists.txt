@@ -123,7 +123,8 @@ if(LSQPACK_TESTS)
     add_subdirectory(test)
 endif()
 
-if(LSQPACK_BIN)
+# The executables are used within the test suite as well.
+if(LSQPACK_BIN OR LSQPACK_TESTS)
     add_subdirectory(bin)
 endif()
 
