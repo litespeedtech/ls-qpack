@@ -50,7 +50,7 @@ SOFTWARE.
 #define __LITTLE_ENDIAN LITTLE_ENDIAN
 #define __BYTE_ORDER BYTE_ORDER
 
-#elif (defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+#elif (defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__))
 
 #include <sys/endian.h>
 #define __BIG_ENDIAN BIG_ENDIAN
