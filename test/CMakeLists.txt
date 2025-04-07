@@ -1,3 +1,5 @@
+add_compile_definitions("TEST_DATA=\"${CMAKE_CURRENT_SOURCE_DIR}/testdata\"")
+
 function(lsqpack_add_test TARGET)
     add_executable(test_${TARGET} "")
     target_sources(test_${TARGET} PRIVATE test_${TARGET}.c)
