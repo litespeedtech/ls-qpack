@@ -74,15 +74,16 @@ SOFTWARE.
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
-#ifdef _MSC_VER
-#  define FALL_THROUGH
-#endif
-
 #ifndef FALL_THROUGH
-#  if defined __has_attribute && __has_attribute (fallthrough)
-#    define FALL_THROUGH __attribute__ ((fallthrough))
+#  if 201710L < __STDC_VERSION__
+#    define FALL_THROUGH [[fallthrough]]
+#  elif ((__GNUC__ >= 7 && !defined __clang__)      \
+        || (defined __apple_build_version__         \
+            ? __apple_build_version__ >= 12000000   \
+            : __clang_major__ >= 10))
+#    define FALL_THROUGH __attribute__((fallthrough))
 #  else
-#    define FALL_THROUGH
+#    define FALL_THROUGH ((void)0)
 #  endif
 #endif
 
