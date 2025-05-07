@@ -6,6 +6,9 @@ cache:
 - c:\tools\vcpkg\installed
 
 environment:
+  VCPKG_DEFAULT_TRIPLET: x64-windows
+  CMAKE_ZIP_URL: 'https://github.com/Kitware/CMake/releases/download/v3.31.7/cmake-3.31.7-windows-x86_64.zip'
+  CMAKE_INST_DIR: '%PROGRAMFILES(x86)%\CMake'
   matrix:
   - job_name: "Internal xxhash"
     LSQPACK_XXH: ON
@@ -18,14 +21,15 @@ environment:
     XXH_CMAKE: DISABLE
 
 before_build:
+  - ps: 'iwr "${Env:CMAKE_ZIP_URL}" -outfile cmake.zip; if ($?) { expand-archive cmake.zip cmake }'
+  - ps: '$dir = "${Env:CMAKE_INST_DIR}"; rm -r -fo "$dir"; mv cmake\* "$dir"'
   - git -C c:\tools\vcpkg\ fetch
-  - git -C c:\tools\vcpkg\ checkout 2024.08.23
+  - git -C c:\tools\vcpkg\ checkout 2025.04.09
   - c:\tools\vcpkg\bootstrap-vcpkg.bat
-  - vcpkg x-set-installed getopt:x64-windows xxhash:x64-windows pkgconf:x64-windows
+  - vcpkg x-set-installed getopt xxhash pkgconf
   - cmake .
     -DCMAKE_TOOLCHAIN_FILE=c:/tools/vcpkg/scripts/buildsystems/vcpkg.cmake
     -DVCPKG_INSTALLED_DIR=c:/tools/vcpkg/installed
-    -DVCPKG_TARGET_TRIPLET=x64-windows
     -DPKG_CONFIG_EXECUTABLE=c:/tools/vcpkg/installed/x64-windows/tools/pkgconf/pkgconf.exe
     -DCMAKE_BUILD_TYPE=Debug
     -DCMAKE_GENERATOR_PLATFORM=x64
@@ -42,5 +46,6 @@ before_test:
   - set PATH=%PATH%;c:\projects\ls-qpack\bin\Debug
 
 test_script:
-  - dir
-  - msbuild RUN_TESTS.vcxproj 
+  - setlocal EnableDelayedExpansion & ctest -j -C Debug --output-junit TestResults.xml & set LEVEL=!ERRORLEVEL! & dir
+  - curl -v -F "file=@TestResults.xml" "https://ci.appveyor.com/api/testresults/junit/%APPVEYOR_JOB_ID%"
+  - setlocal EnableDelayedExpansion & exit /b !LEVEL!
