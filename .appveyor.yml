@@ -6,6 +6,7 @@ cache:
 - c:\tools\vcpkg\installed
 
 environment:
+  VCPKG_DEFAULT_TRIPLET: x64-windows
   CMAKE_ZIP_URL: 'https://github.com/Kitware/CMake/releases/download/v3.31.7/cmake-3.31.7-windows-x86_64.zip'
   CMAKE_INST_DIR: '%PROGRAMFILES(x86)%\CMake'
   matrix:
@@ -25,11 +26,10 @@ before_build:
   - git -C c:\tools\vcpkg\ fetch
   - git -C c:\tools\vcpkg\ checkout 2025.04.09
   - c:\tools\vcpkg\bootstrap-vcpkg.bat
-  - vcpkg x-set-installed getopt:x64-windows xxhash:x64-windows pkgconf:x64-windows
+  - vcpkg x-set-installed getopt xxhash pkgconf
   - cmake .
     -DCMAKE_TOOLCHAIN_FILE=c:/tools/vcpkg/scripts/buildsystems/vcpkg.cmake
     -DVCPKG_INSTALLED_DIR=c:/tools/vcpkg/installed
-    -DVCPKG_TARGET_TRIPLET=x64-windows
     -DPKG_CONFIG_EXECUTABLE=c:/tools/vcpkg/installed/x64-windows/tools/pkgconf/pkgconf.exe
     -DCMAKE_BUILD_TYPE=Debug
     -DCMAKE_GENERATOR_PLATFORM=x64
@@ -46,6 +46,6 @@ before_test:
   - set PATH=%PATH%;c:\projects\ls-qpack\bin\Debug
 
 test_script:
-  - setlocal EnableDelayedExpansion & ctest -j -C Debug --output-junit TestResults.xml & echo !ERRORLEVEL! > errorlevel & dir
+  - setlocal EnableDelayedExpansion & ctest -j -C Debug --output-junit TestResults.xml & set LEVEL=!ERRORLEVEL! & dir
   - curl -v -F "file=@TestResults.xml" "https://ci.appveyor.com/api/testresults/junit/%APPVEYOR_JOB_ID%"
-  - setlocal EnableDelayedExpansion & set /p LEVEL=<errorlevel & exit /b !LEVEL!
+  - setlocal EnableDelayedExpansion & exit /b !LEVEL!
