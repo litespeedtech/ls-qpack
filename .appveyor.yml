@@ -20,9 +20,8 @@ environment:
     XXH_CMAKE: DISABLE
 
 before_build:
-  - 'rd /s /q "%CMAKE_INST_DIR%"'
   - ps: 'iwr "${Env:CMAKE_ZIP_URL}" -outfile cmake.zip; if ($?) { expand-archive cmake.zip cmake }'
-  - ps: '$dir = "${Env:CMAKE_INST_DIR}"; mv cmake\* "$dir"'
+  - ps: '$dir = "${Env:CMAKE_INST_DIR}"; rm -r -fo "$dir"; mv cmake\* "$dir"'
   - git -C c:\tools\vcpkg\ fetch
   - git -C c:\tools\vcpkg\ checkout 2025.04.09
   - c:\tools\vcpkg\bootstrap-vcpkg.bat
