@@ -19,7 +19,7 @@ environment:
 
 before_build:
   - git -C c:\tools\vcpkg\ fetch
-  - git -C c:\tools\vcpkg\ checkout 2024.08.23
+  - git -C c:\tools\vcpkg\ checkout 2025.04.09
   - c:\tools\vcpkg\bootstrap-vcpkg.bat
   - vcpkg x-set-installed getopt:x64-windows xxhash:x64-windows pkgconf:x64-windows
   - cmake .
