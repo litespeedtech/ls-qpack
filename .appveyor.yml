@@ -42,5 +42,6 @@ before_test:
   - set PATH=%PATH%;c:\projects\ls-qpack\bin\Debug
 
 test_script:
-  - dir
-  - msbuild RUN_TESTS.vcxproj 
+  - setlocal EnableDelayedExpansion & ctest -j -C Debug --output-junit TestResults.xml & echo !ERRORLEVEL! > errorlevel & dir
+  - curl -v -F "file=@TestResults.xml" "https://ci.appveyor.com/api/testresults/junit/%APPVEYOR_JOB_ID%"
+  - setlocal EnableDelayedExpansion & set /p LEVEL=<errorlevel & exit /b !LEVEL!
