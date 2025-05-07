@@ -6,6 +6,8 @@ cache:
 - c:\tools\vcpkg\installed
 
 environment:
+  CMAKE_ZIP_URL: 'https://github.com/Kitware/CMake/releases/download/v3.31.7/cmake-3.31.7-windows-x86_64.zip'
+  CMAKE_INST_DIR: '%PROGRAMFILES(x86)%\CMake'
   matrix:
   - job_name: "Internal xxhash"
     LSQPACK_XXH: ON
@@ -18,6 +20,9 @@ environment:
     XXH_CMAKE: DISABLE
 
 before_build:
+  - 'rd /s /q "%CMAKE_INST_DIR%"'
+  - ps: 'iwr "${Env:CMAKE_ZIP_URL}" -outfile cmake.zip; if ($?) { expand-archive cmake.zip cmake }'
+  - ps: '$dir = "${Env:CMAKE_INST_DIR}"; mv cmake\* "$dir"'
   - git -C c:\tools\vcpkg\ fetch
   - git -C c:\tools\vcpkg\ checkout 2025.04.09
   - c:\tools\vcpkg\bootstrap-vcpkg.bat
