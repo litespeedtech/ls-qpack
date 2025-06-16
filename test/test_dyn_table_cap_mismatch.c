@@ -36,8 +36,8 @@ int main(int argc, const char * argv[]) {
     size_t size = 0;
     if (!encoder_stream)
     {
-        encoder_stream = fopen("../../test/testdata/encoder_stream", "r");
-        response = fopen("../../test/testdata/response", "r");
+        encoder_stream = fopen(TEST_DATA "/encoder_stream", "r");
+        response = fopen(TEST_DATA "/response", "r");
     }
     while ((size = fread(buffer, 1, sizeof(buffer), encoder_stream)) > 0) {
         lsqpack_dec_enc_in(&qpackDecoder, buffer, size);
