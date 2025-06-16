@@ -13,7 +13,7 @@ project(ls-qpack
 	LANGUAGES C
         HOMEPAGE_URL "https://github.com/litespeedtech/ls-qpack"
         DESCRIPTION "QPACK compression library for use with HTTP/3" 
-        VERSION 2.6.1)
+        VERSION 2.6.2)
 
 option(LSQPACK_TESTS "Build tests")
 option(LSQPACK_BIN "Build binaries" ON)
