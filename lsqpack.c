@@ -2262,14 +2262,10 @@ enc_proc_header_ack (struct lsqpack_enc *enc, uint64_t stream_id)
         return -1;
 
     TAILQ_FOREACH(hinfo, &enc->qpe_all_hinfos, qhi_next_all)
-        if (stream_id == hinfo->qhi_stream_id)
+        if (stream_id == hinfo->qhi_stream_id
+                /* Can't ACK a header that is still being encoded: */
+                                    && hinfo != enc->qpe_cur_header.hinfo)
             break;
-
-    /*
-     * XXX if an ACK comes in while a header is being encoded, it will not
-     *     have any effect because the the `qhi_max_id` is 0 until the header
-     *     encoding is finished (see enc_end_header()).
-     */
 
     if (!hinfo)
         return -1;
