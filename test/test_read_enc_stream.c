@@ -246,6 +246,49 @@ run_test (const struct test_read_encoder_stream *test)
 }
 
 
+#if LSQPACK_DEVEL_MODE
+static void
+test_winr_dynamic_ref_cleanup (void)
+{
+    static const unsigned char insert[] = "\x42OK\x01" "a";
+    static const unsigned char bad_winr[] = "\x80\x7F\x80\x1F";
+    const struct lsqpack_dec_table_entry *entry;
+    struct ringbuf_iter riter;
+    struct lsqpack_dec dec;
+    int r;
+
+    lsqpack_dec_init(&dec, NULL, 0x1000, 100, (void *) 1 /* hset */,
+                                                LSQPACK_DEC_OPT_HTTP1X);
+
+    /* First create one dynamic table entry.  It will be referenced by the
+     * malformed Insert With Name Reference below.
+     */
+    r = lsqpack_dec_enc_in(&dec, insert, sizeof(insert) - 1);
+    assert(r == 0);
+    entry = ringbuf_iter_first(&riter, &dec.qpd_dyn_table);
+    assert(entry);
+    assert(entry->dte_refcnt == 1);
+
+    /* This references the dynamic entry, which increments its refcount, then
+     * fails the value-length capacity check before the normal success path can
+     * decrement the temporary reference.
+     */
+    r = lsqpack_dec_enc_in(&dec, bad_winr, sizeof(bad_winr) - 1);
+    assert(r == -1);
+    assert(entry->dte_refcnt == 2);
+
+    /* Cleanup must release the temporary reference left by the failed WINR. */
+    lsqpack_dec_cleanup(&dec);
+    assert(dec.qpd_enc_state.ctx_u.with_namref.reffed_entry == NULL);
+}
+#else
+static void
+test_winr_dynamic_ref_cleanup (void)
+{
+}
+#endif
+
+
 int
 main (void)
 {
@@ -253,6 +296,7 @@ main (void)
 
     for (test = tests; test < tests + sizeof(tests) / sizeof(tests[0]); ++test)
         run_test(test);
+    test_winr_dynamic_ref_cleanup();
 
     return 0;
 }
