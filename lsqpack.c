@@ -2302,13 +2302,15 @@ enc_proc_ici (struct lsqpack_enc *enc, uint64_t ins_count)
         return -1;
     }
 
-    max_acked = (lsqpack_abs_id_t) ins_count + enc->qpe_last_ici;
-    if (max_acked > enc->qpe_ins_count)
+    /* Check validity of the increment, guarding for overflow */
+    if (ins_count > (uint64_t) enc->qpe_ins_count - enc->qpe_last_ici)
     {
-        E_DEBUG("ICI: max_acked %u is larger than number of inserts %u",
-            max_acked, enc->qpe_ins_count);
+        E_DEBUG("ICI: increment %"PRIu64" exceeds outstanding inserts (%u)",
+            ins_count, enc->qpe_ins_count - enc->qpe_last_ici);
         return -1;
     }
+
+    max_acked = (lsqpack_abs_id_t) ins_count + enc->qpe_last_ici;
 
     if (max_acked > enc->qpe_max_acked_id)
     {
