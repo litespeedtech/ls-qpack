@@ -164,6 +164,25 @@ static const struct int_test tests[] =
 
 };
 
+static void
+test_overlong_integer_full_buffer (void)
+{
+    static const unsigned char encoded[] = {
+        0x7F,
+        0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+        0x80, 0x80, 0x80, 0x80, 0x80,
+    };
+    struct lsqpack_dec_int_state state = { 0 };
+    const unsigned char *src;
+    uint64_t val;
+    int rv;
+
+    src = encoded;
+    rv = lsqpack_dec_int(&src, encoded + sizeof(encoded), 7, &val, &state);
+    assert(rv == -2);
+}
+
+
 int
 main (void)
 {
@@ -194,6 +213,8 @@ main (void)
         if (0 == rv)
             assert(val == test->it_decoded);
     }
+
+    test_overlong_integer_full_buffer();
 
     /* Test the encoder */
     for (test = tests; test < tests + sizeof(tests) / sizeof(tests[0]); ++test)
