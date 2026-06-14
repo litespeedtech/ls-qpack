@@ -3674,6 +3674,10 @@ parse_header_data (struct lsqpack_dec *dec,
                                                         &DATA.dec_int_state);
             if (r == 0)
             {
+#if LSXPACK_MAX_STRLEN == UINT16_MAX
+                if (DATA.left > LSXPACK_MAX_STRLEN)
+                    RETURN_ERROR();
+#endif
                 if (DATA.left)
                 {
                     if (DATA.is_huffman)
@@ -3757,6 +3761,10 @@ parse_header_data (struct lsqpack_dec *dec,
                                                         &DATA.dec_int_state);
             if (r == 0)
             {
+#if LSXPACK_MAX_STRLEN == UINT16_MAX
+                if (DATA.left > LSXPACK_MAX_STRLEN)
+                    RETURN_ERROR();
+#endif
                 size = DATA.is_huffman ? DATA.left + DATA.left / 2 : DATA.left;
                 if (0 != header_out_begin_literal(dec, read_ctx, size,
                                                             DATA.is_never))
