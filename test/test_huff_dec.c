@@ -370,6 +370,70 @@ run_test (const struct test_huff_dec *test)
     }
 }
 
+/* Malformed Huffman strings whose only defect is over-long trailing padding
+ * (a full byte or more of all-ones bits) or a leftover that is not all ones.
+ * Both the fast (large-table) decoder and the full decoder must reject these.
+ */
+static const struct {
+    int             lineno;
+    unsigned char   src[32];
+    size_t          src_sz;
+} bad_padding_tests[] =
+{
+    /* Each of these decodes some symbols and then leaves a full 0xFF byte of
+     * trailing one-bits, which is over-long padding (an incomplete code).
+     */
+    {   __LINE__, "\xea\xaf\x83\x6b\xff", 5, },
+    {   __LINE__, "\x6f\xc3\x4e\x5c\xff", 5, },
+    {   __LINE__, "\x68\xf8\xb3\xd5\xff", 5, },
+    /* Same idea with the value "Dude, where is my car?" then a 0xFF byte. */
+    {   __LINE__,
+        "\xbf\x6c\x85\xfa\x53\xc4\xe5\xb0\xaa\x19\x0a\x53\xe9\x42\x0e\xcf"
+        "\xf3\xff",
+        18,
+    },
+    /* A lone all-ones byte (8 bits of padding, no symbol). */
+    {   __LINE__,
+        "\xff",
+        1,
+    },
+};
+
+
+static void
+run_bad_padding_tests (void)
+{
+    struct huff_decode_retval rv;
+    struct lsqpack_huff_decode_state state;
+    unsigned char out[0x1000];
+    unsigned i;
+
+    for (i = 0; i < sizeof(bad_padding_tests) / sizeof(bad_padding_tests[0]);
+                                                                        ++i)
+    {
+        if (verbose)
+            fprintf(stderr, "bad-padding test on line %d\n",
+                                            bad_padding_tests[i].lineno);
+
+        /* Full (slow) decoder must reject. */
+        memset(&state, 0, sizeof(state));
+        rv = lsqpack_huff_decode_full(bad_padding_tests[i].src,
+                (int) bad_padding_tests[i].src_sz, out, (int) sizeof(out),
+                &state, 1);
+        assert(rv.status == HUFF_DEC_ERROR);
+
+#if LS_QPACK_USE_LARGE_TABLES
+        /* Fast-path dispatcher must reject the same input. */
+        memset(&state, 0, sizeof(state));
+        rv = lsqpack_huff_decode(bad_padding_tests[i].src,
+                (int) bad_padding_tests[i].src_sz, out, (int) sizeof(out),
+                &state, 1);
+        assert(rv.status == HUFF_DEC_ERROR);
+#endif
+    }
+}
+
+
 int
 main (int argc, char **argv)
 {
@@ -394,6 +458,8 @@ main (int argc, char **argv)
     for (test = tests; test < tests + sizeof(tests) / sizeof(tests[0]); ++test)
         if (run_expensive || test->src_sz * test->dst_sz < 150000)
             run_test(test);
+
+    run_bad_padding_tests();
 
     return 0;
 }
