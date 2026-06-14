@@ -3513,7 +3513,10 @@ lsqpack_huff_decode_full (const unsigned char *src, int src_len,
 
 
 #if LS_QPACK_USE_LARGE_TABLES
-static struct huff_decode_retval
+#if !LSQPACK_DEVEL_MODE
+static
+#endif
+struct huff_decode_retval
 lsqpack_huff_decode (const unsigned char *src, int src_len,
             unsigned char *dst, int dst_len,
             struct lsqpack_huff_decode_state *state, int final)
@@ -5402,6 +5405,15 @@ huff_decode_fast (const unsigned char *src, int src_len,
             };
     }
 
+    if (avail_bits >= 8)
+        /* Valid Huffman padding is at most 7 bits, else must be treated as
+         * malformed.  RFC 7541, Section 5.2.
+         */
+        return (struct huff_decode_retval) {
+            .status = HUFF_DEC_ERROR,
+            .n_dst  = 0,
+            .n_src  = 0,
+        };
     if (avail_bits > 0)
     {
         if (((1u << avail_bits) - 1) != (buf & ((1u << avail_bits) - 1)))

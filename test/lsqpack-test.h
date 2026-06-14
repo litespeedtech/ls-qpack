@@ -5,7 +5,12 @@
 #define LS_QPACK_USE_LARGE_TABLES 1
 #endif
 
-#if !LS_QPACK_USE_LARGE_TABLES
+#if LS_QPACK_USE_LARGE_TABLES
+struct huff_decode_retval
+lsqpack_huff_decode (const unsigned char *src, int src_len,
+            unsigned char *dst, int dst_len,
+            struct lsqpack_huff_decode_state *state, int final);
+#else
 #define lsqpack_huff_decode_full lsqpack_huff_decode
 #endif
 
