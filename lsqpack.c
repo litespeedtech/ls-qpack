@@ -2964,6 +2964,12 @@ lsqpack_dec_cleanup (struct lsqpack_dec *dec)
     {
         if (dec->qpd_enc_state.ctx_u.with_namref.entry)
             free(dec->qpd_enc_state.ctx_u.with_namref.entry);
+        if (dec->qpd_enc_state.ctx_u.with_namref.reffed_entry)
+        {
+            qdec_decref_entry(dec->qpd_enc_state.ctx_u.with_namref
+                                                        .reffed_entry);
+            dec->qpd_enc_state.ctx_u.with_namref.reffed_entry = NULL;
+        }
     }
     else if (dec->qpd_enc_state.resume >= DEI_WONR_READ_NAME_LEN
             && dec->qpd_enc_state.resume <= DEI_WONR_READ_VALUE_PLAIN)
