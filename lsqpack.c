@@ -2425,7 +2425,7 @@ lsqpack_dec_int (const unsigned char **src_p, const unsigned char *src_end,
                 return -2;
         }
     }
-    while (B & 0x80);
+    while ((B & 0x80) && M < 64);
 
     if (M <= 63 || (M == 70 && src[-1] <= 1 && (val & (1ull << 63))))
     {
