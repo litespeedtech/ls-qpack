@@ -25,6 +25,7 @@ lsqpack_add_test(circ_list)
 lsqpack_add_test(dec_crash_case)
 lsqpack_add_test(dyn_table_cap_mismatch)
 lsqpack_add_test(header_alloc_clamp)
+lsqpack_add_test(enc_ici_overflow)
 
 if(WIN32)
     message(WARNING "Scenario tests are disabled on Windows (TODO)")
