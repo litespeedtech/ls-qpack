@@ -4652,6 +4652,8 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                     WINR.name_len = WINR.reffed_entry->dte_name_len;
                     WINR.name = DTE_NAME(WINR.reffed_entry);
                 }
+                if (WINR.name_len > dec->qpd_cur_max_capacity)
+                    return -1;
                 /* This check accounts for the fact that Huffman-encoded string
                  * can shrink.
                  */
@@ -4867,6 +4869,8 @@ lsqpack_dec_enc_in (struct lsqpack_dec *dec, const unsigned char *buf,
                                                         &WONR.dec_int_state);
             if (r == 0)
             {
+                if (WONR.entry->dte_name_len > dec->qpd_cur_max_capacity)
+                    return -1;
                 /* This check accounts for the fact that Huffman-encoded string
                  * can shrink.
                  */

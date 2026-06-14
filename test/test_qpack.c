@@ -876,6 +876,49 @@ test_winr_value_too_large_plain (void)
 }
 
 
+static void
+test_winr_value_capacity_underflow (void)
+{
+    struct lsqpack_dec dec;
+    int r;
+    /* Set Dynamic Table Capacity to zero, then Insert With Name Reference
+     * using static entry 0 (:authority, length 10).  This used to underflow
+     * the remaining-capacity calculation before reading the value.
+     */
+    unsigned char enc_stream[] = "\x20\xC0\x01";
+
+    lsqpack_dec_init(&dec, stderr, 0x1000, 0, &hset_if,
+                                                        LSQPACK_DEC_OPT_HTTP1X);
+    r = lsqpack_dec_enc_in(&dec, enc_stream, sizeof(enc_stream) - 1);
+    assert(r == -1);
+    lsqpack_dec_cleanup(&dec);
+}
+
+
+static void
+test_wonr_value_capacity_underflow (void)
+{
+    struct lsqpack_dec dec;
+    int r;
+    /* Insert Without Name Reference with a Huffman-encoded name.  The encoded
+     * name is 17 bytes long, but it decodes to 26 bytes, exceeding the current
+     * capacity.  This used to underflow the remaining-capacity calculation
+     * while reading the value length.
+     */
+    unsigned char enc_stream[] = {
+        0x40 | 0x20 | 17,
+        0x18, 0xc6, 0x31, 0x8c, 0x63, 0x18, 0xc6, 0x31, 0x8c,
+        0x63, 0x18, 0xc6, 0x31, 0x8c, 0x63, 0x18, 0xff,
+        0x01,
+    };
+
+    lsqpack_dec_init(&dec, stderr, 20, 0, &hset_if, LSQPACK_DEC_OPT_HTTP1X);
+    r = lsqpack_dec_enc_in(&dec, enc_stream, sizeof(enc_stream));
+    assert(r == -1);
+    lsqpack_dec_cleanup(&dec);
+}
+
+
 /* This is an odd case, but if the first call should provide no input at all,
  * the decoder should return LQRHS_NEED
  */
@@ -1116,6 +1159,8 @@ main (void)
     test_wonr_value_too_large_plain();
     test_winr_value_too_large_huffman();
     test_winr_value_too_large_plain();
+    test_winr_value_capacity_underflow();
+    test_wonr_value_capacity_underflow();
     test_dec_header_zero_in();
     test_dec_header_too_short(0);
     test_dec_header_too_short(1);
