@@ -136,7 +136,7 @@ main (void)
 
     printf("header alloc clamp test ok\n");
 #else
-    printf("test skipped: LSXPACK_MAX_STRLEN = %lld\n",
+    printf("test skipped: LSXPACK_MAX_STRLEN = %llu\n",
                                     (unsigned long long) LSXPACK_MAX_STRLEN);
 #endif
     return 0;
