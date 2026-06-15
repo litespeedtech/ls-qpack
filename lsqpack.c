@@ -3351,6 +3351,7 @@ header_out_grow_buf (struct lsqpack_dec *dec,
         return -1;
     if (read_ctx->hbrc_out.xhdr->val_len < need)
     {
+        /* XXX Unnecessary if dhi_prepare_decode() follows contract */
         D_INFO("allocated xhdr size (%zd) is smaller than requested (%zd)",
             (size_t) read_ctx->hbrc_out.xhdr->val_len, need);
         memset(&read_ctx->hbrc_out, 0, sizeof(read_ctx->hbrc_out));
