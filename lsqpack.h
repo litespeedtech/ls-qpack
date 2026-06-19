@@ -44,7 +44,7 @@ extern "C" {
 
 #define LSQPACK_MAJOR_VERSION 2
 #define LSQPACK_MINOR_VERSION 6
-#define LSQPACK_PATCH_VERSION 3
+#define LSQPACK_PATCH_VERSION 4
 
 /** Let's start with four billion for now */
 typedef unsigned lsqpack_abs_id_t;

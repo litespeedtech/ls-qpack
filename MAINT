@@ -1,0 +1,6 @@
+To release a new version:
+
+- Update version in lsqpack.h
+- Update version in CMakeLists.txt
+- Update CHANGELOG
+

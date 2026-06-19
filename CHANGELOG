@@ -1,0 +1,16 @@
+2026-06-19
+    - 2.6.4
+    - Packaging fixes: update CMakeLists.txt
+
+2026-06-15
+    - 2.6.3
+    - Roll back the fix for #44: the original logic is correct.
+    - Protect ICI check against 32-bit overflow.
+    - Reject unrepresentable header name/value lengths.
+    - Fast decoder: reject Huffman padding over 7 bits.  (Spec compliance.)
+    - Reject Header Ack for an in-progress header block
+    - Fix decoder cleanup for failed WINR
+    - Fix UB: do not left shift by more than 63
+    - Fix WINR and WONR capacity checks
+
+See git log for more.
