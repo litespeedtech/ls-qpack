@@ -59,6 +59,10 @@ main (int argc, char **argv)
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
+#ifdef __AFL_INIT
+__AFL_FUZZ_INIT();
+#endif
+
 static void
 usage (const char *name)
 {
@@ -66,7 +70,9 @@ usage (const char *name)
 "Usage: %s [options] [-i input] [-o output]\n"
 "\n"
 "Options:\n"
+#ifndef __AFL_INIT
 "   -i FILE     Input file.\n"
+#endif
 "   -f FILE     Fuzz file: this is the stuff the fuzzer will change.\n"
 "   -s NUMBER   Maximum number of risked streams.  Defaults to %u.\n"
 "   -t NUMBER   Dynamic table size.  Defaults to %u.\n"
@@ -142,10 +148,16 @@ static const struct lsqpack_dec_hset_if hset_if = {
 };
 
 
+#pragma clang optimize off
+#pragma GCC optimize("O0")
+
 int
 main (int argc, char **argv)
 {
-    int in_fd = -1, fuzz_fd = STDIN_FILENO;
+    int in_fd = -1;
+#ifndef __AFL_INIT
+    int fuzz_fd = STDIN_FILENO;
+#endif
     int opt;
     unsigned dyn_table_size     = LSQPACK_DEF_DYN_TABLE_SIZE,
              max_risked_streams = LSQPACK_DEF_MAX_RISKED_STREAMS;
@@ -158,7 +170,17 @@ main (int argc, char **argv)
     int r;
     struct header *header;
 
-    while (-1 != (opt = getopt(argc, argv, "i:f:s:t:h")))
+#ifndef __AFL_INIT
+#   define __AFL_INIT() do {} while (0)
+#   define __AFL_LOOP(x) loop_var++ == 0
+    int loop_var = 0;
+#endif
+
+    while (-1 != (opt = getopt(argc, argv, "i:s:t:h"
+#ifndef __AFL_INIT
+                                                    "f:"
+#endif
+                                                         )))
     {
         switch (opt)
         {
@@ -171,6 +193,7 @@ main (int argc, char **argv)
                 exit(EXIT_FAILURE);
             }
             break;
+#ifndef __AFL_INIT
         case 'f':
             fuzz_fd = open(optarg, O_RDONLY);
             if (fuzz_fd < 0)
@@ -180,6 +203,7 @@ main (int argc, char **argv)
                 exit(EXIT_FAILURE);
             }
             break;
+#endif
         case 's':
             max_risked_streams = atoi(optarg);
             break;
@@ -193,6 +217,18 @@ main (int argc, char **argv)
             exit(EXIT_FAILURE);
         }
     }
+
+    __AFL_INIT();
+
+#ifdef __AFL_INIT
+    const unsigned char *buf = __AFL_FUZZ_TESTCASE_BUF;
+    const ssize_t len = __AFL_FUZZ_TESTCASE_LEN;
+    unsigned char *test_p = begin;
+    unsigned char *test_end = begin + len;
+#endif
+
+    while (__AFL_LOOP(10000))
+    {
 
     LIST_INIT(&s_headers);
     lsqpack_dec_init(&decoder, NULL, dyn_table_size, max_risked_streams,
@@ -256,8 +292,11 @@ main (int argc, char **argv)
     munmap(begin, st.st_size);
     (void) close(in_fd);
 
+#ifdef __AFL_INIT
+    p = test_p;
+    end = test_end;
+#else
     /* Now let's read the fuzzed part */
-
     if (0 != fstat(fuzz_fd, &st))
     {
         perror("fstat");
@@ -273,6 +312,8 @@ main (int argc, char **argv)
 
     p = begin;
     end = begin + st.st_size;
+#endif
+
     while (p + sizeof(stream_id) + sizeof(size) < end)
     {
         stream_id = * (uint64_t *) p;
@@ -300,8 +341,10 @@ main (int argc, char **argv)
         break;
     }
 
+#ifndef __AFL_INIT
     munmap(begin, st.st_size);
     (void) close(fuzz_fd);
+#endif
 
     lsqpack_dec_cleanup(&decoder);
     while (!LIST_EMPTY(&s_headers))
@@ -310,6 +353,7 @@ main (int argc, char **argv)
         LIST_REMOVE(header, next_header);
         free(header);
     }
+    }   /* __AFL_LOOP */
 
     exit(0);
 }
