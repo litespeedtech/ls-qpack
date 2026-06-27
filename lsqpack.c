@@ -3280,6 +3280,7 @@ header_out_write_value (struct lsqpack_dec *dec,
             struct header_block_read_ctx *read_ctx, size_t nwritten, int done)
 {
     struct lsxpack_header *xhdr;    /* Shorthand */
+    unsigned bytes_out;
     int r;
 
     read_ctx->hbrc_out.off += (unsigned)nwritten;
@@ -3308,9 +3309,10 @@ header_out_write_value (struct lsqpack_dec *dec,
                                             xhdr->val_len, xhdr->name_hash);
             xhdr->flags |= LSXPACK_NAMEVAL_HASH;
         }
+        bytes_out = xhdr->name_len + xhdr->val_len;
         r = dec->qpd_dh_if->dhi_process_header(read_ctx->hbrc_hblock, xhdr);
         if (r == 0)
-            dec->qpd_bytes_out += xhdr->name_len + xhdr->val_len;
+            dec->qpd_bytes_out += bytes_out;
         ++read_ctx->hbrc_header_count;
         memset(&read_ctx->hbrc_out, 0, sizeof(read_ctx->hbrc_out));
         if (r != 0)
