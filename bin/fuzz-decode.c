@@ -70,12 +70,13 @@ usage (const char *name)
 "Usage: %s [options] [-i input] [-o output]\n"
 "\n"
 "Options:\n"
-#ifndef __AFL_INIT
 "   -i FILE     Input file.\n"
-#endif
+#ifndef __AFL_INIT
 "   -f FILE     Fuzz file: this is the stuff the fuzzer will change.\n"
+#endif
 "   -s NUMBER   Maximum number of risked streams.  Defaults to %u.\n"
 "   -t NUMBER   Dynamic table size.  Defaults to %u.\n"
+"   -H          Decode headers in HTTP/1.x format\n"
 "\n"
 "   -h          Print this help screen and exit\n"
     , name, LSQPACK_DEF_MAX_RISKED_STREAMS, LSQPACK_DEF_DYN_TABLE_SIZE);
@@ -148,6 +149,59 @@ static const struct lsqpack_dec_hset_if hset_if = {
 };
 
 
+static void
+process_records (struct lsqpack_dec *decoder, const unsigned char *p,
+                    const unsigned char *end, int strict, int single_record)
+{
+    const unsigned char *const begin = p;
+    uint64_t stream_id;
+    uint32_t size;
+    int r;
+
+    while (p + sizeof(stream_id) + sizeof(size) < end)
+    {
+        stream_id = * (uint64_t *) p;
+        p += sizeof(uint64_t);
+        size = * (uint32_t *) p;
+        p += sizeof(uint32_t);
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+        stream_id = bswap_64(stream_id);
+        size = bswap_32(size);
+#endif
+        if (size > (uint32_t) (end - p))
+        {
+            if (strict)
+            {
+                fprintf(stderr, "truncated input at offset %u",
+                                                    (unsigned) (p - begin));
+                abort();
+            }
+            size = MIN(size, (uint32_t) (end - p));
+        }
+        if (stream_id == 0)
+        {
+            r = lsqpack_dec_enc_in(decoder, p, size);
+            if (strict && r != 0)
+                abort();
+        }
+        else
+        {
+            const unsigned char *cur = p;
+            enum lsqpack_read_header_status rhs;
+            rhs = lsqpack_dec_header_in(decoder, NULL, stream_id,
+                                        size, &cur, size, NULL, NULL);
+            if (strict && (rhs != LQRHS_DONE
+                                    || (uint32_t) (cur - p) != size))
+                abort();
+            (void) rhs;
+        }
+        p += size;
+        if (single_record)
+            break;
+    }
+}
+
+
 #pragma clang optimize off
 #pragma GCC optimize("O0")
 
@@ -161,22 +215,20 @@ main (int argc, char **argv)
     int opt;
     unsigned dyn_table_size     = LSQPACK_DEF_DYN_TABLE_SIZE,
              max_risked_streams = LSQPACK_DEF_MAX_RISKED_STREAMS;
+    enum lsqpack_dec_opts dec_opts = 0;
     struct lsqpack_dec decoder;
-    const unsigned char *p, *end;
-    unsigned char *begin;
+    const unsigned char *fuzz_begin, *fuzz_end;
+    unsigned char *input_begin, *fuzz_file_begin;
     struct stat st;
-    uint64_t stream_id;
-    uint32_t size;
-    int r;
+    size_t input_size;
     struct header *header;
 
 #ifndef __AFL_INIT
-#   define __AFL_INIT() do {} while (0)
 #   define __AFL_LOOP(x) loop_var++ == 0
     int loop_var = 0;
 #endif
 
-    while (-1 != (opt = getopt(argc, argv, "i:s:t:h"
+    while (-1 != (opt = getopt(argc, argv, "i:s:t:Hh"
 #ifndef __AFL_INIT
                                                     "f:"
 #endif
@@ -210,6 +262,9 @@ main (int argc, char **argv)
         case 't':
             dyn_table_size = atoi(optarg);
             break;
+        case 'H':
+            dec_opts |= LSQPACK_DEC_OPT_HTTP1X;
+            break;
         case 'h':
             usage(argv[0]);
             exit(EXIT_SUCCESS);
@@ -217,22 +272,6 @@ main (int argc, char **argv)
             exit(EXIT_FAILURE);
         }
     }
-
-    __AFL_INIT();
-
-#ifdef __AFL_INIT
-    const unsigned char *buf = __AFL_FUZZ_TESTCASE_BUF;
-    const ssize_t len = __AFL_FUZZ_TESTCASE_LEN;
-    unsigned char *test_p = begin;
-    unsigned char *test_end = begin + len;
-#endif
-
-    while (__AFL_LOOP(10000))
-    {
-
-    LIST_INIT(&s_headers);
-    lsqpack_dec_init(&decoder, NULL, dyn_table_size, max_risked_streams,
-                            &hset_if, 0 /* TODO: add command-line option */);
 
     if (in_fd < 0)
     {
@@ -245,57 +284,17 @@ main (int argc, char **argv)
         perror("fstat");
         exit(1);
     }
+    input_size = (size_t) st.st_size;
 
-    begin = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, in_fd, 0);
-    if (!begin)
+    input_begin = mmap(NULL, input_size, PROT_READ, MAP_PRIVATE, in_fd, 0);
+    if (input_begin == MAP_FAILED)
     {
         perror("mmap");
         exit(1);
     }
-
-    p = begin;
-    end = begin + st.st_size;
-    while (p + sizeof(stream_id) + sizeof(size) < end)
-    {
-        stream_id = * (uint64_t *) p;
-        p += sizeof(uint64_t);
-        size = * (uint32_t *) p;
-        p += sizeof(uint32_t);
-#if __BYTE_ORDER == __LITTLE_ENDIAN
-        stream_id = bswap_64(stream_id);
-        size = bswap_32(size);
-#endif
-        if (p + size > end)
-        {
-            fprintf(stderr, "truncated input at offset %u",
-                                                (unsigned) (p - begin));
-            abort();
-        }
-        if (stream_id == 0)
-        {
-            r = lsqpack_dec_enc_in(&decoder, p, size);
-            if (r != 0)
-                abort();
-        }
-        else
-        {
-            const unsigned char *cur = p;
-            enum lsqpack_read_header_status rhs;
-            rhs = lsqpack_dec_header_in(&decoder, NULL, stream_id,
-                        size, &cur, size, NULL, NULL);
-            if (rhs != LQRHS_DONE || (uint32_t) (cur - p) != size)
-                abort();
-        }
-        p += size;
-    }
-
-    munmap(begin, st.st_size);
     (void) close(in_fd);
 
-#ifdef __AFL_INIT
-    p = test_p;
-    end = test_end;
-#else
+#ifndef __AFL_INIT
     /* Now let's read the fuzzed part */
     if (0 != fstat(fuzz_fd, &st))
     {
@@ -303,57 +302,49 @@ main (int argc, char **argv)
         exit(1);
     }
 
-    begin = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fuzz_fd, 0);
-    if (!begin)
+    fuzz_file_begin = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fuzz_fd, 0);
+    if (fuzz_file_begin == MAP_FAILED)
     {
         perror("mmap");
         exit(1);
     }
 
-    p = begin;
-    end = begin + st.st_size;
+    fuzz_begin = fuzz_file_begin;
+    fuzz_end = fuzz_begin + st.st_size;
+#else
+    fuzz_file_begin = NULL;
+    __AFL_INIT();
+    const unsigned char *const afl_buf = __AFL_FUZZ_TESTCASE_BUF;
 #endif
 
-    while (p + sizeof(stream_id) + sizeof(size) < end)
+    while (__AFL_LOOP(10000))
     {
-        stream_id = * (uint64_t *) p;
-        p += sizeof(uint64_t);
-        size = * (uint32_t *) p;
-        p += sizeof(uint32_t);
-#if __BYTE_ORDER == __LITTLE_ENDIAN
-        stream_id = bswap_64(stream_id);
-        size = bswap_32(size);
+#ifdef __AFL_INIT
+        ssize_t fuzz_len = __AFL_FUZZ_TESTCASE_LEN;
+        fuzz_begin = afl_buf;
+        fuzz_end = fuzz_begin + fuzz_len;
 #endif
-        if (stream_id == 0)
-        {
-            r = lsqpack_dec_enc_in(&decoder, p, MIN(size, (uint32_t) (end - p)));
-            (void) r;
-        }
-        else
-        {
-            const unsigned char *cur = p;
-            enum lsqpack_read_header_status rhs;
-            size = MIN(size, (uint32_t) (end - p));
-            rhs = lsqpack_dec_header_in(&decoder, NULL, stream_id,
-                        size, &cur, size, NULL, NULL);
-            (void) rhs;
-        }
-        break;
-    }
 
+        LIST_INIT(&s_headers);
+        lsqpack_dec_init(&decoder, NULL, dyn_table_size, max_risked_streams,
+                                &hset_if, dec_opts);
+        process_records(&decoder, input_begin, input_begin + input_size, 1, 0);
+        process_records(&decoder, fuzz_begin, fuzz_end, 0, 1);
+
+        lsqpack_dec_cleanup(&decoder);
+        while (!LIST_EMPTY(&s_headers))
+        {
+            header = LIST_FIRST(&s_headers);
+            LIST_REMOVE(header, next_header);
+            free(header);
+        }
+    }   /* __AFL_LOOP */
+
+    munmap(input_begin, input_size);
 #ifndef __AFL_INIT
-    munmap(begin, st.st_size);
+    munmap(fuzz_file_begin, st.st_size);
     (void) close(fuzz_fd);
 #endif
-
-    lsqpack_dec_cleanup(&decoder);
-    while (!LIST_EMPTY(&s_headers))
-    {
-        header = LIST_FIRST(&s_headers);
-        LIST_REMOVE(header, next_header);
-        free(header);
-    }
-    }   /* __AFL_LOOP */
 
     exit(0);
 }
