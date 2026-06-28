@@ -1,3 +1,7 @@
+2026-06-28
+    - 2.6.5
+    - Fix use-after-free that occurs in specific usage.  See #87.
+
 2026-06-19
     - 2.6.4
     - Packaging fixes: update CMakeLists.txt
