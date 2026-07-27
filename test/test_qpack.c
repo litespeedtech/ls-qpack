@@ -518,6 +518,106 @@ run_header_cancellation_test(const struct qpack_header_block_test *test) {
 
 
 static void
+test_dynamic_header_cancellation (void)
+{
+    unsigned char enc_buf[ENC_BUF_SZ], header_buf[HEADER_BUF_SZ],
+        prefix_buf[PREFIX_BUF_SZ], sdtc_buf[LSQPACK_LONGEST_SDTC],
+        dec_buf[LSQPACK_LONGEST_HEADER_ACK];
+    size_t enc_sz, header_sz, sdtc_sz, dec_sz;
+    ssize_t prefix_sz;
+    struct lsqpack_enc enc;
+    struct lsqpack_dec dec;
+    struct lsxpack_header xhdr;
+    struct header_buf hbuf;
+    struct dhte dhte;
+    const unsigned char *buf;
+    enum lsqpack_enc_status enc_st;
+    enum lsqpack_read_header_status rhs;
+    int s;
+    const struct lsqpack_dec_hset_if dht_if = {
+        .dhi_unblocked      = dht_unblocked,
+        .dhi_prepare_decode = dht_prepare_decode,
+        .dhi_process_header = dht_process_header,
+    };
+
+    sdtc_sz = sizeof(sdtc_buf);
+    s = lsqpack_enc_init(&enc, stderr, 0x1000, 0x1000, 100,
+                LSQPACK_ENC_OPT_IX_AGGR | LSQPACK_ENC_OPT_NO_DUP,
+                sdtc_buf, &sdtc_sz);
+    assert(s == 0);
+
+    s = lsqpack_enc_start_header(&enc, 0, 0);
+    assert(s == 0);
+
+    hbuf.off = 0;
+    s = header_set_ptr(&xhdr, &hbuf, ":method", 7, "method", 6);
+    assert(s == 0);
+    enc_sz = sizeof(enc_buf);
+    header_sz = sizeof(header_buf);
+    enc_st = lsqpack_enc_encode(&enc, enc_buf, &enc_sz,
+                header_buf, &header_sz, &xhdr, 0);
+    assert(enc_st == LQES_OK);
+    assert(enc_sz > 0);
+    assert(enc.qpe_ins_count == 1);
+    assert(enc.qpe_nelem == 1);
+
+    s = lsqpack_enc_cancel_header(&enc);
+    assert(s == 0);
+    assert(enc.qpe_cur_header.hinfo == NULL);
+    assert(TAILQ_EMPTY(&enc.qpe_all_hinfos));
+    assert(enc.qpe_cur_streams_at_risk == 0);
+    assert(enc.qpe_ins_count == 1);
+    assert(enc.qpe_nelem == 1);
+
+    /*
+     * Encoder-stream instructions returned while encoding the cancelled
+     * header remain committed.  Feed them to the decoder and verify that a
+     * subsequent header can reference the retained entry.
+     */
+    memset(&dhte, 0, sizeof(dhte));
+    lsqpack_dec_init(&dec, NULL, 0x1000, 100, &dht_if, 0);
+    s = lsqpack_dec_enc_in(&dec, enc_buf, enc_sz);
+    assert(s == 0);
+
+    s = lsqpack_enc_start_header(&enc, 4, 0);
+    assert(s == 0);
+    hbuf.off = 0;
+    s = header_set_ptr(&xhdr, &hbuf, ":method", 7, "method", 6);
+    assert(s == 0);
+    enc_sz = sizeof(enc_buf);
+    header_sz = sizeof(header_buf);
+    enc_st = lsqpack_enc_encode(&enc, enc_buf, &enc_sz,
+                header_buf, &header_sz, &xhdr, 0);
+    assert(enc_st == LQES_OK);
+    assert(enc_sz == 0);
+
+    prefix_sz = lsqpack_enc_end_header(&enc, prefix_buf,
+                                                sizeof(prefix_buf), NULL);
+    assert(prefix_sz > 0);
+    assert(enc.qpe_cur_streams_at_risk == 1);
+
+    buf = prefix_buf;
+    dec_sz = sizeof(dec_buf);
+    rhs = lsqpack_dec_header_in(&dec, &dhte, 4, prefix_sz + header_sz,
+                            &buf, prefix_sz, dec_buf, &dec_sz);
+    assert(rhs == LQRHS_NEED);
+    assert(buf == prefix_buf + prefix_sz);
+
+    buf = header_buf;
+    dec_sz = sizeof(dec_buf);
+    rhs = lsqpack_dec_header_read(&dec, &dhte, &buf, header_sz,
+                                                    dec_buf, &dec_sz);
+    assert(rhs == LQRHS_DONE);
+    assert(buf == header_buf + header_sz);
+    assert(dhte.buf_off == sizeof(":method") - 1 + sizeof("method") - 1);
+    assert(0 == memcmp(dhte.buf, ":methodmethod", dhte.buf_off));
+
+    lsqpack_dec_cleanup(&dec);
+    lsqpack_enc_cleanup(&enc);
+}
+
+
+static void
 test_enc_init (void)
 {
     struct lsqpack_enc enc;
@@ -1147,6 +1247,7 @@ main (void)
     }
 
     run_header_cancellation_test(&header_block_tests[0]);
+    test_dynamic_header_cancellation();
     test_enc_init();
     test_push_promise();
     test_discard_header(0);

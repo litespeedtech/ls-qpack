@@ -1156,12 +1156,6 @@ lsqpack_enc_cancel_header (struct lsqpack_enc *enc)
     if (!(enc->qpe_flags & LSQPACK_ENC_HEADER))
         return -1;
 
-    /* Cancellation is not (yet) allowed if the dynamic table is used since
-     * ls-qpack's state is changed when the dynamic table is used.
-     */
-    if (enc->qpe_cur_header.hinfo && HINFO_IDS_SET(enc->qpe_cur_header.hinfo))
-        return -1;
-
     if (enc->qpe_cur_header.hinfo) {
         enc_free_hinfo(enc, enc->qpe_cur_header.hinfo);
         enc->qpe_cur_header.hinfo = NULL;
