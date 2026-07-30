@@ -241,6 +241,14 @@ lsqpack_enc_encode (struct lsqpack_enc *,
  * table insertions remain in effect and may be used by subsequent header
  * blocks.
  *
+ * Note that entries inserted on behalf of a cancelled header block are not
+ * referenced by any header block and thus cannot be acknowledged via a
+ * Section Acknowledgement.  In the degenerate case -- a peer that never
+ * sends Insert Count Increment instructions and no subsequent header block
+ * referencing these or later entries -- such entries can never be evicted,
+ * preventing new insertions once the dynamic table is full.  Header blocks
+ * are still processed normally; only compression performance degrades.
+ *
  * Returns 0 on success, -1 if there is no current header block.
  */
 int 
