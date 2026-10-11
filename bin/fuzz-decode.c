@@ -4,6 +4,11 @@
  * forgoes several advanced options.
  */
 
+/* _FORTIFY_SOURCE cannot be used with non-optimized code, and the code
+ * is using pragmas to disable optimization below
+ */
+#undef _FORTIFY_SOURCE
+
 #ifdef WIN32
 
 #include <stdio.h>
