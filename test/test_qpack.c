@@ -806,6 +806,169 @@ static const struct lsqpack_dec_hset_if hset_if = {
 };
 
 
+struct retained_hblock_ctx
+{
+    struct hblock_ctx hblock;
+    unsigned          unblocked;
+};
+
+
+static void
+retained_unblocked (void *hblock_ctx_p)
+{
+    struct retained_hblock_ctx *const hctx = hblock_ctx_p;
+
+    ++hctx->unblocked;
+}
+
+
+static const struct lsqpack_dec_hset_if retained_hset_if = {
+    .dhi_unblocked      = retained_unblocked,
+    .dhi_prepare_decode = prepare_decode,
+    .dhi_process_header = process_header,
+};
+
+
+static void
+test_unique_retained_hblock_ctx (void)
+{
+    static const unsigned char complete_header[] = "\x00\x00\xD1";
+    static const unsigned char blocked_prefix[] = "\x02\x80";
+    static const unsigned char blocked_remainder[] = "\x80\x10";
+    static const unsigned char insert[] = {
+        0x40 | 0x20 | 3,
+        0x92, 0xd9, 0x0b,
+        0x80 | 0xC,
+        0xf1, 0x39, 0x6c, 0x2a, 0x86, 0x42, 0x94, 0xfa,
+        0x50, 0x83, 0xb3, 0xfc,
+    };
+    struct retained_hblock_ctx first, second;
+    const struct lsqpack_dec_err *err;
+    enum lsqpack_read_header_status rhs;
+    const unsigned char *buf;
+    struct lsqpack_dec dec;
+    unsigned char cancel_buf[LSQPACK_LONGEST_CANCEL];
+    ssize_t nw;
+    int s;
+
+    /* A retained context owns its hblock_ctx value.  Rejecting another field
+     * section using that value must not consume input or disturb the owner,
+     * even when the incoming stream ID differs. */
+    memset(&first, 0, sizeof(first));
+    memset(&second, 0, sizeof(second));
+    lsqpack_dec_init(&dec, NULL, 0x1000, 1, &retained_hset_if, 0);
+    buf = complete_header;
+    rhs = lsqpack_dec_header_in(&dec, &first, 7, sizeof(complete_header) - 1,
+                                                        &buf, 1, NULL, NULL);
+    assert(rhs == LQRHS_NEED);
+    assert(buf == complete_header + 1);
+
+    buf = complete_header;
+    rhs = lsqpack_dec_header_in(&dec, &first, 77,
+                    sizeof(complete_header) - 1, &buf,
+                    sizeof(complete_header) - 1, NULL, NULL);
+    assert(rhs == LQRHS_ERROR);
+    assert(buf == complete_header);
+    err = lsqpack_dec_get_err_info(&dec);
+    assert(err->type == LSQPACK_DEC_ERR_LOC_HEADER_BLOCK);
+    assert(err->off == 0);
+    assert(err->stream_id == 77);
+
+    buf = complete_header + 1;
+    rhs = lsqpack_dec_header_read(&dec, &first, &buf, 2, NULL, NULL);
+    assert(rhs == LQRHS_DONE);
+    assert(buf == complete_header + sizeof(complete_header) - 1);
+
+    /* Completion releases the handle for reuse. */
+    buf = complete_header;
+    rhs = lsqpack_dec_header_in(&dec, &first, 77,
+                    sizeof(complete_header) - 1, &buf,
+                    sizeof(complete_header) - 1, NULL, NULL);
+    assert(rhs == LQRHS_DONE);
+    lsqpack_dec_cleanup(&dec);
+
+    /* Distinct handles can retain field sections on one stream concurrently. */
+    memset(&first, 0, sizeof(first));
+    memset(&second, 0, sizeof(second));
+    lsqpack_dec_init(&dec, NULL, 0x1000, 1, &retained_hset_if, 0);
+    buf = complete_header;
+    rhs = lsqpack_dec_header_in(&dec, &first, 8,
+                    sizeof(complete_header) - 1, &buf, 0, NULL, NULL);
+    assert(rhs == LQRHS_NEED);
+    rhs = lsqpack_dec_header_in(&dec, &second, 8,
+                    sizeof(complete_header) - 1, &buf, 0, NULL, NULL);
+    assert(rhs == LQRHS_NEED);
+    assert(lsqpack_dec_unref_stream(&dec, &first) == 0);
+    assert(lsqpack_dec_unref_stream(&dec, &second) == 0);
+    lsqpack_dec_cleanup(&dec);
+
+    /* Cancellation and unref both release the handle for later use. */
+    memset(&first, 0, sizeof(first));
+    lsqpack_dec_init(&dec, NULL, 0x1000, 1, &retained_hset_if, 0);
+    buf = complete_header;
+    rhs = lsqpack_dec_header_in(&dec, &first, 10,
+                    sizeof(complete_header) - 1, &buf, 0, NULL, NULL);
+    assert(rhs == LQRHS_NEED);
+    nw = lsqpack_dec_cancel_stream(&dec, &first, cancel_buf,
+                                                    sizeof(cancel_buf));
+    assert(nw > 0);
+    buf = complete_header;
+    rhs = lsqpack_dec_header_in(&dec, &first, 10,
+                    sizeof(complete_header) - 1, &buf, 0, NULL, NULL);
+    assert(rhs == LQRHS_NEED);
+    assert(lsqpack_dec_unref_stream(&dec, &first) == 0);
+    buf = complete_header;
+    rhs = lsqpack_dec_header_in(&dec, &first, 10,
+                    sizeof(complete_header) - 1, &buf,
+                    sizeof(complete_header) - 1, NULL, NULL);
+    assert(rhs == LQRHS_DONE);
+    lsqpack_dec_cleanup(&dec);
+
+    /* A blocked context continues owning its handle after its callback and
+     * until the caller finishes reading it. */
+    memset(&first, 0, sizeof(first));
+    memset(&second, 0, sizeof(second));
+    lsqpack_dec_init(&dec, NULL, 0x1000, 1, &retained_hset_if, 0);
+    buf = blocked_prefix;
+    rhs = lsqpack_dec_header_in(&dec, &first, 11, 3, &buf,
+                                        sizeof(blocked_prefix) - 1, NULL, NULL);
+    assert(rhs == LQRHS_BLOCKED);
+    assert(buf == blocked_prefix + 1);
+    assert(dec.qpd_n_blocked == 1);
+    assert(first.unblocked == 0);
+
+    buf = complete_header;
+    rhs = lsqpack_dec_header_in(&dec, &first, 11,
+                    sizeof(complete_header) - 1, &buf,
+                    sizeof(complete_header) - 1, NULL, NULL);
+    assert(rhs == LQRHS_ERROR);
+    assert(buf == complete_header);
+    assert(dec.qpd_n_blocked == 1);
+    assert(first.unblocked == 0);
+
+    s = lsqpack_dec_enc_in(&dec, insert, sizeof(insert));
+    assert(s == 0);
+    assert(dec.qpd_n_blocked == 0);
+    assert(first.unblocked == 1);
+
+    buf = complete_header;
+    rhs = lsqpack_dec_header_in(&dec, &first, 11,
+                    sizeof(complete_header) - 1, &buf,
+                    sizeof(complete_header) - 1, NULL, NULL);
+    assert(rhs == LQRHS_ERROR);
+    assert(buf == complete_header);
+    assert(dec.qpd_n_blocked == 0);
+    assert(first.unblocked == 1);
+
+    buf = blocked_remainder;
+    rhs = lsqpack_dec_header_read(&dec, &first, &buf,
+                            sizeof(blocked_remainder) - 1, NULL, NULL);
+    assert(rhs == LQRHS_DONE);
+    assert(buf == blocked_remainder + sizeof(blocked_remainder) - 1);
+    lsqpack_dec_cleanup(&dec);
+}
+
+
 static void
 test_discard_header (int err)
 {
@@ -1265,6 +1428,7 @@ main (void)
     test_dec_header_zero_in();
     test_dec_header_too_short(0);
     test_dec_header_too_short(1);
+    test_unique_retained_hblock_ctx();
     test_enc_risked_streams();
 
     return 0;

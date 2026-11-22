@@ -404,8 +404,13 @@ enum lsqpack_read_header_status
  *  2. to locate header block state when @ref lsqpack_dec_header_read() is
  *     called.
  *
- * If the decoder returns LQRHS_DONE or LQRHS_ERROR, it means that it no
- * longer has a reference to the header block.
+ * If the decoder begins processing a header block and returns LQRHS_DONE or
+ * LQRHS_ERROR, it no longer has a reference to that header block.
+ *
+ * `hblock_ctx' must uniquely identify a header block while the decoder retains
+ * it.  A call using an already retained `hblock_ctx' returns LQRHS_ERROR
+ * without consuming input or disturbing the retained block.  The value may be
+ * reused after that block completes, fails, is cancelled, or is unreferenced.
  */
 enum lsqpack_read_header_status
 lsqpack_dec_header_in (struct lsqpack_dec *, void *hblock_ctx,

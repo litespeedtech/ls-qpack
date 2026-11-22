@@ -4328,6 +4328,19 @@ lsqpack_dec_header_in (struct lsqpack_dec *dec, void *hblock,
         return LQRHS_ERROR;
     }
 
+    if (find_header_block_read_ctx(dec, hblock))
+    {
+        D_DEBUG("cannot begin header block for stream %"PRIu64
+            ": header block context is already retained", stream_id);
+        dec->qpd_err = (struct lsqpack_dec_err) {
+            .line = __LINE__,
+            .type = LSQPACK_DEC_ERR_LOC_HEADER_BLOCK,
+            .off = 0,
+            .stream_id = stream_id,
+        };
+        return LQRHS_ERROR;
+    }
+
     struct header_block_read_ctx read_ctx = {
         .hbrc_stream_id = stream_id,
         .hbrc_hblock    = hblock,
