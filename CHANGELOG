@@ -1,3 +1,10 @@
+2026-11-21
+    - 2.7.1
+    - Reject duplicate retained header block contexts without consuming
+      input or disturbing the original block.
+    - Add Linux Debug and fortified Release CI jobs, and disable
+      _FORTIFY_SOURCE for the fuzz-decode tool.
+
 2026-07-30
     - 2.7.0
     - API: lsqpack_enc_cancel_header() now cancels dynamic headers as well.
